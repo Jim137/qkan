@@ -1,0 +1,296 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>First Glance at QKAN and DARUAN &mdash; QKAN 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="API Reference" href="../api.html" />
+    <link rel="prev" title="KAN" href="kan.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../intro.html">Introduction</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="qml.html">QML 101</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kan.html">KAN</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">First Glance at QKAN and DARUAN</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#DatA-Re-Uploading-ActivatioN-(DARUAN)">DatA Re-Uploading ActivatioN (DARUAN)</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#Layer-Extension-Mechanism">Layer Extension Mechanism</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#Practical-Advantages">Practical Advantages</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#Quantum-Inspired-Kolmogorov–Arnold-Networks-(QKAN)">Quantum-Inspired Kolmogorov–Arnold Networks (QKAN)</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#Motivation-and-Principle">Motivation and Principle</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#Architecture">Architecture</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#Example:-Training-a-QKAN-Model-for-Function-Approximation">Example: Training a QKAN Model for Function Approximation</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples &amp; Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../intro.html">Introduction</a></li>
+      <li class="breadcrumb-item active">First Glance at QKAN and DARUAN</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/intro/qkan.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="First-Glance-at-QKAN-and-DARUAN">
+<h1>First Glance at QKAN and DARUAN<a class="headerlink" href="#First-Glance-at-QKAN-and-DARUAN" title="Link to this heading"></a></h1>
+<p>Quantum-inspired Kolmogorov-Arnold Network (QKAN) is a novel approach to integrate the concept of Quantum Variational Activation Function (QVAF) into KANs. We use single qubit data reuploading circuit as a quantum-inspired activation function, DatA Re-Uploading ActivatioN (DARUAN), to enhance the expressivity of KANs.</p>
+<section id="DatA-Re-Uploading-ActivatioN-(DARUAN)">
+<h2>DatA Re-Uploading ActivatioN (DARUAN)<a class="headerlink" href="#DatA-Re-Uploading-ActivatioN-(DARUAN)" title="Link to this heading"></a></h2>
+<img alt="DARUAN" src="../_images/daruan.png" />
+<p>While the word <strong>daruan</strong> may evoke the traditional Chinese string instrument, in our context, <strong>DARUAN</strong> refers to a <strong>quantum-inspired activation function</strong> derived from the concept of <strong>data re-uploading circuits</strong>.</p>
+<p>DARUAN leverages the architecture of data re-uploading to build a scalable and expressive <strong>quantum variational activation layer</strong>. Each block consists of fixed data encoding interleaved with <strong>trainable unitaries</strong>, forming a variational circuit capable of approximating both smooth <strong>periodic</strong> and <strong>non-periodic</strong> functions.</p>
+<p>The circuit outputs the <strong>expectation value of a Pauli observable</strong> (typically <span class="math notranslate nohighlight">\(\sigma_z\)</span>), which is used as the <strong>nonlinear transformation</strong> (activation) applied to the neuron’s input.</p>
+<p>In the figure below, DARUAN acts as a variational activation function (VAF) within a perceptron. Classical data is re-uploaded multiple times into the quantum circuit, and the final output is obtained via measurement:</p>
+<img alt="DARUAN in Perceptron" src="../_images/DARUAN-perceptron.png" />
+<section id="Layer-Extension-Mechanism">
+<h3>Layer Extension Mechanism<a class="headerlink" href="#Layer-Extension-Mechanism" title="Link to this heading"></a></h3>
+<p>A key feature of DARUAN is its architectural <strong>flexibility</strong> through what we call <strong>layer extension</strong>—a mechanism that progressively increases the number of re-uploading repetitions (or depth of the variational circuit). This enables the model to:</p>
+<ul class="simple">
+<li><p>Scale its expressivity on demand</p></li>
+<li><p>Retain and refine previously learned features</p></li>
+<li><p>Avoid catastrophic forgetting during deeper training</p></li>
+</ul>
+</section>
+<section id="Practical-Advantages">
+<h3>Practical Advantages<a class="headerlink" href="#Practical-Advantages" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Hardware-efficient</strong>: Implemented using only single-qubit rotations and measurements</p></li>
+<li><p><strong>NISQ-compatible</strong>: Suitable for near-term quantum devices</p></li>
+<li><p><strong>Expressive</strong>: Capable of approximating a wide class of functions with minimal depth</p></li>
+</ul>
+<blockquote>
+<div><p>DARUAN demonstrates that simple quantum-inspired modules can serve as powerful building blocks for classical or hybrid neural networks, bridging ideas from variational quantum algorithms and modern machine learning.</p>
+</div></blockquote>
+</section>
+</section>
+<section id="Quantum-Inspired-Kolmogorov–Arnold-Networks-(QKAN)">
+<h2>Quantum-Inspired Kolmogorov–Arnold Networks (QKAN)<a class="headerlink" href="#Quantum-Inspired-Kolmogorov–Arnold-Networks-(QKAN)" title="Link to this heading"></a></h2>
+<p>Building upon the foundational ideas of <strong>Kolmogorov–Arnold Networks (KANs)</strong> and the expressive capacity of the <strong>DARUAN</strong> activation function, we introduce the <strong>Quantum-Inspired Kolmogorov–Arnold Network (QKAN)</strong>.</p>
+<p>In QKAN, the traditional B-spline-based activation functions used in KAN are replaced by single-qubit <strong>data re-uploading variational quantum circuits</strong> (DARUAN), providing a compact and highly trainable nonlinear transformation.</p>
+<hr class="docutils" />
+<section id="Motivation-and-Principle">
+<h3>Motivation and Principle<a class="headerlink" href="#Motivation-and-Principle" title="Link to this heading"></a></h3>
+<p>The key insight of QKAN is to leverage the <strong>Fourier-like expansion behavior</strong> of quantum data re-uploading circuits, which approximate target functions through tunable superpositions of sinusoidal frequency components.</p>
+<p>While classical KANs express nonlinearities using B-spline basis functions (requiring a grid size <span class="math notranslate nohighlight">\(G\)</span>), QKAN approximates similar functional forms by estimating Fourier coefficients through a <strong>parameter-efficient quantum circuit</strong> with only a small number of re-uploading repetitions <span class="math notranslate nohighlight">\(r\)</span>.</p>
+<p>This makes QKAN especially attractive in settings where parameter and memory efficiency are critical.</p>
+</section>
+<hr class="docutils" />
+<section id="Architecture">
+<h3>Architecture<a class="headerlink" href="#Architecture" title="Link to this heading"></a></h3>
+<img alt="QKAN Architecture" src="../_images/qkan.png" />
+<p>Each layer in QKAN is a feedforward structure composed of <strong>independent DARUAN modules</strong>. For a layer <span class="math notranslate nohighlight">\(\ell\)</span> with <span class="math notranslate nohighlight">\(n_\ell\)</span> input nodes and <span class="math notranslate nohighlight">\(n_{\ell+1}\)</span> output nodes, the layer is defined as:</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\begin{align}
+  &amp;\Phi_\ell = \{\phi_{\ell,j,i}\}, \quad i = 1,\dots,n_\ell; \quad j = 1,\dots,n_{\ell+1} \\
+  &amp;\phi_{\ell,j,i}(x_{\ell,i}) = \langle 0 \vert U(x_{\ell,i}, \boldsymbol{\theta}_{\ell,j,i})^\dagger M U(x_{\ell,i}, \boldsymbol{\theta}_{\ell,j,i}) \vert 0 \rangle \\
+  &amp;x_{\ell+1,j} = \sum_{i=1}^{n_\ell} \phi_{\ell,j,i}(x_{\ell,i})
+\end{align}\end{split}\]</div>
+<p>Here:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(U(x; \boldsymbol{\theta})\)</span> is a <strong>data re-uploading unitary</strong> parameterized by <span class="math notranslate nohighlight">\(\boldsymbol{\theta}\)</span>,</p></li>
+<li><p><span class="math notranslate nohighlight">\(M\)</span> is the <strong>Pauli observable</strong> (e.g., <span class="math notranslate nohighlight">\(\sigma_z\)</span>) used for measurement,</p></li>
+<li><p>Each <span class="math notranslate nohighlight">\(\phi_{\ell,j,i}\)</span> acts as a nonlinear activation between nodes <span class="math notranslate nohighlight">\(i\)</span> and <span class="math notranslate nohighlight">\(j\)</span>.</p></li>
+</ul>
+<p>The full QKAN model is then composed by sequentially stacking these layers:</p>
+<div class="math notranslate nohighlight">
+\[\boldsymbol{y} = \text{QKAN}(\boldsymbol{x}) = \left( \Phi_L \circ \Phi_{L-1} \circ \cdots \circ \Phi_1 \right)(\boldsymbol{x})\]</div>
+<p>Because each quantum expectation value lies in the range <span class="math notranslate nohighlight">\([-1, 1]\)</span>, the output at layer <span class="math notranslate nohighlight">\(\ell+1\)</span> is bounded within:</p>
+<div class="math notranslate nohighlight">
+\[x_{\ell+1,j} \in [-n_\ell, n_\ell]\]</div>
+<p>To extend the bounded output to a desired range, some post activation transformation (e.g., FCN or linear weight/bias layer) can be applied.</p>
+<hr class="docutils" />
+<p>QKAN introduces a quantum-inspired activation mechanism into a Kolmogorov–Arnold framework, leading to:</p>
+<ul class="simple">
+<li><p>High <strong>expressive power</strong> through tunable quantum feature maps</p></li>
+<li><p>Strong <strong>parameter efficiency</strong> compared to B-spline KANs</p></li>
+<li><p>Seamless integration with both classical and hybrid neural architectures</p></li>
+</ul>
+<blockquote>
+<div><p>QKAN merges insights from function approximation theory, Fourier analysis, and quantum variational circuits, offering a promising path forward for expressive, scalable, and hardware-efficient learning models.</p>
+</div></blockquote>
+</section>
+</section>
+<section id="Example:-Training-a-QKAN-Model-for-Function-Approximation">
+<h2>Example: Training a QKAN Model for Function Approximation<a class="headerlink" href="#Example:-Training-a-QKAN-Model-for-Function-Approximation" title="Link to this heading"></a></h2>
+<p>This section provides a minimal example of how to <strong>train a QKAN model</strong> using the <strong>DARUAN activation function</strong>, and how to <strong>visualize the learned nonlinearities</strong>.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">qkan</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKAN</span><span class="p">,</span> <span class="n">create_dataset</span>
+
+<span class="n">device</span> <span class="o">=</span> <span class="s2">&quot;cuda&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span>
+
+<span class="c1"># f(x,y) = exp(sin(pi*x)+y^2)</span>
+<span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="n">x</span><span class="p">[:,[</span><span class="mi">0</span><span class="p">]])</span> <span class="o">+</span> <span class="n">x</span><span class="p">[:,[</span><span class="mi">1</span><span class="p">]]</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">dataset</span> <span class="o">=</span> <span class="n">create_dataset</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">n_var</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
+    <span class="p">[</span><span class="mi">2</span><span class="p">,</span><span class="mi">5</span><span class="p">,</span><span class="mi">1</span><span class="p">],</span>
+    <span class="n">reps</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+    <span class="n">preact_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="c1"># enable flexible fourier frequency</span>
+    <span class="n">postact_bias_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="c1"># extend output bound</span>
+    <span class="n">postact_weight_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="c1"># extend output bound</span>
+    <span class="n">ba_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="c1"># enable residual connection for better convergence</span>
+    <span class="n">save_act</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="c1"># save activation for visualization</span>
+<span class="p">)</span>
+<span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">LBFGS</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1.</span><span class="p">)</span>
+
+<span class="n">model</span><span class="o">.</span><span class="n">train_</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">optimizer</span><span class="o">=</span><span class="n">optimizer</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">model</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">from_acts</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+100%|█████████████| 20/20 [00:04&lt;00:00,  4.42it/s, train loss=2.7591048e-05, test loss=2.865495e-05]
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/intro_qkan_4_1.png" src="../_images/intro_qkan_4_1.png" />
+</div>
+</div>
+<p>We also demonstrate how to apply <strong>pruning</strong>, a technique originally proposed in the KAN paper, to reduce the number of active nodes and simplify the model without sacrificing performance.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">model</span><span class="o">.</span><span class="n">prune</span><span class="p">(</span><span class="n">node_th</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+<span class="n">model</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">dataset</span><span class="p">[</span><span class="s2">&quot;train_input&quot;</span><span class="p">],</span> <span class="n">mask</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/intro_qkan_6_0.png" src="../_images/intro_qkan_6_0.png" />
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">new_model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">prune</span><span class="p">(</span><span class="n">node_th</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+<span class="n">new_model</span><span class="p">(</span><span class="n">dataset</span><span class="p">[</span><span class="s1">&#39;train_input&#39;</span><span class="p">])</span>
+<span class="n">new_model</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">from_acts</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">in_vars</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;$x$&quot;</span><span class="p">,</span> <span class="s2">&quot;$y$&quot;</span><span class="p">],</span> <span class="n">out_vars</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;$\exp(\sin(\pi x)+y^2)$&quot;</span><span class="p">])</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/intro_qkan_7_0.png" src="../_images/intro_qkan_7_0.png" />
+</div>
+</div>
+<p>From the trained activation plots, we can infer the underlying structure of the learned function. In this example, the QKAN model, with minimal architecture, successfully recovers the form of the target function <span class="math notranslate nohighlight">\(f(x,y) = \exp(\sin(\pi x)+y^2)\)</span>.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="kan.html" class="btn btn-neutral float-left" title="KAN" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../api.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

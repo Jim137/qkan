@@ -1,0 +1,508 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QML 101 &mdash; QKAN 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="KAN" href="kan.html" />
+    <link rel="prev" title="Introduction" href="../intro.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../intro.html">Introduction</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">QML 101</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Basics-of-Quantum-Computing">Basics of Quantum Computing</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#What-is-a-Qubit?">What is a Qubit?</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#More-Qubits">More Qubits</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#Quantum-Gates-and-Circuits">Quantum Gates and Circuits</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#Measurement">Measurement</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#Variational-Quantum-Algorithms-(VQA)">Variational Quantum Algorithms (VQA)</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#Quantum-Kernel-Methods">Quantum Kernel Methods</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#Data-Re-Uploading-Circuits">Data Re-Uploading Circuits</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="kan.html">KAN</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qkan.html">First Glance at QKAN and DARUAN</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples &amp; Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../intro.html">Introduction</a></li>
+      <li class="breadcrumb-item active">QML 101</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/intro/qml.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="QML-101">
+<h1>QML 101<a class="headerlink" href="#QML-101" title="Link to this heading"></a></h1>
+<p>Quantum Machine Learning (QML) is an emerging and promising research area within quantum computing.</p>
+<p>By harnessing quantum phenomena such as <strong>superposition</strong> and <strong>entanglement</strong>, QML enables efficient encoding and manipulation of data using multiple qubits. These unique capabilities offer the potential to significantly accelerate machine learning tasks and enhance model expressiveness, especially when working with high-dimensional classical datasets.</p>
+<p>As the field continues to develop, QML is expected to play a key role in advancing both quantum and classical machine learning paradigms.</p>
+<section id="Basics-of-Quantum-Computing">
+<h2>Basics of Quantum Computing<a class="headerlink" href="#Basics-of-Quantum-Computing" title="Link to this heading"></a></h2>
+<section id="What-is-a-Qubit?">
+<h3>What is a Qubit?<a class="headerlink" href="#What-is-a-Qubit?" title="Link to this heading"></a></h3>
+<p>At the heart of quantum computing lies the concept of the <strong>quantum bit</strong>, or <strong>qubit</strong>. Unlike a classical bit, which takes on a value of either <code class="docutils literal notranslate"><span class="pre">0</span></code> or <code class="docutils literal notranslate"><span class="pre">1</span></code>, a qubit can exist in a <strong>superposition</strong> of both states simultaneously. This property allows quantum computers to process information in fundamentally different and often more powerful ways than classical systems.</p>
+<p>Mathematically, a qubit is described as a unit vector in a two-dimensional complex Hilbert space. Its general state can be written as:</p>
+<div class="math notranslate nohighlight">
+\[\vert \psi \rangle = \alpha \vert 0 \rangle + \beta \vert 1 \rangle,\]</div>
+<p>where <span class="math notranslate nohighlight">\(\alpha, \beta \in \mathbb{C}\)</span> and must satisfy the <strong>normalization condition</strong>:</p>
+<div class="math notranslate nohighlight">
+\[|\alpha|^2 + |\beta|^2 = 1.\]</div>
+<p>Here:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(\vert 0 \rangle\)</span> and <span class="math notranslate nohighlight">\(\vert 1 \rangle\)</span> are the computational basis states,</p></li>
+<li><p><span class="math notranslate nohighlight">\(\alpha\)</span> and <span class="math notranslate nohighlight">\(\beta\)</span> are complex probability amplitudes,</p></li>
+<li><p>and <span class="math notranslate nohighlight">\(\vert \psi \rangle\)</span> is said to be in a <strong>superposition</strong> of <span class="math notranslate nohighlight">\(\vert 0 \rangle\)</span> and <span class="math notranslate nohighlight">\(\vert 1 \rangle\)</span>.</p></li>
+</ul>
+<p>When a measurement is performed in the computational basis, the qubit collapses to one of the basis states with probabilities:</p>
+<div class="math notranslate nohighlight">
+\[P(0) = |\alpha|^2, \quad P(1) = |\beta|^2.\]</div>
+<p>To conveniently calculate inner products and probabilities, we also define the <strong>bra</strong> (the Hermitian conjugate of a ket) as:</p>
+<div class="math notranslate nohighlight">
+\[\langle \psi \vert = \alpha^* \langle 0 \vert + \beta^* \langle 1 \vert,\]</div>
+<p>where <span class="math notranslate nohighlight">\(\alpha^*\)</span> and <span class="math notranslate nohighlight">\(\beta^*\)</span> are the complex conjugates of <span class="math notranslate nohighlight">\(\alpha\)</span> and <span class="math notranslate nohighlight">\(\beta\)</span>. The inner product (or norm) of the state is then:</p>
+<div class="math notranslate nohighlight">
+\[\langle \psi \vert \psi \rangle = |\alpha|^2 + |\beta|^2 = 1,\]</div>
+<p>which confirms the normalization of the quantum state.</p>
+<blockquote>
+<div><p>This formalism is part of <strong>Dirac notation</strong>, a standard language for describing quantum states and operations.</p>
+</div></blockquote>
+</section>
+<section id="More-Qubits">
+<h3>More Qubits<a class="headerlink" href="#More-Qubits" title="Link to this heading"></a></h3>
+<p>When working with multiple qubits, the state of the overall system is represented by the <strong>tensor product</strong> of the individual qubit states. For example, the state of a two-qubit system can be written as:</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\begin{align}
+\vert \psi \rangle &amp;= c_1 \vert 0 \rangle_1 \otimes \vert 0 \rangle_2 + c_2 \vert 0 \rangle_1 \otimes \vert 1 \rangle_2 \\
+&amp;\quad + c_3 \vert 1 \rangle_1 \otimes \vert 0 \rangle_2 + c_4 \vert 1 \rangle_1 \otimes \vert 1 \rangle_2 \\
+&amp;= c_1 \vert 00 \rangle + c_2 \vert 01 \rangle + c_3 \vert 10 \rangle + c_4 \vert 11 \rangle,
+\end{align}\end{split}\]</div>
+<p>where <span class="math notranslate nohighlight">\(c_1, c_2, c_3, c_4 \in \mathbb{C}\)</span> are complex coefficients satisfying the normalization condition:</p>
+<div class="math notranslate nohighlight">
+\[|c_1|^2 + |c_2|^2 + |c_3|^2 + |c_4|^2 = 1.\]</div>
+<p>In many cases, a multi-qubit state can be <strong>separated</strong> into a product of individual single-qubit states:</p>
+<div class="math notranslate nohighlight">
+\[\vert \psi \rangle = \vert \psi_1 \rangle \otimes \vert \psi_2 \rangle
+= (\alpha_1 \vert 0 \rangle + \beta_1 \vert 1 \rangle) \otimes (\alpha_2 \vert 0 \rangle + \beta_2 \vert 1 \rangle).\]</div>
+<p>However, there exist special quantum states that <strong>cannot</strong> be written as a tensor product of single-qubit states. These are known as <strong>entangled states</strong>.</p>
+<p>A well-known example is the <strong>Bell state</strong>:</p>
+<div class="math notranslate nohighlight">
+\[\vert \Phi^+ \rangle = \frac{1}{\sqrt{2}} (\vert 00 \rangle + \vert 11 \rangle),\]</div>
+<p>which is <strong>entangled</strong> because it cannot be decomposed into individual qubit states. In such cases, measuring one qubit instantaneously determines the outcome of the other, regardless of the physical distance between them—a phenomenon that lies at the heart of quantum nonlocality.</p>
+<blockquote>
+<div><p>Entanglement is a key resource in quantum computing and quantum communication protocols such as quantum teleportation and quantum key distribution.</p>
+</div></blockquote>
+</section>
+<section id="Quantum-Gates-and-Circuits">
+<h3>Quantum Gates and Circuits<a class="headerlink" href="#Quantum-Gates-and-Circuits" title="Link to this heading"></a></h3>
+<p>Quantum gates are the fundamental operations applied to qubits. They are the quantum analogue of classical logic gates and operate through <strong>unitary transformations</strong>, which preserve the norm of the quantum state.</p>
+<p>A unitary matrix <span class="math notranslate nohighlight">\(U\)</span> satisfies <span class="math notranslate nohighlight">\(U^\dagger U = I\)</span>, where <span class="math notranslate nohighlight">\(U^\dagger\)</span> is the conjugate transpose of <span class="math notranslate nohighlight">\(U\)</span>, and <span class="math notranslate nohighlight">\(I\)</span> is the identity matrix. Quantum gates can act on one or more qubits at a time.</p>
+<hr class="docutils" />
+<section id="Common-Single-Qubit-Gates">
+<h4>Common Single-Qubit Gates<a class="headerlink" href="#Common-Single-Qubit-Gates" title="Link to this heading"></a></h4>
+<p>These gates act on a single qubit and are represented by <span class="math notranslate nohighlight">\(2 \times 2\)</span> unitary matrices.</p>
+<ul class="simple">
+<li><p><strong>Pauli-X (NOT) Gate:</strong></p></li>
+</ul>
+<div class="math notranslate nohighlight">
+\[\begin{split}X = \begin{bmatrix} 0 &amp; 1 \\ 1 &amp; 0 \end{bmatrix}, \quad X\vert 0 \rangle = \vert 1 \rangle, \quad X\vert 1 \rangle = \vert 0 \rangle\end{split}\]</div>
+<ul class="simple">
+<li><p><strong>Pauli-Y Gate:</strong></p></li>
+</ul>
+<div class="math notranslate nohighlight">
+\[\begin{split}Y = \begin{bmatrix} 0 &amp; -i \\ i &amp; 0 \end{bmatrix}, \quad Y\vert 0 \rangle = i \vert 1 \rangle, \quad Y\vert 1 \rangle = -i \vert 0 \rangle\end{split}\]</div>
+<ul class="simple">
+<li><p><strong>Pauli-Z Gate:</strong></p></li>
+</ul>
+<div class="math notranslate nohighlight">
+\[\begin{split}Z = \begin{bmatrix} 1 &amp; 0 \\ 0 &amp; -1 \end{bmatrix}, \quad Z\vert 0 \rangle = \vert 0 \rangle, \quad Z\vert 1 \rangle = -\vert 1 \rangle\end{split}\]</div>
+<ul class="simple">
+<li><p><strong>Hadamard (H) Gate:</strong></p></li>
+</ul>
+<div class="math notranslate nohighlight">
+\[\begin{split}H = \frac{1}{\sqrt{2}} \begin{bmatrix} 1 &amp; 1 \\ 1 &amp; -1 \end{bmatrix}, \quad H\vert 0 \rangle = \frac{\vert 0 \rangle + \vert 1 \rangle}{\sqrt{2}}, \quad H\vert 1 \rangle = \frac{\vert 0 \rangle - \vert 1 \rangle}{\sqrt{2}}\end{split}\]</div>
+<ul>
+<li><p><strong>Rotation Gates:</strong></p>
+<p>These gates perform continuous rotations around the Bloch sphere axes.</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\begin{aligned}
+R_x(\theta) &amp;= \cos(\theta/2) I - i \sin(\theta/2) X =
+\begin{bmatrix}
+\cos(\theta/2) &amp; -i\sin(\theta/2) \\
+-i\sin(\theta/2) &amp; \cos(\theta/2)
+\end{bmatrix} \\
+R_y(\theta) &amp;= \cos(\theta/2) I - i \sin(\theta/2) Y \\
+R_z(\theta) &amp;=
+\begin{bmatrix}
+e^{-i\theta/2} &amp; 0 \\
+0 &amp; e^{i\theta/2}
+\end{bmatrix}
+\end{aligned}\end{split}\]</div>
+</li>
+</ul>
+</section>
+<hr class="docutils" />
+<section id="Common-Two-Qubit-Gates">
+<h4>Common Two-Qubit Gates<a class="headerlink" href="#Common-Two-Qubit-Gates" title="Link to this heading"></a></h4>
+<p>Two-qubit gates allow for interaction between qubits and are necessary for creating <strong>entanglement</strong>.</p>
+<ul>
+<li><p><strong>CNOT (CX) Gate:</strong></p>
+<p>A controlled-X gate: flips the target qubit if the control is <span class="math notranslate nohighlight">\(\vert 1 \rangle\)</span>.</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\text{CNOT} =
+\begin{bmatrix}
+1 &amp; 0 &amp; 0 &amp; 0 \\
+0 &amp; 1 &amp; 0 &amp; 0 \\
+0 &amp; 0 &amp; 0 &amp; 1 \\
+0 &amp; 0 &amp; 1 &amp; 0
+\end{bmatrix}\end{split}\]</div>
+</li>
+<li><p><strong>Controlled-Z (CZ) Gate:</strong></p>
+<p>Applies a <span class="math notranslate nohighlight">\(Z\)</span> gate to the target qubit only when the control qubit is <span class="math notranslate nohighlight">\(\vert 1 \rangle\)</span>.</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\text{CZ} =
+\begin{bmatrix}
+1 &amp; 0 &amp; 0 &amp; 0 \\
+0 &amp; 1 &amp; 0 &amp; 0 \\
+0 &amp; 0 &amp; 1 &amp; 0 \\
+0 &amp; 0 &amp; 0 &amp; -1
+\end{bmatrix}\end{split}\]</div>
+</li>
+<li><p><strong>SWAP Gate:</strong></p>
+<p>Swaps the states of two qubits.</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\text{SWAP} =
+\begin{bmatrix}
+1 &amp; 0 &amp; 0 &amp; 0 \\
+0 &amp; 0 &amp; 1 &amp; 0 \\
+0 &amp; 1 &amp; 0 &amp; 0 \\
+0 &amp; 0 &amp; 0 &amp; 1
+\end{bmatrix}\end{split}\]</div>
+</li>
+<li><p><strong>Controlled Phase Gate (CPHASE):</strong></p>
+<p>Applies a phase shift to the target qubit if the control is <span class="math notranslate nohighlight">\(\vert 1 \rangle\)</span>.</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\text{CPHASE}(\phi) =
+\begin{bmatrix}
+1 &amp; 0 &amp; 0 &amp; 0 \\
+0 &amp; 1 &amp; 0 &amp; 0 \\
+0 &amp; 0 &amp; 1 &amp; 0 \\
+0 &amp; 0 &amp; 0 &amp; e^{i\phi}
+\end{bmatrix}\end{split}\]</div>
+</li>
+<li><p><strong>Toffoli Gate (CCX):</strong></p>
+<p>A 3-qubit gate. Flips the third (target) qubit if the first two (controls) are both <span class="math notranslate nohighlight">\(\vert 1 \rangle\)</span>.</p>
+<blockquote>
+<div><p>This is a universal gate for classical logic and can implement NAND.</p>
+</div></blockquote>
+</li>
+</ul>
+<hr class="docutils" />
+<p>Quantum circuits are constructed by applying a sequence of quantum gates to an initial quantum state. Each line in a quantum circuit diagram represents a qubit, and each gate acts on one or more of those lines.</p>
+<p>By combining gates, we can:</p>
+<ul class="simple">
+<li><p>Create superposition and entanglement,</p></li>
+<li><p>Implement quantum algorithms (e.g., Grover’s, Shor’s),</p></li>
+<li><p>Construct <strong>parametrized quantum circuits</strong> for variational quantum algorithms (VQAs) such as QVAF-based models.</p></li>
+</ul>
+<blockquote>
+<div><p>Quantum circuits form the foundation of all practical quantum algorithms and are programmable through frameworks like Qiskit, Pennylane, and Cirq.</p>
+</div></blockquote>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qiskit</span><span class="w"> </span><span class="kn">import</span> <span class="n">QuantumCircuit</span>
+
+<span class="c1"># Create a quantum circuit with 2 qubits</span>
+<span class="n">qc</span> <span class="o">=</span> <span class="n">QuantumCircuit</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+
+<span class="c1"># Apply gates to qubit 0 and qubit 1</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">h</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>           <span class="c1"># Hadamard gate on qubit 0 (creates superposition)</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">x</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>           <span class="c1"># Pauli-X gate (bit-flip) on qubit 0</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">y</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>           <span class="c1"># Pauli-Y gate on qubit 1</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">z</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>           <span class="c1"># Pauli-Z gate on qubit 1</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">rx</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>     <span class="c1"># RX rotation by 0.5 radians on qubit 0</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>     <span class="c1"># RY rotation by 0.5 radians on qubit 1</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">rz</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>     <span class="c1"># RZ rotation by 0.5 radians on qubit 0</span>
+
+<span class="c1"># Entangling gate: CNOT with control qubit 0 and target qubit 1</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">cx</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+<span class="c1"># Draw the circuit using matplotlib</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">draw</span><span class="p">(</span><span class="s2">&quot;mpl&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/intro_qml_5_0.png" src="../_images/intro_qml_5_0.png" />
+</div>
+</div>
+</section>
+</section>
+<section id="Measurement">
+<h3>Measurement<a class="headerlink" href="#Measurement" title="Link to this heading"></a></h3>
+<p><strong>Measurement</strong> in quantum computing refers to the process of extracting classical information from a quantum state. Upon measurement, a qubit <strong>collapses</strong> to one of its basis states, with probabilities determined by its quantum amplitudes.</p>
+<section id="Measurement-as-an-Observable">
+<h4>Measurement as an Observable<a class="headerlink" href="#Measurement-as-an-Observable" title="Link to this heading"></a></h4>
+<p>In quantum mechanics, measurements are associated with <strong>Hermitian operators</strong>, called <strong>observables</strong>. A Hermitian operator <span class="math notranslate nohighlight">\(M\)</span> can be expressed in terms of its eigenvalues <span class="math notranslate nohighlight">\(\lambda_i\)</span> and eigenvectors <span class="math notranslate nohighlight">\(\vert m_i \rangle\)</span> as:</p>
+<div class="math notranslate nohighlight">
+\[M = \sum_i \lambda_i \vert m_i \rangle \langle m_i \vert.\]</div>
+<p>If a quantum system is in state <span class="math notranslate nohighlight">\(\vert \psi \rangle\)</span>, then the probability of obtaining the outcome <span class="math notranslate nohighlight">\(\lambda_i\)</span> (i.e., observing the system in eigenstates <span class="math notranslate nohighlight">\(\vert m_i \rangle\)</span>) is:</p>
+<div class="math notranslate nohighlight">
+\[P(\lambda_i) = |\langle m_i \vert \psi \rangle|^2.\]</div>
+</section>
+<section id="Measurement-as-a-Projection">
+<h4>Measurement as a Projection<a class="headerlink" href="#Measurement-as-a-Projection" title="Link to this heading"></a></h4>
+<p>To compute this probability, we often interpret measurement as a <strong>projection</strong> using the measurement operator <span class="math notranslate nohighlight">\(M_i = \vert m_i \rangle \langle m_i \vert\)</span>. Then:</p>
+<div class="math notranslate nohighlight">
+\[P(\lambda_i) = \langle \psi \vert M_i^\dagger M_i \vert \psi \rangle = \langle \psi \vert M_i \vert \psi \rangle = |\langle m_i \vert \psi \rangle|^2,\]</div>
+<p>where <span class="math notranslate nohighlight">\(M_i^\dagger = M_i\)</span> because <span class="math notranslate nohighlight">\(M_i\)</span> is Hermitian and <span class="math notranslate nohighlight">\(M_i^2 = M_i\)</span> because it’s a projector.</p>
+</section>
+<section id="Measurement-in-the-Computational-Basis">
+<h4>Measurement in the Computational Basis<a class="headerlink" href="#Measurement-in-the-Computational-Basis" title="Link to this heading"></a></h4>
+<p>In practice, quantum computers typically measure qubits in the <strong>computational basis</strong>, which corresponds to the eigenstates of the <strong>Pauli-Z</strong> operator:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(\vert 0 \rangle\)</span> with eigenvalue <span class="math notranslate nohighlight">\(+1\)</span>,</p></li>
+<li><p><span class="math notranslate nohighlight">\(\vert 1 \rangle\)</span> with eigenvalue <span class="math notranslate nohighlight">\(-1\)</span>.</p></li>
+</ul>
+<p>Given a single-qubit state:</p>
+<div class="math notranslate nohighlight">
+\[\vert \psi \rangle = \alpha \vert 0 \rangle + \beta \vert 1 \rangle,\]</div>
+<p>the expected value of the Pauli-Z measurement is:</p>
+<div class="math notranslate nohighlight">
+\[\langle Z \rangle = \langle \psi \vert Z \vert \psi \rangle = |\alpha|^2 - |\beta|^2.\]</div>
+<p>This expectation value is useful in variational quantum algorithms, where observables are evaluated to guide optimization.</p>
+<blockquote>
+<div><p>⚠️ <strong>Note:</strong> Measurement irreversibly collapses the quantum state. Once measured, the quantum system is no longer in a superposition but in the observed basis state.</p>
+</div></blockquote>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">qc</span> <span class="o">=</span> <span class="n">QuantumCircuit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">h</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">measure_all</span><span class="p">()</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">draw</span><span class="p">(</span><span class="s2">&quot;mpl&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/intro_qml_7_0.png" src="../_images/intro_qml_7_0.png" />
+</div>
+</div>
+</section>
+</section>
+</section>
+<section id="Variational-Quantum-Algorithms-(VQA)">
+<h2>Variational Quantum Algorithms (VQA)<a class="headerlink" href="#Variational-Quantum-Algorithms-(VQA)" title="Link to this heading"></a></h2>
+<p>Variational Quantum Algorithms (VQAs) are a class of <strong>hybrid quantum-classical algorithms</strong> that combine the power of quantum processors with classical optimization techniques. They have shown great promise for tackling optimization problems, quantum simulation, and machine learning tasks.</p>
+<p>The core idea behind VQAs is to use a <strong>parameterized quantum circuit</strong> (also called an <em>ansatz</em>) to prepare quantum states, and iteratively optimize the circuit parameters using classical algorithms.</p>
+<p>The typical workflow of a VQA involves the following steps:</p>
+<ol class="arabic">
+<li><div class="line-block">
+<div class="line"><strong>Data Encoding:</strong></div>
+<div class="line">Classical data is encoded into quantum states through specially designed quantum circuits. Efficient encoding is essential in quantum machine learning to represent complex classical data in a quantum system.</div>
+</div>
+</li>
+<li><div class="line-block">
+<div class="line"><strong>Variational Circuit (Parameterized Unitaries):</strong></div>
+<div class="line">A quantum circuit composed of gates with adjustable parameters (e.g., rotation angles) is applied. This circuit transforms the initial quantum state into a parameter-dependent state that captures features of the data or the problem.</div>
+</div>
+</li>
+<li><div class="line-block">
+<div class="line"><strong>Measurement:</strong></div>
+<div class="line">The quantum state is measured to extract classical information. Measurement outcomes are used to compute a <strong>cost function</strong> (or objective function), which quantifies how well the current parameters solve the problem.</div>
+</div>
+</li>
+<li><div class="line-block">
+<div class="line"><strong>Classical Optimization:</strong></div>
+<div class="line">Classical optimization algorithms (such as gradient descent, COBYLA, or SPSA) update the circuit parameters to minimize or maximize the cost function. This feedback loop continues until convergence or a stopping criterion is met.</div>
+</div>
+</li>
+</ol>
+<hr class="docutils" />
+<p>VQAs are flexible and can be tailored for various applications such as:</p>
+<ul class="simple">
+<li><p><strong>Quantum Approximate Optimization Algorithm (QAOA)</strong> for combinatorial optimization</p></li>
+<li><p><strong>Variational Quantum Eigensolver (VQE)</strong> for estimating ground-state energies in chemistry</p></li>
+<li><p><strong>Quantum Neural Networks</strong> for machine learning</p></li>
+</ul>
+<blockquote>
+<div><p>The hybrid nature of VQAs makes them particularly suitable for near-term noisy quantum devices, leveraging classical computation to mitigate hardware limitations.</p>
+</div></blockquote>
+<section id="Quantum-Kernel-Methods">
+<h3>Quantum Kernel Methods<a class="headerlink" href="#Quantum-Kernel-Methods" title="Link to this heading"></a></h3>
+<p><strong>Quantum Kernel Methods</strong> are quantum machine learning algorithms inspired by classical kernel methods such as Support Vector Machines (SVMs). They rely on the <strong>quantum feature map</strong> — a parameterized quantum circuit that embeds classical input data into a high-dimensional Hilbert space.</p>
+<p>The key idea is to compute the <strong>kernel function</strong> between data points as the <strong>inner product of quantum states</strong>:</p>
+<div class="math notranslate nohighlight">
+\[k(x, x') = |\langle \phi(x) \vert \phi(x') \rangle|^2\]</div>
+<p>where <span class="math notranslate nohighlight">\(\vert \phi(x) \rangle\)</span> is the quantum state that encodes the classical input <span class="math notranslate nohighlight">\(x\)</span>.</p>
+<p>Quantum kernel methods offer potential <strong>quantum advantage</strong> by exploiting Hilbert spaces too large to simulate classically, enabling powerful nonlinear classification with linear algorithms.</p>
+<hr class="docutils" />
+<section id="Workflow-of-a-Quantum-Kernel-Method">
+<h4>Workflow of a Quantum Kernel Method<a class="headerlink" href="#Workflow-of-a-Quantum-Kernel-Method" title="Link to this heading"></a></h4>
+<ol class="arabic simple">
+<li><p><strong>Feature Map (Encoding Circuit):</strong> Encode classical data <span class="math notranslate nohighlight">\(x\)</span> into a quantum state <span class="math notranslate nohighlight">\(\vert \phi(x) \rangle\)</span> using a quantum circuit.</p></li>
+<li><p><strong>Compute Kernel Matrix:</strong> For a dataset <span class="math notranslate nohighlight">\(\{x_i\}\)</span>, compute <span class="math notranslate nohighlight">\(k(x_i, x_j)\)</span> using quantum overlaps between states.</p></li>
+<li><p><strong>Classical Algorithm:</strong> Use a classical kernel method (e.g., SVM) with the quantum kernel matrix for classification or regression.</p></li>
+</ol>
+<img alt="quantum kernel method" src="../_images/qkm.png" />
+</section>
+</section>
+<section id="Data-Re-Uploading-Circuits">
+<h3>Data Re-Uploading Circuits<a class="headerlink" href="#Data-Re-Uploading-Circuits" title="Link to this heading"></a></h3>
+<p><strong>Data re-uploading</strong> is a strategy used in parameterized quantum circuits where the input data is encoded <strong>multiple times</strong> throughout the layers of a variational quantum circuit. This technique enhances the expressivity of quantum models and is especially useful in quantum neural networks (QNNs).</p>
+<p>In contrast to basic quantum models that encode the data once at the beginning, <strong>re-uploading</strong> introduces classical input features at multiple points in the circuit. This allows the circuit to model more complex, nonlinear functions—similar to the depth and recurrence seen in classical neural networks.</p>
+<hr class="docutils" />
+<section id="Why-Re-Upload-Data?">
+<h4>Why Re-Upload Data?<a class="headerlink" href="#Why-Re-Upload-Data?" title="Link to this heading"></a></h4>
+<p>Quantum circuits are often constrained in depth due to hardware noise and decoherence. Re-uploading helps:</p>
+<ul class="simple">
+<li><p>Compensate for shallow circuits by increasing expressivity.</p></li>
+<li><p>Introduce nonlinearity through the interplay of data and trainable parameters.</p></li>
+<li><p>Enable better generalization and function approximation in quantum models.</p></li>
+</ul>
+</section>
+<hr class="docutils" />
+<section id="General-Structure">
+<h4>General Structure<a class="headerlink" href="#General-Structure" title="Link to this heading"></a></h4>
+<p>A typical data re-uploading circuit follows this pattern:</p>
+<ol class="arabic simple">
+<li><p>Apply data-encoding gates (e.g., <span class="math notranslate nohighlight">\(R_x(x), R_y(x), R_z(x)\)</span>).</p></li>
+<li><p>Apply trainable gates (e.g., <span class="math notranslate nohighlight">\(R_y(\theta), R_z(\theta)\)</span>).</p></li>
+<li><p>Repeat steps 1 and 2 for multiple layers.</p></li>
+</ol>
+<img alt="data reuploading circuit" src="../_images/drc.png" />
+<p>Further Reading</p>
+<p>To go further in our work, it suffices to understand that <strong>data re-uploading circuits</strong> enhance the expressivity of quantum models by repeatedly encoding classical inputs throughout the layers of a variational quantum circuit. This mechanism is fundamental to our design of <strong>Quantum Variational Activation Functions (QVAFs)</strong>, such as <strong>DARUAN</strong>, and underpins the architecture of <strong>Quantum-inspired Kolmogorov–Arnold Networks (QKANs)</strong>.</p>
+<p>If you’re interested in deepening your understanding of the theory and techniques that underpin our approach, we recommend the following resources:</p>
+<ul>
+<li><div class="line-block">
+<div class="line"><em>Quantum Computation and Quantum Information</em></div>
+<div class="line">— Michael A. Nielsen and Isaac L. Chuang</div>
+<div class="line"><em>(The definitive textbook on quantum computing theory.)</em></div>
+</div>
+</li>
+<li><div class="line-block">
+<div class="line"><a class="reference external" href="https://qml-tutorial.github.io">Quantum Machine Learning Tutorial</a></div>
+<div class="line">— Yuxuan Du et al.</div>
+</div>
+</li>
+<li><div class="line-block">
+<div class="line"><a class="reference external" href="https://pennylane.ai/qml/demos/tutorial_expressivity_fourier_series">Quantum Models as Fourier Series</a></div>
+<div class="line">— Maria Schuld and Johannes Jakob Meyer</div>
+<div class="line"><em>(A visual and mathematical demonstration of how data re-uploading circuits approximate functions via Fourier expansions.)</em></div>
+</div>
+</li>
+</ul>
+</section>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../intro.html" class="btn btn-neutral float-left" title="Introduction" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="kan.html" class="btn btn-neutral float-right" title="KAN" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,240 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KAN &mdash; QKAN 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="First Glance at QKAN and DARUAN" href="qkan.html" />
+    <link rel="prev" title="QML 101" href="qml.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../intro.html">Introduction</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="qml.html">QML 101</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">KAN</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Kolmogorov-Arnold-Representation-Theorem-(KART)">Kolmogorov-Arnold Representation Theorem (KART)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Kolmogorov-Arnold-Network-(KAN)">Kolmogorov-Arnold Network (KAN)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Training-KAN">Training KAN</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="qkan.html">First Glance at QKAN and DARUAN</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples &amp; Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../intro.html">Introduction</a></li>
+      <li class="breadcrumb-item active">KAN</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/intro/kan.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="KAN">
+<h1>KAN<a class="headerlink" href="#KAN" title="Link to this heading"></a></h1>
+<section id="Kolmogorov-Arnold-Representation-Theorem-(KART)">
+<h2>Kolmogorov-Arnold Representation Theorem (KART)<a class="headerlink" href="#Kolmogorov-Arnold-Representation-Theorem-(KART)" title="Link to this heading"></a></h2>
+<p>KART promises that any multivariate continuous function <span class="math notranslate nohighlight">\(f(x_1, \ldots, x_N)\)</span> can be represented as a finite composition of univariate functions and addition:</p>
+<div class="math notranslate nohighlight">
+\[f(\boldsymbol{x}) = \sum_{q=1}^{2N+1} \Phi_q \left( \sum_{p=1}^{N} \phi_{q,p}(x_p) \right),\]</div>
+<p>where <span class="math notranslate nohighlight">\(\phi_{q,p} : [0,1] \rightarrow \mathbb{R}\)</span> and <span class="math notranslate nohighlight">\(\Phi_q : \mathbb{R} \rightarrow \mathbb{R}\)</span> are continuous functions. Though KART provides theoretical guarantees of universal approximation, the inner and outer functions can be non-smooth or hard to learn in practice. We need to find a better way to approximate these functions with smooth and learnable ones.</p>
+</section>
+<section id="Kolmogorov-Arnold-Network-(KAN)">
+<h2>Kolmogorov-Arnold Network (KAN)<a class="headerlink" href="#Kolmogorov-Arnold-Network-(KAN)" title="Link to this heading"></a></h2>
+<p>Liu et al. introduced KANs as a practical realization of the KART, generalizing it to deep and wide architectures. Each variational activation function in KANs is modeled as a learnable function parameterized by B-splines, which are piecewise polynomial functions capable of approximating any continuous function with arbitrary precision.</p>
+<p>Formally, a KAN layer maps the output of the <span class="math notranslate nohighlight">\(\ell\)</span>-th layer to the <span class="math notranslate nohighlight">\((\ell+1)\)</span>-th layer via:</p>
+<div class="math notranslate nohighlight">
+\[x_{\ell+1,j} = \sum_{i=1}^{n_\ell} \phi_{\ell,j,i}(x_{\ell,i}),\]</div>
+<p>where <span class="math notranslate nohighlight">\(\phi_{\ell,j,i}\)</span> is the learnable univariate variational activation function connecting input node <span class="math notranslate nohighlight">\(i\)</span> to output node <span class="math notranslate nohighlight">\(j\)</span>. This can be expressed in matrix notation as:</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\begin{align}
+  \boldsymbol{x}_{l+1} &amp; = \Phi_\ell(\boldsymbol{x}_\ell),                                                                            \\
+  \Phi_\ell       &amp; = \begin{pmatrix}
+                     \phi_{\ell,1,1}(\cdot)       &amp; \phi_{\ell,1,2}(\cdot)       &amp; \cdots &amp; \phi_{\ell,1,n_\ell}(\cdot)       \\
+                     \phi_{\ell,2,1}(\cdot)       &amp; \phi_{\ell,2,2}(\cdot)       &amp; \cdots &amp; \phi_{\ell,2,n_\ell}(\cdot)       \\
+                     \vdots                    &amp; \vdots                    &amp; \ddots &amp; \vdots                      \\
+                     \phi_{\ell,n_{\ell+1},1}(\cdot) &amp; \phi_{\ell,n_{\ell+1},2}(\cdot) &amp; \cdots &amp; \phi_{\ell,n_{\ell+1},n_\ell}(\cdot)
+                   \end{pmatrix}.
+\end{align}\end{split}\]</div>
+<p>The KAN is a composition of <span class="math notranslate nohighlight">\(L\)</span> KAN layers: given input <span class="math notranslate nohighlight">\(\boldsymbol{x}\)</span>, we’ll have KAN output as:</p>
+<div class="math notranslate nohighlight">
+\[\text{KAN}(\boldsymbol{x}) = \Phi_{L-1}\circ\Phi_{L-2}\circ\cdots\circ\Phi_1\circ\Phi_0(\boldsymbol{x}).\]</div>
+<p>By contrast, a multilayer perceptron (MLP) is given by linear layers <span class="math notranslate nohighlight">\(W\)</span> and nonlinear activation functions <span class="math notranslate nohighlight">\(\sigma\)</span> as:</p>
+<div class="math notranslate nohighlight">
+\[\text{MLP}(\boldsymbol{x}) = \sigma(W_{L-1}\circ W_{L-2}\circ\cdots\circ W_1\circ W_0)(\boldsymbol{x}).\]</div>
+<p>The following figure illustrates the KAN architecture, where each node (neuron scheme) in the network represents a variational activation function <span class="math notranslate nohighlight">\(\phi_{\ell,j,i}\)</span> that connects inputs to outputs across layers. <img alt="KAN" src="../_images/kan.png" /></p>
+</section>
+<section id="Training-KAN">
+<h2>Training KAN<a class="headerlink" href="#Training-KAN" title="Link to this heading"></a></h2>
+<p>Here is a simple example of how to train a KAN from QKAN package:</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">qkan</span><span class="w"> </span><span class="kn">import</span> <span class="n">KAN</span><span class="p">,</span> <span class="n">create_dataset</span>
+
+<span class="n">device</span> <span class="o">=</span> <span class="s2">&quot;cuda&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span>
+
+<span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mi">20</span> <span class="o">*</span> <span class="n">x</span><span class="p">)</span> <span class="o">/</span> <span class="n">x</span> <span class="o">/</span> <span class="mi">20</span>  <span class="c1"># J_0(20x)</span>
+<span class="n">dataset</span> <span class="o">=</span> <span class="n">create_dataset</span><span class="p">(</span>
+    <span class="n">f</span><span class="p">,</span> <span class="n">n_var</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">ranges</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">train_num</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">test_num</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span>
+<span class="p">)</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">KAN</span><span class="p">(</span>
+    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="n">grid_size</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+    <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-1</span><span class="p">)</span>
+<span class="n">loss_fn</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">MSELoss</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">steps</span> <span class="o">=</span> <span class="mi">100</span>
+<span class="n">pbar</span> <span class="o">=</span> <span class="n">tqdm</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">),</span> <span class="n">ncols</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+
+<span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">pbar</span><span class="p">:</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">forward</span><span class="p">(</span><span class="n">dataset</span><span class="p">[</span><span class="s2">&quot;train_input&quot;</span><span class="p">])</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">pred</span><span class="p">,</span> <span class="n">dataset</span><span class="p">[</span><span class="s2">&quot;train_label&quot;</span><span class="p">])</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+    <span class="n">pbar</span><span class="o">.</span><span class="n">set_description</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;loss: </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">forward</span><span class="p">(</span><span class="n">dataset</span><span class="p">[</span><span class="s2">&quot;test_input&quot;</span><span class="p">])</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">pred</span><span class="p">,</span> <span class="n">dataset</span><span class="p">[</span><span class="s2">&quot;test_label&quot;</span><span class="p">])</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Test loss: </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+loss: 0.0031: 100%|██████████████████████████████████████████████| 100/100 [00:00&lt;00:00, 735.03it/s]
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Test loss: 0.0032
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+
+</pre></div></div>
+</div>
+<p>Further Reading</p>
+<p>To understand KANs in more detail, the reader can refer to the original paper: “<a class="reference external" href="https://arxiv.org/abs/2404.19756">KAN: Kolmogorov-Arnold Networks</a>”.</p>
+<p>And <code class="docutils literal notranslate"><span class="pre">pykan</span></code> documentation: <a class="reference external" href="https://kindxiaoming.github.io/pykan/index.html">https://kindxiaoming.github.io/pykan/index.html</a></p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="qml.html" class="btn btn-neutral float-left" title="QML 101" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="qkan.html" class="btn btn-neutral float-right" title="First Glance at QKAN and DARUAN" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
