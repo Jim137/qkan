@@ -141,6 +141,30 @@ def torch_exact_solver(
         psi.ry(theta[:, :, reps, 1])
         return psi.measure_z()  # shape: (batch_size, out_dim, in_dim)
 
+    def rpz_enocding(theta: torch.Tensor):
+        """
+        Args
+        ----
+            theta : torch.Tensor
+                shape: (out_dim, n_group, reps, 2)
+        """
+        psi = StateVector(
+            x.shape[0],
+            theta.shape[0],
+            theta.shape[1],
+            device=device,
+        )
+        psi.h()
+        for l in range(reps):
+            psi.ry(theta[:, :, l, 0])
+            psi.state = torch.einsum(
+                "mnboi,boin->boim",
+                TorchGates.rz_gate(encoded_x[l]),
+                psi.state,
+            )
+        psi.ry(theta[:, :, reps, 0])
+        return psi.measure_z()  # shape: (batch_size, out_dim, in_dim)
+
     def px_encoding(theta: torch.Tensor):
         """
         Args
@@ -184,6 +208,8 @@ def torch_exact_solver(
 
     if ansatz == "pz_encoding":
         circuit = pz_encoding
+    elif ansatz == "rpz_encoding":
+        circuit = rpz_enocding
     elif ansatz == "px_encoding":
         circuit = px_encoding
     elif callable(ansatz):

@@ -46,6 +46,8 @@ class QKANLayer(nn.Module):
             Device to use
         solver : Union[Literal["qml", "exact"], Callable]
             Solver to use
+        ansatz : Union[str, Callable]
+            Ansatz to use, "pz_encoding", "px_encoding", "rpz_encoding" or custom
         qml_device : str
             PennyLane device to use
         theta : nn.Parameter
@@ -86,6 +88,7 @@ class QKANLayer(nn.Module):
         ansatz: Union[str, Callable] = "pz_encoding",
         theta_size: Optional[list[int]] = None,
         preact_trainable: bool = False,
+        preact_init: bool = False,
         postact_weight_trainable: bool = False,
         postact_bias_trainable: bool = False,
         base_activation=torch.nn.SiLU(),
@@ -129,6 +132,15 @@ class QKANLayer(nn.Module):
             self.theta = nn.Parameter(
                 nn.init.xavier_normal_(torch.empty(*group, reps + 1, 2, device=device))
             )
+        elif ansatz == "rpz_encoding":
+            if not preact_trainable:
+                warnings.warn(
+                    "Reduced pz encoding requires preact_trainable=True, set automatically."
+                )
+                preact_trainable = True
+            self.theta = nn.Parameter(
+                nn.init.xavier_normal_(torch.empty(*group, reps + 1, 1, device=device))
+            )
         elif ansatz == "px_encoding":
             self.theta = nn.Parameter(
                 nn.init.xavier_normal_(torch.empty(*group, reps + 1, 1, device=device))
@@ -147,14 +159,25 @@ class QKANLayer(nn.Module):
             )
 
         self.preact_trainable = preact_trainable
-        self.preacts_weight = nn.Parameter(
-            torch.ones(out_dim, in_dim, reps, device=device),
-            requires_grad=preact_trainable,
-        )
-        self.preacts_bias = nn.Parameter(
-            torch.zeros(out_dim, in_dim, reps, device=device),
-            requires_grad=preact_trainable,
-        )
+        if not preact_init:
+            self.preacts_weight = nn.Parameter(
+                torch.ones(*group, reps, device=device),
+                requires_grad=preact_trainable,
+            )
+            self.preacts_bias = nn.Parameter(
+                torch.zeros(*group, reps, device=device),
+                requires_grad=preact_trainable,
+            )
+        else:
+            self.preacts_weight = nn.Parameter(
+                nn.init.xavier_normal_(torch.empty(*group, reps, device=device)),
+                requires_grad=preact_trainable,
+            )
+            self.preacts_bias = nn.Parameter(
+                nn.init.xavier_normal_(torch.empty(*group, reps, device=device)),
+                requires_grad=preact_trainable,
+            )
+        self.preact_init = preact_init
 
         self.postact_weight_trainable = postact_weight_trainable
         self.postact_weights = nn.Parameter(
@@ -170,8 +193,20 @@ class QKANLayer(nn.Module):
             torch.ones(out_dim, in_dim, device=device), requires_grad=False
         )
         if is_batchnorm:
-            self.bn = nn.BatchNorm1d(in_dim)
+            self.bn = nn.BatchNorm1d(in_dim, device=device)
         self._x0: Optional[torch.Tensor] = None
+
+    def to(self, device):
+        """
+        Move the layer to the specified device.
+
+        Args
+        ----
+            device : str | torch.device
+                Device to move the layer to, default: "cpu"
+        """
+        super(QKANLayer, self).to(device)
+        self.device = device
 
     @property
     def param_size(self):
@@ -413,6 +448,7 @@ class QKAN(nn.Module):
         ansatz: Union[str, Callable] = "pz_encoding",
         norm_out: int = 0,
         preact_trainable: bool = False,
+        preact_init: bool = False,
         postact_weight_trainable: bool = False,
         postact_bias_trainable: bool = False,
         base_activation=nn.SiLU(),
@@ -442,6 +478,8 @@ class QKAN(nn.Module):
                 Device to use, default: "cpu"
             solver : Union[Literal["qml", "exact"], Callable]
                 Solver to use, default: "exact"
+            ansatz : Union[str, Callable]
+                Ansatz to use, "pz_encoding", "px_encoding", "rpz_encoding" or custom
             qml_device : str
                 PennyLane device to use, default: "default.qubit"
             ansatz : str | Callable
@@ -479,6 +517,7 @@ class QKAN(nn.Module):
         self.postact_weight_trainable = postact_weight_trainable
         self.postact_bias_trainable = postact_bias_trainable
         self.preact_trainable = preact_trainable
+        self.preact_init = preact_init
         self.base_activation = base_activation
         self.ba_trainable = ba_trainable
         self.save_act = save_act
@@ -497,6 +536,7 @@ class QKAN(nn.Module):
                     qml_device=self.qml_device,
                     ansatz=self.ansatz,
                     preact_trainable=preact_trainable,
+                    preact_init=preact_init,
                     postact_weight_trainable=postact_weight_trainable,
                     postact_bias_trainable=postact_bias_trainable,
                     base_activation=base_activation,
@@ -514,6 +554,20 @@ class QKAN(nn.Module):
             self.layers.append(nn.SiLU())
             self.layers.append(nn.Linear(hidden, width[-1], device=self.device))
         self.input_id: Optional[torch.Tensor] = None
+
+    def to(self, device):
+        """
+        Move the model to the specified device.
+
+        Args
+        ----
+            device : str | torch.device
+                Device to move the model to, default: "cpu"
+        """
+        super(QKAN, self).to(device)
+        self.device = device
+        for layer in self.layers:
+            layer.to(device)
 
     @property
     def param_size(self):
