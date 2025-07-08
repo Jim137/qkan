@@ -89,6 +89,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.remove_edge"><code class="docutils literal notranslate"><span class="pre">QKAN.remove_edge()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.remove_node"><code class="docutils literal notranslate"><span class="pre">QKAN.remove_node()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.save_ckpt"><code class="docutils literal notranslate"><span class="pre">QKAN.save_ckpt()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.to"><code class="docutils literal notranslate"><span class="pre">QKAN.to()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.train_"><code class="docutils literal notranslate"><span class="pre">QKAN.train_()</span></code></a></li>
 </ul>
 </li>
@@ -117,6 +118,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.get_subset"><code class="docutils literal notranslate"><span class="pre">QKANLayer.get_subset()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.param_size"><code class="docutils literal notranslate"><span class="pre">QKANLayer.param_size</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.reset_parameters"><code class="docutils literal notranslate"><span class="pre">QKANLayer.reset_parameters()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.to"><code class="docutils literal notranslate"><span class="pre">QKANLayer.to()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.x0"><code class="docutils literal notranslate"><span class="pre">QKANLayer.x0</span></code></a></li>
 </ul>
 </li>
@@ -712,6 +714,17 @@ With “manual”, active_neurons_id should be passed in.</p></li>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKAN.to">
+<span class="sig-name descname"><span class="pre">to</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.to"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.to" title="Link to this definition"></a></dt>
+<dd><p>Move the model to the specified device.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>device</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><em>torch.device</em>) – Device to move the model to, default: “cpu”</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="qkan.QKAN.train_">
 <span class="sig-name descname"><span class="pre">train_</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataset</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">optimizer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">closure</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scheduler</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">loss_fn</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_l1</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_entropy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_coef</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_coefdiff</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reg_metric</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'edge_forward_dr_n'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.train_"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.train_" title="Link to this definition"></a></dt>
 <dd><p>Train the model</p>
@@ -1006,6 +1019,17 @@ registered hooks while the latter silently ignores them.</p>
 <dt class="sig sig-object py" id="qkan.QKANLayer.reset_parameters">
 <span class="sig-name descname"><span class="pre">reset_parameters</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer.reset_parameters"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer.reset_parameters" title="Link to this definition"></a></dt>
 <dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKANLayer.to">
+<span class="sig-name descname"><span class="pre">to</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer.to"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer.to" title="Link to this definition"></a></dt>
+<dd><p>Move the layer to the specified device.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>device</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><em>torch.device</em>) – Device to move the layer to, default: “cpu”</p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="qkan.QKANLayer.x0">
