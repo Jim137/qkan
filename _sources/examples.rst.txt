@@ -10,3 +10,4 @@ Examples & Applications
     examples/mnist.ipynb
     examples/hqkan_cifar100.ipynb
     examples/gqkan_gpt.ipynb
+    examples/qkan2kan.ipynb
