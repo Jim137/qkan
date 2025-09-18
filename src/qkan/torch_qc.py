@@ -41,13 +41,13 @@ class TorchGates:
     i_gate = identity_gate  # noqa: F811
 
     @staticmethod
-    def rx_gate(theta: torch.Tensor) -> torch.Tensor:
+    def rx_gate(theta: torch.Tensor, dtype=torch.complex64) -> torch.Tensor:
         """
         theta: torch.Tensor, shape: (out_dim, in_dim)
 
         return: torch.Tensor, shape: (2, 2, out_dim, in_dim)
         """
-        cos = torch.cos(theta / 2).to(torch.complex64)
+        cos = torch.cos(theta / 2).to(dtype)
         jsin = 1j * torch.sin(-theta / 2)
         return torch.stack(
             [
@@ -57,7 +57,7 @@ class TorchGates:
         )
 
     @staticmethod
-    def ry_gate(theta: torch.Tensor) -> torch.Tensor:
+    def ry_gate(theta: torch.Tensor, dtype=torch.complex64) -> torch.Tensor:
         """
         theta: torch.Tensor, shape: (out_dim, in_dim)
 
@@ -70,10 +70,10 @@ class TorchGates:
                 torch.stack([cos, -sin]),
                 torch.stack([sin, cos]),
             ],
-        ).to(torch.complex64)
+        ).to(dtype)
 
     @staticmethod
-    def rz_gate(theta: torch.Tensor) -> torch.Tensor:
+    def rz_gate(theta: torch.Tensor, dtype=torch.complex64) -> torch.Tensor:
         """
         theta: torch.Tensor, shape: (out_dim, in_dim)
 
@@ -86,10 +86,10 @@ class TorchGates:
                 torch.stack([exp, zero]),
                 torch.stack([zero, torch.conj(exp)]),
             ],
-        )
+        ).to(dtype)
 
     @staticmethod
-    def h_gate(shape, device) -> torch.Tensor:
+    def h_gate(shape, device, dtype=torch.complex64) -> torch.Tensor:
         """
         shape: (out_dim, in_dim)
 
@@ -101,7 +101,7 @@ class TorchGates:
                 torch.stack([inv_sqrt2, inv_sqrt2]),
                 torch.stack([inv_sqrt2, -inv_sqrt2]),
             ],
-        ).to(torch.complex64)
+        ).to(dtype)
 
     @staticmethod
     def s_gate(shape) -> torch.Tensor:
@@ -118,7 +118,7 @@ class TorchGates:
         )
 
     @staticmethod
-    def acrx_gate(theta: torch.Tensor) -> torch.Tensor:
+    def acrx_gate(theta: torch.Tensor, dtype=torch.complex64) -> torch.Tensor:
         """
         Complex extension of RX(acos(theta)) gate.
         *Note: Physically unrealizable.*
@@ -137,10 +137,10 @@ class TorchGates:
                 torch.stack([theta, diag]),
                 torch.stack([diag, theta]),
             ],
-        ).to(torch.complex64)
+        ).to(dtype)
 
     @staticmethod
-    def tensor_product(gate, another_gate):
+    def tensor_product(gate, another_gate, dtype=torch.complex64):
         """
         Compute tensor product of two gates.
 
@@ -158,7 +158,7 @@ class TorchGates:
             4,
             4,
             gate.shape[2],
-            dtype=torch.complex64,
+            dtype=dtype,
             device=gate.device,
         )
         for i in range(out.shape[2]):
@@ -166,7 +166,7 @@ class TorchGates:
         return out.view(4, 4, *shape)
 
     @staticmethod
-    def cx_gate(shape, control: int, device) -> torch.Tensor:
+    def cx_gate(shape, control: int, device, dtype=torch.complex64) -> torch.Tensor:
         """
         2-qubits CX (CNOT) gate.
 
@@ -177,7 +177,7 @@ class TorchGates:
         """
         assert control in (0, 1), "Control qubit must be 0 or 1."
 
-        gate = torch.zeros(4, 4, *shape, dtype=torch.complex64, device=device)
+        gate = torch.zeros(4, 4, *shape, dtype=dtype, device=device)
         gate[0, 0] = 1.0
         gate[1, 1] = 1.0
         gate[2, 3] = 1.0
@@ -187,7 +187,7 @@ class TorchGates:
         return gate
 
     @staticmethod
-    def cz_gate(shape, device) -> torch.Tensor:
+    def cz_gate(shape, device, dtype=torch.complex64) -> torch.Tensor:
         """
         2-qubits CZ gate.
 
@@ -197,7 +197,7 @@ class TorchGates:
         return: torch.Tensor, shape: (4, 4, out_dim, in_dim)
         """
 
-        gate = torch.zeros(4, 4, *shape, dtype=torch.complex64, device=device)
+        gate = torch.zeros(4, 4, *shape, dtype=dtype, device=device)
         gate[0, 0] = 1.0
         gate[1, 1] = 1.0
         gate[2, 2] = 1.0
@@ -230,6 +230,7 @@ class StateVector:
             batch_size, out_dim, in_dim, 2, dtype=dtype, device=self.device
         )
         self.state[:, :, :, 0] = 1.0
+        self.dtype = dtype
 
     def measure_z(self) -> torch.Tensor:
         """
@@ -283,7 +284,7 @@ class StateVector:
         ---------
             :is_dagger: bool, default: False
         """
-        gate = TorchGates.h_gate(self.state.shape[1:3], self.device)
+        gate = TorchGates.h_gate(self.state.shape[1:3], self.device, dtype=self.dtype)
         if is_dagger:
             gate = torch.conj_physical(gate).transpose(0, 1)
         self.state = torch.einsum("mnoi,boin->boim", gate, self.state)
@@ -297,7 +298,7 @@ class StateVector:
             :theta: torch.Tensor, shape: (out_dim, in_dim)
             :is_dagger: bool, default: False
         """
-        gate = TorchGates.rx_gate(theta)
+        gate = TorchGates.rx_gate(theta, dtype=self.dtype)
         if is_dagger:
             gate = torch.conj_physical(gate).transpose(0, 1)
         self.state = torch.einsum("mnoi,boin->boim", gate, self.state)
@@ -311,7 +312,7 @@ class StateVector:
             :theta: torch.Tensor, shape: (out_dim, in_dim)
             :is_dagger: bool, default: False
         """
-        gate = TorchGates.ry_gate(theta)
+        gate = TorchGates.ry_gate(theta, dtype=self.dtype)
         if is_dagger:
             gate = torch.conj_physical(gate).transpose(0, 1)
         self.state = torch.einsum("mnoi,boin->boim", gate, self.state)
@@ -325,7 +326,7 @@ class StateVector:
             :theta: torch.Tensor, shape: (out_dim, in_dim)
             :is_dagger: bool, default: False
         """
-        gate = TorchGates.rz_gate(theta)
+        gate = TorchGates.rz_gate(theta, dtype=self.dtype)
         if is_dagger:
             gate = torch.conj_physical(gate).transpose(0, 1)
         self.state = torch.einsum("mnoi,boin->boim", gate, self.state)

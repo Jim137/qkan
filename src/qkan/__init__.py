@@ -1,4 +1,4 @@
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 from .feynman import dataset_range, get_feynman_dataset
 from .kan import KAN

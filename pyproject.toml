@@ -46,7 +46,10 @@ doc = [
     "sphinx-autodoc-typehints",
     "nbsphinx",
     "jupyter",
+    "qiskit[visualization]>=2.0",
 ]
+
+all = ["qkan[qml,dev,doc]"]
 
 [project.urls]
 Homepage = "https://github.com/Jim137/qkan"

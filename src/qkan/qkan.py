@@ -1,6 +1,6 @@
 """
 Quantum-inspired Kolmogorov Arnold Networks (QKANs) implementation in PyTorch.
-Paper: TBA
+Paper: Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks: https://arxiv.org/abs/2509.14026
 
 Supported solvers:
     - PennyLane
@@ -393,6 +393,9 @@ class QKAN(nn.Module):
 
     A quantum-inspired neural network that uses DatA Re-Uploading ActivatioN (DARUAN)
     as its learnable variation activation function.
+
+    References:
+        Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks: https://arxiv.org/abs/2509.14026
 
     Attributes
     ----------
