@@ -6,14 +6,14 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>API Reference &mdash; QKAN 0.0.1 documentation</title>
+  <title>API Reference &mdash; QKAN 0.1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -261,6 +261,8 @@ registered hooks while the latter silently ignores them.</p>
 <p>Quantum-inspired Kolmogorov Arnold Network (QKAN) Class</p>
 <p>A quantum-inspired neural network that uses DatA Re-Uploading ActivatioN (DARUAN)
 as its learnable variation activation function.</p>
+<p class="rubric">References</p>
+<p>Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks: <a class="reference external" href="https://arxiv.org/abs/2509.14026">https://arxiv.org/abs/2509.14026</a></p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="qkan.QKAN.width">
 <span class="sig-name descname"><span class="pre">width</span></span><a class="headerlink" href="#qkan.QKAN.width" title="Link to this definition"></a></dt>
@@ -1151,7 +1153,7 @@ registered hooks while the latter silently ignores them.</p>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.TorchGates.acrx_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">acrx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.acrx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.acrx_gate" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">acrx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.acrx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.acrx_gate" title="Link to this definition"></a></dt>
 <dd><p>Complex extension of RX(acos(theta)) gate.
 <em>Note: Physically unrealizable.</em></p>
 <p>theta: torch.Tensor, shape: (out_dim, in_dim)</p>
@@ -1165,7 +1167,7 @@ registered hooks while the latter silently ignores them.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.TorchGates.cx_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">control</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.cx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.cx_gate" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">control</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.cx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.cx_gate" title="Link to this definition"></a></dt>
 <dd><p>2-qubits CX (CNOT) gate.</p>
 <p>shape: (out_dim, in_dim)
 control: int</p>
@@ -1179,7 +1181,7 @@ control: int</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.TorchGates.cz_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cz_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.cz_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.cz_gate" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cz_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.cz_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.cz_gate" title="Link to this definition"></a></dt>
 <dd><p>2-qubits CZ gate.</p>
 <p>shape: (out_dim, in_dim)
 control: int</p>
@@ -1193,7 +1195,7 @@ control: int</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.TorchGates.h_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">h_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.h_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.h_gate" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">h_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.h_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.h_gate" title="Link to this definition"></a></dt>
 <dd><p>shape: (out_dim, in_dim)</p>
 <p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
 <dl class="field-list simple">
@@ -1229,7 +1231,7 @@ control: int</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.TorchGates.rx_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">rx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.rx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.rx_gate" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">rx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.rx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.rx_gate" title="Link to this definition"></a></dt>
 <dd><p>theta: torch.Tensor, shape: (out_dim, in_dim)</p>
 <p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
 <dl class="field-list simple">
@@ -1241,7 +1243,7 @@ control: int</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.TorchGates.ry_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ry_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.ry_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.ry_gate" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ry_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.ry_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.ry_gate" title="Link to this definition"></a></dt>
 <dd><p>theta: torch.Tensor, shape: (out_dim, in_dim)</p>
 <p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
 <dl class="field-list simple">
@@ -1253,7 +1255,7 @@ control: int</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.TorchGates.rz_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">rz_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.rz_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.rz_gate" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">rz_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.rz_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.rz_gate" title="Link to this definition"></a></dt>
 <dd><p>theta: torch.Tensor, shape: (out_dim, in_dim)</p>
 <p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
 <dl class="field-list simple">
@@ -1277,7 +1279,7 @@ control: int</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.TorchGates.tensor_product">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">tensor_product</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gate</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">another_gate</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.tensor_product"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.tensor_product" title="Link to this definition"></a></dt>
+<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">tensor_product</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gate</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">another_gate</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.tensor_product"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.tensor_product" title="Link to this definition"></a></dt>
 <dd><p>Compute tensor product of two gates.</p>
 <p>:param :
 :type : gate: torch.Tensor, shape: (2, 2, out_dim, in_dim)

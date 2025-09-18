@@ -235,6 +235,16 @@
    "source": [
     "From the trained activation plots, we can infer the underlying structure of the learned function. In this example, the QKAN model, with minimal architecture, successfully recovers the form of the target function $f(x,y) = \\exp(\\sin(\\pi x)+y^2)$."
    ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "dd995add",
+   "metadata": {},
+   "source": [
+    "## Further Reading\n",
+    "\n",
+    "If you are interested in learning more about QKAN and DARUAN, please read our paper: **[\"Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks\"](https://arxiv.org/abs/2509.14026)**."
+   ]
   }
  ],
  "metadata": {

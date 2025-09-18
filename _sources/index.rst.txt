@@ -3,17 +3,17 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Quantum-Inspired Kolmogorov–Arnold Network (QKAN)
+Quantum-Inspired Kolmogorov-Arnold Network (QKAN)
 =================================================
 
-Welcome to the documentation for the **Quantum-Inspired Kolmogorov–Arnold Network (QKAN)**!
+Welcome to the documentation for the **Quantum-Inspired Kolmogorov-Arnold Network (QKAN)**!
 
-This project builds upon the concepts introduced in the paper `Quantum variational activation function empowers Kolmogorov–Arnold network`_ and is open-sourced at GitHub repository `Jim137/qkan`_.
+This project builds upon the concepts introduced in the paper `Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks`_ and is open-sourced at GitHub repository `Jim137/qkan`_.
 
-.. _Quantum variational activation function empowers Kolmogorov–Arnold network: https://arxiv.org/abs/
+.. _Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks: https://arxiv.org/abs/2509.14026
 .. _Jim137/qkan: https://github.com/Jim137/qkan
 
-``QKAN`` is a novel neural network architecture that integrates **Quantum Variational Activation Functions (QVAFs)** with the **Kolmogorov–Arnold Network (KAN)** paradigm, designed for expressive and efficient function approximation and machine learning tasks.
+``QKAN`` is a novel neural network architecture that integrates **Quantum Variational Activation Functions (QVAFs)** with the **Kolmogorov-Arnold Network (KAN)** paradigm, designed for expressive and efficient function approximation and machine learning tasks.
 
 Installation
 ------------
@@ -78,6 +78,21 @@ Here's a minimal working example for function fitting using QKAN:
    )
 
    qkan.plot(from_acts=True, metric=None)
+
+Citation
+--------
+
+If you find this project useful in your research, please consider citing the following paper:
+
+.. code-block:: bibtex
+
+   @article{jiang2025qkan,
+      title={Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks},
+      author={Jiang, Jiun-Cheng and Huang, Yu-Chao and Chen, Tianlong and Goan, Hsi-Sheng},
+      journal={arXiv preprint arXiv:2509.14026},
+      year={2025},
+      url={https://arxiv.org/abs/2509.14026}
+   }
 
 .. toctree::
    :maxdepth: 2
