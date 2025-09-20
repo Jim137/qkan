@@ -30,6 +30,7 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
+    "sphinx.ext.githubpages",
     "sphinx_autodoc_typehints",
 ]
 
@@ -59,3 +60,5 @@ autodoc_member_order = "bysource"
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
+
+html_baseurl = "https://qkan.jimq.cc/"
