@@ -75,8 +75,6 @@ def torch_exact_solver(
         preacts_bias : torch.Tensor
             shape: (out_dim, in_dim, reps)
         reps : int
-        device : str
-            default: "cpu"
         ansatz : str
             options: ["pz_encoding", "px_encoding"], default: "pz_encoding"
         n_group : int
@@ -88,7 +86,7 @@ def torch_exact_solver(
             shape: (batch_size, out_dim, in_dim)
     """
     batch, in_dim = x.shape
-    device = kwargs.get("device", "cpu")
+    device = x.device
     ansatz = kwargs.get("ansatz", "pz_encoding")
     # group = kwargs.get("group", in_dim)
     preacts_trainable = kwargs.get("preacts_trainable", False)

@@ -196,7 +196,7 @@ class QKANLayer(nn.Module):
             self.bn = nn.BatchNorm1d(in_dim, device=device)
         self._x0: Optional[torch.Tensor] = None
 
-    def to(self, device):
+    def to(self, *args, **kwargs):
         """
         Move the layer to the specified device.
 
@@ -205,8 +205,18 @@ class QKANLayer(nn.Module):
             device : str | torch.device
                 Device to move the layer to, default: "cpu"
         """
-        super(QKANLayer, self).to(device)
-        self.device = device
+        device = None
+        for arg in args:
+            if isinstance(arg, str) or isinstance(arg, torch.device):
+                device = arg
+                break
+        if "device" in kwargs:
+            device = kwargs["device"]
+        if device:
+            self.device = device
+            for param in self.parameters():
+                param.data = param.to(device)
+        return super(QKANLayer, self).to(*args, **kwargs)
 
     @property
     def param_size(self):
@@ -232,7 +242,6 @@ class QKANLayer(nn.Module):
 
         batch = x.shape[0]
 
-        x = x.to(self.device)
         if self.is_batchnorm:
             x = self.bn(x)
         base_output = torch.einsum(
@@ -558,7 +567,7 @@ class QKAN(nn.Module):
             self.layers.append(nn.Linear(hidden, width[-1], device=self.device))
         self.input_id: Optional[torch.Tensor] = None
 
-    def to(self, device):
+    def to(self, *args, **kwargs):
         """
         Move the model to the specified device.
 
@@ -567,10 +576,18 @@ class QKAN(nn.Module):
             device : str | torch.device
                 Device to move the model to, default: "cpu"
         """
-        super(QKAN, self).to(device)
-        self.device = device
+        device = None
+        for arg in args:
+            if isinstance(arg, str) or isinstance(arg, torch.device):
+                device = arg
+                break
+        if "device" in kwargs:
+            device = kwargs["device"]
+        if device:
+            self.device = device
         for layer in self.layers:
-            layer.to(device)
+            layer.to(*args, **kwargs)
+        return super(QKAN, self).to(*args, **kwargs)
 
     @property
     def param_size(self):
