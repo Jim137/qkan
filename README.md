@@ -87,7 +87,7 @@ dataset = create_dataset(f, n_var=1, ranges=[0,1], device=device, train_num=1000
 
 qkan = QKAN(
     [1, 1], 
-    num_qlayers=3, 
+    reps=3, 
     device=device, 
     seed=0,
     preact_trainable=True, 

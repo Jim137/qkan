@@ -58,7 +58,7 @@ Here's a minimal working example for function fitting using QKAN:
    
    qkan = QKAN(
       [1, 1], 
-      num_qlayers=3, 
+      reps=3, 
       device=device, 
       seed=0,
       preact_trainable=True, 
