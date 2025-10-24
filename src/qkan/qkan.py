@@ -72,6 +72,9 @@ class QKANLayer(nn.Module):
             Mask for pruning
         is_batchnorm : bool
             Whether to use batch normalization
+        fast_measure : bool
+            Enable to use fast measurement in exact solver. Which would be quantum-inspired method.
+            When False, the exact solver simulates the exact measurement process of quantum circuit.
         _x0 : Optional[torch.Tensor]
             Leave for ResQKANLayer
     """
@@ -94,6 +97,7 @@ class QKANLayer(nn.Module):
         base_activation=torch.nn.SiLU(),
         ba_trainable: bool = True,
         is_batchnorm: bool = False,
+        fast_measure: bool = True,
         seed=0,
     ):
         super(QKANLayer, self).__init__()
@@ -120,6 +124,7 @@ class QKANLayer(nn.Module):
         self.base_activation = base_activation
         self.ba_trainable = ba_trainable
         self.is_batchnorm = is_batchnorm
+        self.fast_measure = fast_measure
         self.seed = seed
 
         if callable("solver") or callable("ansatz"):
@@ -269,6 +274,7 @@ class QKANLayer(nn.Module):
                 ansatz=self.ansatz,
                 group=self.group,
                 preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
             )
         elif callable(self.solver):
             postacts = self.solver(
@@ -337,6 +343,7 @@ class QKANLayer(nn.Module):
                 ansatz=self.ansatz,
                 group=self.group,
                 preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
             )
         else:
             raise NotImplementedError()
@@ -440,6 +447,9 @@ class QKAN(nn.Module):
             Base activation function
         ba_trainable : bool
             Whether base activation weights are trainable
+        fast_measure : bool
+            Enable to use fast measurement in exact solver. Which would be quantum-inspired method.
+            When False, the exact solver simulates the exact measurement process of quantum circuit.
         save_act : bool
             Whether to save activations
         seed : int
@@ -465,6 +475,7 @@ class QKAN(nn.Module):
         postact_bias_trainable: bool = False,
         base_activation=nn.SiLU(),
         ba_trainable: bool = False,
+        fast_measure: bool = True,
         save_act: bool = False,
         seed=0,
         **kwargs,
@@ -508,6 +519,9 @@ class QKAN(nn.Module):
                 Whether base activation weights are trainable, default: False
             save_act : bool
                 Whether to save activations, default: False
+            fast_measure : bool
+                Enable to use fast measurement in exact solver. Which would be quantum-inspired method.
+                When False, the exact solver simulates the exact measurement process of quantum circuit.
             seed : int
                 Random seed, default: 0
         """
@@ -532,6 +546,7 @@ class QKAN(nn.Module):
         self.preact_init = preact_init
         self.base_activation = base_activation
         self.ba_trainable = ba_trainable
+        self.fast_measure = fast_measure
         self.save_act = save_act
         self.seed = seed
 
@@ -554,6 +569,7 @@ class QKAN(nn.Module):
                     base_activation=base_activation,
                     ba_trainable=ba_trainable,
                     is_batchnorm=is_batchnorm,
+                    fast_measure=fast_measure,
                     seed=seed,
                 )
             )
