@@ -21,6 +21,7 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2509.14026-b31b1b.svg)](https://arxiv.org/abs/2509.14026)
 [![pypi](https://img.shields.io/pypi/v/qkan)](https://pypi.org/project/qkan/)
 ![License](https://img.shields.io/github/license/Jim137/qkan)
+[![DOI](https://zenodo.org/badge/1006914967.svg)](https://doi.org/10.5281/zenodo.17437425)
 
 </div>
 
