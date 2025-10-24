@@ -232,13 +232,23 @@ class StateVector:
         self.state[:, :, :, 0] = 1.0
         self.dtype = dtype
 
-    def measure_z(self) -> torch.Tensor:
+    def measure_z(self, fast_measure: bool = True) -> torch.Tensor:
         """
         Measure the state vector in the Z basis.
 
+        Arguments
+        ---------
+            :fast_measure: bool, default: True. If True, for state |ψ⟩ = α|0⟩ + β|1⟩, return |α| - |β|;
+                           if False, return |α|^2 - |β|^2.
+                           Which is quantum-inspired method and faster when it is True.
         return: torch.Tensor, shape: (batch_size, out_dim, in_dim)
         """
-        return self.state[:, :, :, 0].abs() - self.state[:, :, :, 1].abs()
+        return (
+            self.state[:, :, :, 0].abs() - self.state[:, :, :, 1].abs()
+            if fast_measure
+            else torch.square(self.state[:, :, :, 0].abs())
+            - torch.square(self.state[:, :, :, 1].abs())
+        )
 
     def measure_x(self) -> torch.Tensor:
         """

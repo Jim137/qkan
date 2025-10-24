@@ -90,6 +90,7 @@ def torch_exact_solver(
     ansatz = kwargs.get("ansatz", "pz_encoding")
     # group = kwargs.get("group", in_dim)
     preacts_trainable = kwargs.get("preacts_trainable", False)
+    fast_measure = kwargs.get("fast_measure", True)
     out_dim = preacts_weight.shape[0]
 
     if preacts_trainable:
@@ -137,7 +138,7 @@ def torch_exact_solver(
 
         psi.rz(theta[:, :, reps, 0])
         psi.ry(theta[:, :, reps, 1])
-        return psi.measure_z()  # shape: (batch_size, out_dim, in_dim)
+        return psi.measure_z(fast_measure)  # shape: (batch_size, out_dim, in_dim)
 
     def rpz_enocding(theta: torch.Tensor):
         """
@@ -161,7 +162,7 @@ def torch_exact_solver(
                 psi.state,
             )
         psi.ry(theta[:, :, reps, 0])
-        return psi.measure_z()  # shape: (batch_size, out_dim, in_dim)
+        return psi.measure_z(fast_measure)  # shape: (batch_size, out_dim, in_dim)
 
     def px_encoding(theta: torch.Tensor):
         """
@@ -202,7 +203,7 @@ def torch_exact_solver(
             )
             """
         psi.rz(theta[:, :, reps, 0])
-        return psi.measure_z()  # shape: (batch_size, out_dim, in_dim)
+        return psi.measure_z(fast_measure)  # shape: (batch_size, out_dim, in_dim)
 
     if ansatz == "pz_encoding":
         circuit = pz_encoding
