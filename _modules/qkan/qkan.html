@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.qkan &mdash; QKAN 0.1.0 documentation</title>
+  <title>qkan.qkan &mdash; QKAN 0.1.2 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/qkan.html" />
       <script src="../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/documentation_options.js?v=92734c54"></script>
       <script src="../../_static/doctools.js?v=9bcbadda"></script>
       <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -149,6 +149,9 @@
 <span class="sd">            Mask for pruning</span>
 <span class="sd">        is_batchnorm : bool</span>
 <span class="sd">            Whether to use batch normalization</span>
+<span class="sd">        fast_measure : bool</span>
+<span class="sd">            Enable to use fast measurement in exact solver. Which would be quantum-inspired method.</span>
+<span class="sd">            When False, the exact solver simulates the exact measurement process of quantum circuit.</span>
 <span class="sd">        _x0 : Optional[torch.Tensor]</span>
 <span class="sd">            Leave for ResQKANLayer</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -171,6 +174,7 @@
         <span class="n">base_activation</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">SiLU</span><span class="p">(),</span>
         <span class="n">ba_trainable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">is_batchnorm</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">fast_measure</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="nb">super</span><span class="p">(</span><span class="n">QKANLayer</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -197,6 +201,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">base_activation</span> <span class="o">=</span> <span class="n">base_activation</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span> <span class="o">=</span> <span class="n">ba_trainable</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">is_batchnorm</span> <span class="o">=</span> <span class="n">is_batchnorm</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span> <span class="o">=</span> <span class="n">fast_measure</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">seed</span> <span class="o">=</span> <span class="n">seed</span>
 
         <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="s2">&quot;solver&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">callable</span><span class="p">(</span><span class="s2">&quot;ansatz&quot;</span><span class="p">):</span>
@@ -275,7 +280,7 @@
 
 <div class="viewcode-block" id="QKANLayer.to">
 <a class="viewcode-back" href="../../api.html#qkan.QKANLayer.to">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Move the layer to the specified device.</span>
 
@@ -284,8 +289,18 @@
 <span class="sd">            device : str | torch.device</span>
 <span class="sd">                Device to move the layer to, default: &quot;cpu&quot;</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="nb">super</span><span class="p">(</span><span class="n">QKANLayer</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">device</span></div>
+        <span class="n">device</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">):</span>
+                <span class="n">device</span> <span class="o">=</span> <span class="n">arg</span>
+                <span class="k">break</span>
+        <span class="k">if</span> <span class="s2">&quot;device&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+            <span class="n">device</span> <span class="o">=</span> <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;device&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">device</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">device</span>
+            <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
+                <span class="n">param</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">QKANLayer</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
 
     <span class="nd">@property</span>
@@ -314,7 +329,6 @@
 
         <span class="n">batch</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 
-        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_batchnorm</span><span class="p">:</span>
             <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bn</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
         <span class="n">base_output</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
@@ -342,6 +356,7 @@
                 <span class="n">ansatz</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span><span class="p">,</span>
                 <span class="n">group</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">group</span><span class="p">,</span>
                 <span class="n">preacts_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span><span class="p">,</span>
+                <span class="n">fast_measure</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="nb">callable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">solver</span><span class="p">):</span>
             <span class="n">postacts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">solver</span><span class="p">(</span>
@@ -416,6 +431,7 @@
                 <span class="n">ansatz</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span><span class="p">,</span>
                 <span class="n">group</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">group</span><span class="p">,</span>
                 <span class="n">preacts_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span><span class="p">,</span>
+                <span class="n">fast_measure</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
@@ -526,6 +542,9 @@
 <span class="sd">            Base activation function</span>
 <span class="sd">        ba_trainable : bool</span>
 <span class="sd">            Whether base activation weights are trainable</span>
+<span class="sd">        fast_measure : bool</span>
+<span class="sd">            Enable to use fast measurement in exact solver. Which would be quantum-inspired method.</span>
+<span class="sd">            When False, the exact solver simulates the exact measurement process of quantum circuit.</span>
 <span class="sd">        save_act : bool</span>
 <span class="sd">            Whether to save activations</span>
 <span class="sd">        seed : int</span>
@@ -551,6 +570,7 @@
         <span class="n">postact_bias_trainable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">base_activation</span><span class="o">=</span><span class="n">nn</span><span class="o">.</span><span class="n">SiLU</span><span class="p">(),</span>
         <span class="n">ba_trainable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">fast_measure</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">save_act</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
@@ -594,6 +614,9 @@
 <span class="sd">                Whether base activation weights are trainable, default: False</span>
 <span class="sd">            save_act : bool</span>
 <span class="sd">                Whether to save activations, default: False</span>
+<span class="sd">            fast_measure : bool</span>
+<span class="sd">                Enable to use fast measurement in exact solver. Which would be quantum-inspired method.</span>
+<span class="sd">                When False, the exact solver simulates the exact measurement process of quantum circuit.</span>
 <span class="sd">            seed : int</span>
 <span class="sd">                Random seed, default: 0</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -618,6 +641,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">preact_init</span> <span class="o">=</span> <span class="n">preact_init</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">base_activation</span> <span class="o">=</span> <span class="n">base_activation</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span> <span class="o">=</span> <span class="n">ba_trainable</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span> <span class="o">=</span> <span class="n">fast_measure</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">save_act</span> <span class="o">=</span> <span class="n">save_act</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">seed</span> <span class="o">=</span> <span class="n">seed</span>
 
@@ -640,6 +664,7 @@
                     <span class="n">base_activation</span><span class="o">=</span><span class="n">base_activation</span><span class="p">,</span>
                     <span class="n">ba_trainable</span><span class="o">=</span><span class="n">ba_trainable</span><span class="p">,</span>
                     <span class="n">is_batchnorm</span><span class="o">=</span><span class="n">is_batchnorm</span><span class="p">,</span>
+                    <span class="n">fast_measure</span><span class="o">=</span><span class="n">fast_measure</span><span class="p">,</span>
                     <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">,</span>
                 <span class="p">)</span>
             <span class="p">)</span>
@@ -655,7 +680,7 @@
 
 <div class="viewcode-block" id="QKAN.to">
 <a class="viewcode-back" href="../../api.html#qkan.QKAN.to">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Move the model to the specified device.</span>
 
@@ -664,10 +689,18 @@
 <span class="sd">            device : str | torch.device</span>
 <span class="sd">                Device to move the model to, default: &quot;cpu&quot;</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="nb">super</span><span class="p">(</span><span class="n">QKAN</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">device</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">):</span>
+                <span class="n">device</span> <span class="o">=</span> <span class="n">arg</span>
+                <span class="k">break</span>
+        <span class="k">if</span> <span class="s2">&quot;device&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+            <span class="n">device</span> <span class="o">=</span> <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;device&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">device</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">device</span>
         <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
-            <span class="n">layer</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span></div>
+            <span class="n">layer</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">QKAN</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
 
     <span class="nd">@property</span>
