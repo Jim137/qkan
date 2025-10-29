@@ -95,12 +95,9 @@ def torch_exact_solver(
 
     if preacts_trainable:
         preacts_trainable = True
-        encoded_x = [
-            torch.einsum("oi,bi->boi", preacts_weight[:, :, l], x).add(
-                preacts_bias[:, :, l]
-            )
-            for l in range(reps)
-        ]  # len: reps, shape: (batch_size, out_dim, in_dim)
+        # Pre-compute all encoded_x values at once using stack and einsum
+        encoded_x = torch.einsum("oir,bi->boir", preacts_weight, x) + preacts_bias.unsqueeze(0)
+        # encoded_x shape: (batch_size, out_dim, in_dim, reps)
     if len(theta.shape) != 4:
         theta = theta.unsqueeze(0)
     if theta.shape[1] != in_dim:
@@ -132,7 +129,7 @@ def torch_exact_solver(
             else:
                 psi.state = torch.einsum(
                     "mnboi,boin->boim",
-                    TorchGates.rz_gate(encoded_x[l]),
+                    TorchGates.rz_gate(encoded_x[:, :, :, l]),
                     psi.state,
                 )
 
@@ -158,7 +155,7 @@ def torch_exact_solver(
             psi.ry(theta[:, :, l, 0])
             psi.state = torch.einsum(
                 "mnboi,boin->boim",
-                TorchGates.rz_gate(encoded_x[l]),
+                TorchGates.rz_gate(encoded_x[:, :, :, l]),
                 psi.state,
             )
         psi.ry(theta[:, :, reps, 0])
@@ -185,7 +182,7 @@ def torch_exact_solver(
                 TorchGates.rx_gate(
                     torch.acos(
                         # torch.sin(
-                        encoded_x[l]
+                        encoded_x[:, :, :, l]
                         # )
                         # add sin to prevent input from exceeding pm 1
                     )
