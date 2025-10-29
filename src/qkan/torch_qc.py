@@ -14,7 +14,7 @@ import math
 import torch
 
 # Constants
-INV_SQRT2 = math.sqrt(0.5)  # 1/sqrt(2) for Hadamard gate
+INV_SQRT2 = math.sqrt(2.0) / 2.0  # 1/sqrt(2) for Hadamard gate
 
 
 class TorchGates:
@@ -155,11 +155,17 @@ class TorchGates:
             :gate: torch.Tensor, shape: (2, 2, out_dim, in_dim)
             :another_gate: torch.Tensor, shape: (2, 2, out_dim, in_dim)
             :dtype: torch dtype, optional. If None, uses the dtype of the input gate.
+                    Both gates should have the same dtype.
 
         return: torch.Tensor, shape: (4, 4, out_dim, in_dim)
         """
         if dtype is None:
             dtype = gate.dtype
+            # Validate that both gates have the same dtype
+            if gate.dtype != another_gate.dtype:
+                raise ValueError(
+                    f"Gate dtypes must match: got {gate.dtype} and {another_gate.dtype}"
+                )
         shape = gate.shape[2:]
         gate = gate.view(2, 2, -1)
         another_gate = another_gate.view(2, 2, -1)
