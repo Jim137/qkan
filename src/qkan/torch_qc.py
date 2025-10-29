@@ -14,7 +14,7 @@ import math
 import torch
 
 # Constants
-INV_SQRT2 = 1.0 / math.sqrt(2.0)  # 1/sqrt(2) for Hadamard gate
+INV_SQRT2 = math.sqrt(0.5)  # 1/sqrt(2) for Hadamard gate
 
 
 class TorchGates:
@@ -146,7 +146,7 @@ class TorchGates:
         ).to(dtype)
 
     @staticmethod
-    def tensor_product(gate, another_gate, dtype=torch.complex64):
+    def tensor_product(gate, another_gate, dtype=None):
         """
         Compute tensor product of two gates.
 
@@ -154,9 +154,12 @@ class TorchGates:
         ---------
             :gate: torch.Tensor, shape: (2, 2, out_dim, in_dim)
             :another_gate: torch.Tensor, shape: (2, 2, out_dim, in_dim)
+            :dtype: torch dtype, optional. If None, uses the dtype of the input gate.
 
         return: torch.Tensor, shape: (4, 4, out_dim, in_dim)
         """
+        if dtype is None:
+            dtype = gate.dtype
         shape = gate.shape[2:]
         gate = gate.view(2, 2, -1)
         another_gate = another_gate.view(2, 2, -1)
@@ -404,14 +407,14 @@ class DQStateVector:
         ---------
             :control: int
         """
-        cx_gate = TorchGates.cx_gate(self.state.shape[1:3], control, self.device)
+        cx_gate = TorchGates.cx_gate(self.state.shape[1:3], control, self.device, dtype=self.dtype)
         self.state = torch.einsum("mnoi,boin->boim", cx_gate, self.state)
 
     def cz(self):
         """
         Apply CZ gate to the state vector.
         """
-        cz_gate = TorchGates.cz_gate(self.state.shape[1:3], self.device)
+        cz_gate = TorchGates.cz_gate(self.state.shape[1:3], self.device, dtype=self.dtype)
         self.state = torch.einsum("mnoi,boin->boim", cz_gate, self.state)
 
     def apply_gate(self, gate: torch.Tensor, target: int = 0):
