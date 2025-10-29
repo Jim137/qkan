@@ -9,7 +9,12 @@ Code author: Jiun-Cheng Jiang (Jim137@GitHub)
 Contact: [jcjiang@phys.ntu.edu.tw](mailto:jcjiang@phys.ntu.edu.tw)
 """
 
+import math
+
 import torch
+
+# Constants
+INV_SQRT2 = 1.0 / math.sqrt(2.0)  # 1/sqrt(2) for Hadamard gate
 
 
 class TorchGates:
@@ -95,8 +100,8 @@ class TorchGates:
 
         return: torch.Tensor, shape: (2, 2, out_dim, in_dim)
         """
-        # Optimize: directly compute 1/sqrt(2) instead of computing sqrt(2) then dividing
-        inv_sqrt2 = torch.full(shape, 0.7071067811865476, device=device, dtype=dtype)  # 1/sqrt(2)
+        # Optimize: use pre-computed constant instead of computing 1/sqrt(2) at runtime
+        inv_sqrt2 = torch.full(shape, INV_SQRT2, device=device, dtype=dtype)
         return torch.stack(
             [
                 torch.stack([inv_sqrt2, inv_sqrt2]),
@@ -364,6 +369,7 @@ class DQStateVector:
         self.batch_size = batch_size
         self.out_dim = out_dim
         self.in_dim = in_dim
+        self.dtype = dtype
         self.state = torch.zeros(
             batch_size, out_dim, in_dim, 4, dtype=dtype, device=self.device
         )
@@ -446,5 +452,5 @@ class DQStateVector:
         ---------
             :is_dagger: bool, default: False
         """
-        h_gate = TorchGates.h_gate(self.state.shape[1:3], self.device)
+        h_gate = TorchGates.h_gate(self.state.shape[1:3], self.device, dtype=self.dtype)
         self.apply_2gates(h_gate, h_gate)
