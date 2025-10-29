@@ -95,13 +95,14 @@ class TorchGates:
 
         return: torch.Tensor, shape: (2, 2, out_dim, in_dim)
         """
-        inv_sqrt2 = 1 / torch.sqrt(torch.ones(*shape, device=device) * 2)
+        # Optimize: directly compute 1/sqrt(2) instead of computing sqrt(2) then dividing
+        inv_sqrt2 = torch.full(shape, 0.7071067811865476, device=device, dtype=dtype)  # 1/sqrt(2)
         return torch.stack(
             [
                 torch.stack([inv_sqrt2, inv_sqrt2]),
                 torch.stack([inv_sqrt2, -inv_sqrt2]),
             ],
-        ).to(dtype)
+        )
 
     @staticmethod
     def s_gate(shape) -> torch.Tensor:

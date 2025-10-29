@@ -769,8 +769,11 @@ class QKAN(nn.Module):
             vec = acts_scale[i]
 
             l1 = torch.sum(vec)
-            p_row = vec / (torch.sum(vec, dim=1, keepdim=True) + 1)
-            p_col = vec / (torch.sum(vec, dim=0, keepdim=True) + 1)
+            # Optimize: reuse sum computations for normalization
+            sum_row = torch.sum(vec, dim=1, keepdim=True) + 1
+            sum_col = torch.sum(vec, dim=0, keepdim=True) + 1
+            p_row = vec / sum_row
+            p_col = vec / sum_col
             entropy_row = -torch.mean(
                 torch.sum(p_row * torch.log2(p_row + 1e-4), dim=1)
             )
