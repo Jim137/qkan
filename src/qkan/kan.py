@@ -292,16 +292,37 @@ class KANLinear(torch.nn.Module):
         self.grid.copy_(grid.T)
         self.spline_weight.data.copy_(self.curve2coeff(x, y))
 
-    def fit_from_qkan(self, x0: torch.Tensor, y: torch.Tensor):
+    def fit_from_qkan(
+        self, x0: torch.Tensor, y: torch.Tensor, max_iter: int = 200, tol: float = 1e-5
+    ):
+        """
+        Fit KAN layer from QKAN with early stopping.
+
+        Args
+        ----
+            x0: torch.Tensor
+                Input tensor
+            y: torch.Tensor
+                Target tensor
+            max_iter: int
+                Maximum number of iterations, default: 200
+            tol: float
+                Tolerance for early stopping, default: 1e-5
+        """
         self.train()
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-1)
         criterion = torch.nn.MSELoss()
-        for _ in range(200):
+        prev_loss = float("inf")
+        for _ in range(max_iter):
             optimizer.zero_grad()
             x = self.forward(x0)
             loss = criterion(x, y)
             loss.backward()
             optimizer.step()
+            # Early stopping if loss improvement is below tolerance
+            if abs(prev_loss - loss.item()) < tol:
+                break
+            prev_loss = loss.item()
 
     def regularization_loss(self, regularize_activation=1.0, regularize_entropy=1.0):
         """

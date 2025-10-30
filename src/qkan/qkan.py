@@ -275,6 +275,7 @@ class QKANLayer(nn.Module):
                 group=self.group,
                 preacts_trainable=self.preact_trainable,
                 fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
             )
         elif callable(self.solver):
             postacts = self.solver(
@@ -641,12 +642,12 @@ class QKAN(nn.Module):
             self.acts_scale = []
             self.acts_scale_dr = []
             self.edge_actscale = []
-            self.acts.append(x.clone())
+            self.acts.append(x.detach())
 
         for layer in self.layers:
             if self.save_act and isinstance(layer, QKANLayer):
                 self.subnode_actscale.append(torch.std(x, dim=0).detach())
-                preacts = (x.clone())[:, None, :].expand(B, layer.out_dim, layer.in_dim)
+                preacts = x[:, None, :].expand(B, layer.out_dim, layer.in_dim)
                 postacts = layer.forward_no_sum(x)  # shape: (batch, out_dim, in_dim)
 
             x = layer(x)
@@ -769,8 +770,11 @@ class QKAN(nn.Module):
             vec = acts_scale[i]
 
             l1 = torch.sum(vec)
-            p_row = vec / (torch.sum(vec, dim=1, keepdim=True) + 1)
-            p_col = vec / (torch.sum(vec, dim=0, keepdim=True) + 1)
+            # Optimize: reuse sum computations for normalization
+            sum_row = torch.sum(vec, dim=1, keepdim=True) + 1
+            sum_col = torch.sum(vec, dim=0, keepdim=True) + 1
+            p_row = vec / sum_row
+            p_col = vec / sum_col
             entropy_row = -torch.mean(
                 torch.sum(p_row * torch.log2(p_row + 1e-4), dim=1)
             )
@@ -877,6 +881,9 @@ class QKAN(nn.Module):
             node_score = torch.diag(out_score).requires_grad_(True)
         node_scores.append(node_score)
 
+        # Pre-compute inverse subnode_actscale for efficiency
+        inv_subnode_actscale = [1 / (scale + 1e-4) for scale in self.subnode_actscale]
+
         for l in range(l_end, 0, -1):
             subnode_score = node_score[:, : self.width[l]]
 
@@ -886,7 +893,7 @@ class QKAN(nn.Module):
                 "oi,ko,i->koi",
                 self.edge_actscale[l - 1],
                 subnode_score.to(self.device),
-                1 / (self.subnode_actscale[l - 1] + 1e-4),
+                inv_subnode_actscale[l - 1],
             )
             edge_scores.append(edge_score)
 
@@ -1070,7 +1077,6 @@ class QKAN(nn.Module):
                 else:
                     reg_ = torch.tensor(0.0, device=self.device)
                 loss = train_loss + lamb * reg_
-                optimizer.zero_grad()
                 loss.backward()
                 optimizer.step(closure)
 

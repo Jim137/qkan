@@ -9,7 +9,12 @@ Code author: Jiun-Cheng Jiang (Jim137@GitHub)
 Contact: [jcjiang@phys.ntu.edu.tw](mailto:jcjiang@phys.ntu.edu.tw)
 """
 
+import math
+
 import torch
+
+# Constants
+INV_SQRT2 = math.sqrt(2.0) / 2.0  # 1/sqrt(2) for Hadamard gate
 
 
 class TorchGates:
@@ -95,13 +100,14 @@ class TorchGates:
 
         return: torch.Tensor, shape: (2, 2, out_dim, in_dim)
         """
-        inv_sqrt2 = 1 / torch.sqrt(torch.ones(*shape, device=device) * 2)
+        # Optimize: use pre-computed constant instead of computing 1/sqrt(2) at runtime
+        inv_sqrt2 = torch.full(shape, INV_SQRT2, device=device, dtype=dtype)
         return torch.stack(
             [
                 torch.stack([inv_sqrt2, inv_sqrt2]),
                 torch.stack([inv_sqrt2, -inv_sqrt2]),
             ],
-        ).to(dtype)
+        )
 
     @staticmethod
     def s_gate(shape) -> torch.Tensor:
@@ -140,7 +146,7 @@ class TorchGates:
         ).to(dtype)
 
     @staticmethod
-    def tensor_product(gate, another_gate, dtype=torch.complex64):
+    def tensor_product(gate, another_gate, dtype=None):
         """
         Compute tensor product of two gates.
 
@@ -148,9 +154,18 @@ class TorchGates:
         ---------
             :gate: torch.Tensor, shape: (2, 2, out_dim, in_dim)
             :another_gate: torch.Tensor, shape: (2, 2, out_dim, in_dim)
+            :dtype: torch dtype, optional. If None, uses the dtype of the input gate.
+                    Both gates should have the same dtype.
 
         return: torch.Tensor, shape: (4, 4, out_dim, in_dim)
         """
+        if dtype is None:
+            dtype = gate.dtype
+            # Validate that both gates have the same dtype
+            if gate.dtype != another_gate.dtype:
+                raise ValueError(
+                    f"Gate dtypes must match: got {gate.dtype} and {another_gate.dtype}"
+                )
         shape = gate.shape[2:]
         gate = gate.view(2, 2, -1)
         another_gate = another_gate.view(2, 2, -1)
@@ -363,6 +378,7 @@ class DQStateVector:
         self.batch_size = batch_size
         self.out_dim = out_dim
         self.in_dim = in_dim
+        self.dtype = dtype
         self.state = torch.zeros(
             batch_size, out_dim, in_dim, 4, dtype=dtype, device=self.device
         )
@@ -397,14 +413,18 @@ class DQStateVector:
         ---------
             :control: int
         """
-        cx_gate = TorchGates.cx_gate(self.state.shape[1:3], control, self.device)
+        cx_gate = TorchGates.cx_gate(
+            self.state.shape[1:3], control, self.device, dtype=self.dtype
+        )
         self.state = torch.einsum("mnoi,boin->boim", cx_gate, self.state)
 
     def cz(self):
         """
         Apply CZ gate to the state vector.
         """
-        cz_gate = TorchGates.cz_gate(self.state.shape[1:3], self.device)
+        cz_gate = TorchGates.cz_gate(
+            self.state.shape[1:3], self.device, dtype=self.dtype
+        )
         self.state = torch.einsum("mnoi,boin->boim", cz_gate, self.state)
 
     def apply_gate(self, gate: torch.Tensor, target: int = 0):
@@ -445,5 +465,5 @@ class DQStateVector:
         ---------
             :is_dagger: bool, default: False
         """
-        h_gate = TorchGates.h_gate(self.state.shape[1:3], self.device)
+        h_gate = TorchGates.h_gate(self.state.shape[1:3], self.device, dtype=self.dtype)
         self.apply_2gates(h_gate, h_gate)
