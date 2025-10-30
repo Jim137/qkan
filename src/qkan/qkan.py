@@ -275,6 +275,7 @@ class QKANLayer(nn.Module):
                 group=self.group,
                 preacts_trainable=self.preact_trainable,
                 fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
             )
         elif callable(self.solver):
             postacts = self.solver(
