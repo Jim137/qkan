@@ -292,10 +292,12 @@ class KANLinear(torch.nn.Module):
         self.grid.copy_(grid.T)
         self.spline_weight.data.copy_(self.curve2coeff(x, y))
 
-    def fit_from_qkan(self, x0: torch.Tensor, y: torch.Tensor, max_iter: int = 200, tol: float = 1e-5):
+    def fit_from_qkan(
+        self, x0: torch.Tensor, y: torch.Tensor, max_iter: int = 200, tol: float = 1e-5
+    ):
         """
         Fit KAN layer from QKAN with early stopping.
-        
+
         Args
         ----
             x0: torch.Tensor
@@ -310,7 +312,7 @@ class KANLinear(torch.nn.Module):
         self.train()
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-1)
         criterion = torch.nn.MSELoss()
-        prev_loss = float('inf')
+        prev_loss = float("inf")
         for _ in range(max_iter):
             optimizer.zero_grad()
             x = self.forward(x0)

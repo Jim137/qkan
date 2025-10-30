@@ -413,14 +413,18 @@ class DQStateVector:
         ---------
             :control: int
         """
-        cx_gate = TorchGates.cx_gate(self.state.shape[1:3], control, self.device, dtype=self.dtype)
+        cx_gate = TorchGates.cx_gate(
+            self.state.shape[1:3], control, self.device, dtype=self.dtype
+        )
         self.state = torch.einsum("mnoi,boin->boim", cx_gate, self.state)
 
     def cz(self):
         """
         Apply CZ gate to the state vector.
         """
-        cz_gate = TorchGates.cz_gate(self.state.shape[1:3], self.device, dtype=self.dtype)
+        cz_gate = TorchGates.cz_gate(
+            self.state.shape[1:3], self.device, dtype=self.dtype
+        )
         self.state = torch.einsum("mnoi,boin->boim", cz_gate, self.state)
 
     def apply_gate(self, gate: torch.Tensor, target: int = 0):
