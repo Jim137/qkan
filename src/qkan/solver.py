@@ -92,7 +92,7 @@ def torch_exact_solver(
     # group = kwargs.get("group", in_dim)
     preacts_trainable = kwargs.get("preacts_trainable", False)
     fast_measure = kwargs.get("fast_measure", True)
-    out_dim = kwargs.get("out_dim", None)
+    out_dim: int = kwargs.get("out_dim", in_dim)
 
     if len(theta.shape) != 4:
         theta = theta.unsqueeze(0)
