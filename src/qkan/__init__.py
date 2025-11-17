@@ -1,6 +1,7 @@
-__version__ = "0.1.2"
+__version__ = "0.1.3-dev1"
 
 from .feynman import dataset_range, get_feynman_dataset
+from .info import print0, print_banner, print_version
 from .kan import KAN
 from .qkan import QKAN, QKANLayer
 from .torch_qc import StateVector, TorchGates
@@ -19,4 +20,7 @@ __all__ = [
     "create_dataset",
     "dataset_range",
     "get_feynman_dataset",
+    "print0",
+    "print_banner",
+    "print_version",
 ]
