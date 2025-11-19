@@ -314,6 +314,12 @@ class StateVector:
             gate = torch.conj_physical(gate).transpose(0, 1)
         self.state = torch.einsum("mnoi,boin->boim", gate, self.state)
 
+    def x(self):
+        """
+        Apply Pauli-X gate to the state vector.
+        """
+        self.state.transpose_(-1, -2)
+
     def rx(self, theta: torch.Tensor, is_dagger: bool = False):
         """
         Apply Rotation-X gate to the state vector.
