@@ -265,28 +265,38 @@ class StateVector:
             - torch.square(self.state[:, :, :, 1].abs())
         )
 
-    def measure_x(self) -> torch.Tensor:
+    def measure_x(self, fast_measure: bool = True) -> torch.Tensor:
         """
         Measure the state vector in the X basis.
 
+        Arguments
+        ---------
+            :fast_measure: bool, default: True. If True, for state |ψ⟩ = α|0⟩ + β|1⟩, return |α| - |β|;
+                           if False, return |α|^2 - |β|^2.
+                           Which is quantum-inspired method and faster when it is True.
         return: torch.Tensor, shape: (batch_size, out_dim, in_dim)
         """
         tmp_state = StateVector(self.batch_size, self.out_dim, self.in_dim, self.device)
         tmp_state.state.copy_(self.state)
         tmp_state.h()
-        return tmp_state.measure_z()
+        return tmp_state.measure_z(fast_measure)
 
-    def measure_y(self) -> torch.Tensor:
+    def measure_y(self, fast_measure: bool = True) -> torch.Tensor:
         """
         Measure the state vector in the Y basis.
 
+        Arguments
+        ---------
+            :fast_measure: bool, default: True. If True, for state |ψ⟩ = α|0⟩ + β|1⟩, return |α| - |β|;
+                           if False, return |α|^2 - |β|^2.
+                           Which is quantum-inspired method and faster when it is True.
         return: torch.Tensor, shape: (batch_size, out_dim, in_dim)
         """
         tmp_state = StateVector(self.batch_size, self.out_dim, self.in_dim, self.device)
         tmp_state.state.copy_(self.state)
         tmp_state.s(is_dagger=True)
         tmp_state.h()
-        return tmp_state.measure_z()
+        return tmp_state.measure_z(fast_measure)
 
     def s(self, is_dagger: bool = False):
         """
