@@ -75,6 +75,10 @@ class QKANLayer(nn.Module):
         fast_measure : bool
             Enable to use fast measurement in exact solver. Which would be quantum-inspired method.
             When False, the exact solver simulates the exact measurement process of quantum circuit.
+        c_dtype : torch.dtype
+            Compute dtype for quantum simulation
+        p_dtype : torch.dtype
+            Parameter dtype for quantum simulation
         _x0 : Optional[torch.Tensor]
             Leave for ResQKANLayer
     """
@@ -98,6 +102,8 @@ class QKANLayer(nn.Module):
         ba_trainable: bool = True,
         is_batchnorm: bool = False,
         fast_measure: bool = True,
+        c_dtype=torch.complex64,
+        p_dtype=torch.float32,
         seed=0,
     ):
         super(QKANLayer, self).__init__()
@@ -126,16 +132,18 @@ class QKANLayer(nn.Module):
         self.is_batchnorm = is_batchnorm
         self.fast_measure = fast_measure
         self.seed = seed
+        self.c_dtype = c_dtype
+        self.p_dtype = p_dtype
 
         if callable("solver") or callable("ansatz"):
             if not theta_size:
                 raise ValueError("theta_size is required for custom ansatz")
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*theta_size, device=device))
+                nn.init.xavier_normal_(torch.empty(*theta_size, device=device, dtype=p_dtype))
             )
         elif ansatz == "pz_encoding":
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*group, reps + 1, 2, device=device))
+                nn.init.xavier_normal_(torch.empty(*group, reps + 1, 2, device=device, dtype=p_dtype))
             )
         elif ansatz == "rpz_encoding":
             if not preact_trainable:
@@ -144,61 +152,61 @@ class QKANLayer(nn.Module):
                 )
                 preact_trainable = True
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*group, reps + 1, 1, device=device))
+                nn.init.xavier_normal_(torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype))
             )
         elif ansatz == "px_encoding":
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*group, reps + 1, 1, device=device))
+                nn.init.xavier_normal_(torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype))
             )
         else:
             raise NotImplementedError()
 
         if ba_trainable:
             self.base_weight = torch.nn.Parameter(
-                0.5 * torch.ones(out_dim, in_dim, device=device),
+                0.5 * torch.ones(out_dim, in_dim, device=device, dtype=p_dtype),
                 requires_grad=ba_trainable,
             )
         else:
             self.base_weight = torch.nn.Parameter(
-                torch.zeros(out_dim, in_dim, device=device), requires_grad=ba_trainable
+                torch.zeros(out_dim, in_dim, device=device, dtype=p_dtype), requires_grad=ba_trainable
             )
 
         self.preact_trainable = preact_trainable
         if not preact_init:
             self.preacts_weight = nn.Parameter(
-                torch.ones(*group, reps, device=device),
+                torch.ones(*group, reps, device=device, dtype=p_dtype),
                 requires_grad=preact_trainable,
             )
             self.preacts_bias = nn.Parameter(
-                torch.zeros(*group, reps, device=device),
+                torch.zeros(*group, reps, device=device, dtype=p_dtype),
                 requires_grad=preact_trainable,
             )
         else:
             self.preacts_weight = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*group, reps, device=device)),
+                nn.init.xavier_normal_(torch.empty(*group, reps, device=device, dtype=p_dtype)),
                 requires_grad=preact_trainable,
             )
             self.preacts_bias = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*group, reps, device=device)),
+                nn.init.xavier_normal_(torch.empty(*group, reps, device=device, dtype=p_dtype)),
                 requires_grad=preact_trainable,
             )
         self.preact_init = preact_init
 
         self.postact_weight_trainable = postact_weight_trainable
         self.postact_weights = nn.Parameter(
-            torch.ones(out_dim, in_dim, device=device),
+            torch.ones(out_dim, in_dim, device=device, dtype=p_dtype),
             requires_grad=postact_weight_trainable,
         )
         self.postact_bias_trainable = postact_bias_trainable
         self.postact_bias = nn.Parameter(
-            torch.zeros(out_dim, in_dim, device=device),
+            torch.zeros(out_dim, in_dim, device=device, dtype=p_dtype),
             requires_grad=postact_bias_trainable,
         )
         self.mask = nn.Parameter(
-            torch.ones(out_dim, in_dim, device=device), requires_grad=False
+            torch.ones(out_dim, in_dim, device=device, dtype=p_dtype), requires_grad=False
         )
         if is_batchnorm:
-            self.bn = nn.BatchNorm1d(in_dim, device=device)
+            self.bn = nn.BatchNorm1d(in_dim, device=device, dtype=p_dtype)
         self._x0: Optional[torch.Tensor] = None
 
     def to(self, *args, **kwargs):
@@ -215,6 +223,8 @@ class QKANLayer(nn.Module):
             if isinstance(arg, str) or isinstance(arg, torch.device):
                 device = arg
                 break
+            elif isinstance(arg, torch.dtype):
+                self.p_dtype = arg
         if "device" in kwargs:
             device = kwargs["device"]
         if device:
@@ -253,7 +263,7 @@ class QKANLayer(nn.Module):
             "oi,bi->boi", self.base_weight, self.base_activation(x)
         )
         if self.solver == "qml":
-            postacts = torch.zeros(batch, self.out_dim, self.in_dim).to(self.device)
+            postacts = torch.zeros(batch, self.out_dim, self.in_dim, dtype=self.p_dtype).to(self.device)
             for j in range(self.out_dim):
                 for i in range(self.in_dim):
                     postacts[:, j, i] = qml_solver(
@@ -262,7 +272,7 @@ class QKANLayer(nn.Module):
                         reps=self.reps,
                         device=self.device,
                         qml_device=self.qml_device,
-                    )
+                    ).to(self.p_dtype)
         elif self.solver == "exact":
             postacts = torch_exact_solver(
                 x,
@@ -276,7 +286,8 @@ class QKANLayer(nn.Module):
                 preacts_trainable=self.preact_trainable,
                 fast_measure=self.fast_measure,
                 out_dim=self.out_dim,
-            )
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
         elif callable(self.solver):
             postacts = self.solver(
                 x,
@@ -302,7 +313,7 @@ class QKANLayer(nn.Module):
         return x
 
     def reset_parameters(self):
-        self.theta.data.copy_(torch.zeros(self.theta.shape))
+        self.theta.data.copy_(torch.zeros(self.theta.shape, self.p_dtype))
 
     @torch.no_grad()
     def forward_no_sum(self, x: torch.Tensor):
@@ -332,7 +343,7 @@ class QKANLayer(nn.Module):
                     for j in range(self.out_dim)
                 ],
                 dim=1,
-            ).to(torch.float32)
+            ).to(self.p_dtype)
         elif self.solver == "exact":
             postacts = torch_exact_solver(
                 x,
@@ -345,7 +356,8 @@ class QKANLayer(nn.Module):
                 group=self.group,
                 preacts_trainable=self.preact_trainable,
                 fast_measure=self.fast_measure,
-            )
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
         else:
             raise NotImplementedError()
         x_new = (
@@ -478,6 +490,8 @@ class QKAN(nn.Module):
         ba_trainable: bool = False,
         fast_measure: bool = True,
         save_act: bool = False,
+        c_dtype=torch.complex64,
+        p_dtype=torch.float32,
         seed=0,
         **kwargs,
     ):
@@ -523,6 +537,10 @@ class QKAN(nn.Module):
             fast_measure : bool
                 Enable to use fast measurement in exact solver. Which would be quantum-inspired method.
                 When False, the exact solver simulates the exact measurement process of quantum circuit.
+            p_dtype : torch.dtype
+                Parameter dtype for quantum simulation, default: torch.float32
+            c_dtype : torch.dtype
+                Compute dtype for quantum simulation, default: torch.complex64
             seed : int
                 Random seed, default: 0
         """
@@ -549,6 +567,8 @@ class QKAN(nn.Module):
         self.ba_trainable = ba_trainable
         self.fast_measure = fast_measure
         self.save_act = save_act
+        self.c_dtype = c_dtype
+        self.p_dtype = p_dtype
         self.seed = seed
 
         self.layers = QKANModuleList()
@@ -571,6 +591,8 @@ class QKAN(nn.Module):
                     ba_trainable=ba_trainable,
                     is_batchnorm=is_batchnorm,
                     fast_measure=fast_measure,
+                    c_dtype=c_dtype,
+                    p_dtype=p_dtype,
                     seed=seed,
                 )
             )
@@ -579,9 +601,9 @@ class QKAN(nn.Module):
         self.is_map = is_map
         self.hidden = hidden
         if is_map:
-            self.layers.append(nn.Linear(width[-2], hidden, device=self.device))
+            self.layers.append(nn.Linear(width[-2], hidden, device=self.device, dtype=self.p_dtype))
             self.layers.append(nn.SiLU())
-            self.layers.append(nn.Linear(hidden, width[-1], device=self.device))
+            self.layers.append(nn.Linear(hidden, width[-1], device=self.device, dtype=self.p_dtype))
         self.input_id: Optional[torch.Tensor] = None
 
     def to(self, *args, **kwargs):
@@ -598,6 +620,8 @@ class QKAN(nn.Module):
             if isinstance(arg, str) or isinstance(arg, torch.device):
                 device = arg
                 break
+            elif isinstance(arg, torch.dtype):
+                self.p_dtype = arg
         if "device" in kwargs:
             device = kwargs["device"]
         if device:

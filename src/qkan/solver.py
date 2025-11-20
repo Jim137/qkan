@@ -93,6 +93,7 @@ def torch_exact_solver(
     preacts_trainable = kwargs.get("preacts_trainable", False)
     fast_measure = kwargs.get("fast_measure", True)
     out_dim: int = kwargs.get("out_dim", in_dim)
+    dtype = kwargs.get("dtype", torch.complex64)
 
     if len(theta.shape) != 4:
         theta = theta.unsqueeze(0)
@@ -126,10 +127,11 @@ def torch_exact_solver(
             theta.shape[0],
             theta.shape[1],
             device=device,
+            dtype=dtype,
         )  # psi.state: torch.Tensor, shape: (batch_size, out_dim, in_dim, 2)
         psi.h()
         if not preacts_trainable:
-            rug = TorchGates.rz_gate(x)
+            rug = TorchGates.rz_gate(x, dtype=dtype)
         for l in range(reps):
             psi.rz(theta[:, :, l, 0])
             psi.ry(theta[:, :, l, 1])
@@ -138,7 +140,7 @@ def torch_exact_solver(
             else:
                 psi.state = torch.einsum(
                     "mnboi,boin->boim",
-                    TorchGates.rz_gate(encoded_x[:, :, :, l]),
+                    TorchGates.rz_gate(encoded_x[:, :, :, l], dtype=dtype),
                     psi.state,
                 )
 
@@ -158,13 +160,14 @@ def torch_exact_solver(
             theta.shape[0],
             theta.shape[1],
             device=device,
+            dtype=dtype,
         )
         psi.h()
         for l in range(reps):
             psi.ry(theta[:, :, l, 0])
             psi.state = torch.einsum(
                 "mnboi,boin->boim",
-                TorchGates.rz_gate(encoded_x[:, :, :, l]),
+                TorchGates.rz_gate(encoded_x[:, :, :, l], dtype=dtype),
                 psi.state,
             )
         psi.ry(theta[:, :, reps, 0])
@@ -182,6 +185,7 @@ def torch_exact_solver(
             theta.shape[0],
             theta.shape[1],
             device=device,
+            dtype=dtype,
         )  # psi.state: torch.Tensor, shape: (batch_size * g, out_dim, n_group, 2)
         psi.h()
         for l in range(reps):
@@ -194,7 +198,8 @@ def torch_exact_solver(
                         encoded_x[:, :, :, l]
                         # )
                         # add sin to prevent input from exceeding pm 1
-                    )
+                    ),
+                    dtype=dtype,
                 ),
                 psi.state,
             )
