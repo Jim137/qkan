@@ -70,10 +70,11 @@ def torch_exact_solver(
         x : torch.Tensor
             shape: (batch_size, in_dim)
         theta : torch.Tensor
+            shape: (*group, reps, 2)
         preacts_weight : torch.Tensor
-            shape: (out_dim, in_dim, reps)
+            shape: (*group, reps)
         preacts_bias : torch.Tensor
-            shape: (out_dim, in_dim, reps)
+            shape: (*group, reps)
         reps : int
         ansatz : str
             options: ["pz_encoding", "px_encoding"], default: "pz_encoding"
@@ -91,39 +92,46 @@ def torch_exact_solver(
     # group = kwargs.get("group", in_dim)
     preacts_trainable = kwargs.get("preacts_trainable", False)
     fast_measure = kwargs.get("fast_measure", True)
-    out_dim = preacts_weight.shape[0]
+    out_dim: int = kwargs.get("out_dim", in_dim)
+    dtype = kwargs.get("dtype", torch.complex64)
 
-    if preacts_trainable:
-        preacts_trainable = True
-        encoded_x = [
-            torch.einsum("oi,bi->boi", preacts_weight[:, :, l], x).add(
-                preacts_bias[:, :, l]
-            )
-            for l in range(reps)
-        ]  # len: reps, shape: (batch_size, out_dim, in_dim)
     if len(theta.shape) != 4:
         theta = theta.unsqueeze(0)
     if theta.shape[1] != in_dim:
         repeat_out = out_dim
         repeat_in = in_dim // theta.shape[1] + 1
         theta = theta.repeat(repeat_out, repeat_in, 1, 1)[:, :in_dim, :, :]
+    if preacts_trainable:
+        if len(preacts_weight.shape) != 3:
+            preacts_weight = preacts_weight.unsqueeze(0)
+            preacts_bias = preacts_bias.unsqueeze(0)
+        if preacts_weight.shape[1] != in_dim:
+            repeat_out = out_dim
+            repeat_in = in_dim // preacts_weight.shape[1] + 1
+            preacts_weight = preacts_weight.repeat(repeat_out, repeat_in, 1)[
+                :, :in_dim, :
+            ]
+            preacts_bias = preacts_bias.repeat(repeat_out, repeat_in, 1)[:, :in_dim, :]
+        encoded_x = torch.einsum("oir,bi->boir", preacts_weight, x).add(preacts_bias)
+        # encoded_x shape: (batch_size, out_dim, in_dim, reps)
 
-    def pz_encoding(theta: torch.Tensor):
+    def _pz_encoding(theta: torch.Tensor):
         """
         Args
         ----
             theta : torch.Tensor
-                shape: (out_dim, n_group, reps, 2)
+                shape: (*group, reps, 2)
         """
         psi = StateVector(
             x.shape[0],
             theta.shape[0],
             theta.shape[1],
             device=device,
+            dtype=dtype,
         )  # psi.state: torch.Tensor, shape: (batch_size, out_dim, in_dim, 2)
         psi.h()
         if not preacts_trainable:
-            rug = TorchGates.rz_gate(x)
+            rug = TorchGates.rz_gate(x, dtype=dtype)
         for l in range(reps):
             psi.rz(theta[:, :, l, 0])
             psi.ry(theta[:, :, l, 1])
@@ -132,7 +140,7 @@ def torch_exact_solver(
             else:
                 psi.state = torch.einsum(
                     "mnboi,boin->boim",
-                    TorchGates.rz_gate(encoded_x[l]),
+                    TorchGates.rz_gate(encoded_x[:, :, :, l], dtype=dtype),
                     psi.state,
                 )
 
@@ -140,42 +148,44 @@ def torch_exact_solver(
         psi.ry(theta[:, :, reps, 1])
         return psi.measure_z(fast_measure)  # shape: (batch_size, out_dim, in_dim)
 
-    def rpz_enocding(theta: torch.Tensor):
+    def _rpz_encoding(theta: torch.Tensor):
         """
         Args
         ----
             theta : torch.Tensor
-                shape: (out_dim, n_group, reps, 2)
+                shape: (*group, reps, 2)
         """
         psi = StateVector(
             x.shape[0],
             theta.shape[0],
             theta.shape[1],
             device=device,
+            dtype=dtype,
         )
         psi.h()
         for l in range(reps):
             psi.ry(theta[:, :, l, 0])
             psi.state = torch.einsum(
                 "mnboi,boin->boim",
-                TorchGates.rz_gate(encoded_x[l]),
+                TorchGates.rz_gate(encoded_x[:, :, :, l], dtype=dtype),
                 psi.state,
             )
         psi.ry(theta[:, :, reps, 0])
         return psi.measure_z(fast_measure)  # shape: (batch_size, out_dim, in_dim)
 
-    def px_encoding(theta: torch.Tensor):
+    def _px_encoding(theta: torch.Tensor):
         """
         Args
         ----
             theta: torch.Tensor
-                shape: (out_dim, n_group, reps, 1)
+                shape: (*group, reps, 1)
         """
         psi = StateVector(
             x.shape[0],
             theta.shape[0],
             theta.shape[1],
             device=device,
+            dtype=dtype,
         )  # psi.state: torch.Tensor, shape: (batch_size * g, out_dim, n_group, 2)
         psi.h()
         for l in range(reps):
@@ -185,10 +195,11 @@ def torch_exact_solver(
                 TorchGates.rx_gate(
                     torch.acos(
                         # torch.sin(
-                        encoded_x[l]
+                        encoded_x[:, :, :, l]
                         # )
                         # add sin to prevent input from exceeding pm 1
-                    )
+                    ),
+                    dtype=dtype,
                 ),
                 psi.state,
             )
@@ -205,12 +216,12 @@ def torch_exact_solver(
         psi.rz(theta[:, :, reps, 0])
         return psi.measure_z(fast_measure)  # shape: (batch_size, out_dim, in_dim)
 
-    if ansatz == "pz_encoding":
-        circuit = pz_encoding
-    elif ansatz == "rpz_encoding":
-        circuit = rpz_enocding
-    elif ansatz == "px_encoding":
-        circuit = px_encoding
+    if ansatz == "pz_encoding" or ansatz == "pz":
+        circuit = _pz_encoding
+    elif ansatz == "rpz_encoding" or ansatz == "rpz":
+        circuit = _rpz_encoding
+    elif ansatz == "px_encoding" or ansatz == "px":
+        circuit = _px_encoding
     elif callable(ansatz):
         circuit = ansatz
     else:

@@ -21,6 +21,7 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2509.14026-b31b1b.svg)](https://arxiv.org/abs/2509.14026)
 [![pypi](https://img.shields.io/pypi/v/qkan)](https://pypi.org/project/qkan/)
 ![License](https://img.shields.io/github/license/Jim137/qkan)
+[![DOI](https://zenodo.org/badge/1006914967.svg)](https://doi.org/10.5281/zenodo.17437425)
 
 </div>
 
@@ -134,5 +135,13 @@ pip install .[all] # install all optional dependencies
   journal={arXiv preprint arXiv:2509.14026},
   year={2025},
   url={https://arxiv.org/abs/2509.14026}
+}
+@misc{jiang2025qkan_software,
+  title={QKAN: Quantum-inspired Kolmogorov-Arnold Network},
+  author={Jiang, Jiun-Cheng},
+  year={2025},
+  publisher={Zenodo},
+  doi={10.5281/zenodo.17437425},
+  url={https://doi.org/10.5281/zenodo.17437425}
 }
 ```

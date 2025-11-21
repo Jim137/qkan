@@ -46,6 +46,8 @@ doc = [
     "nbsphinx",
     "jupyter",
     "qiskit[visualization]>=2.0",
+    "transformers",
+    "torchvision",
 ]
 
 all = ["qkan[qml,dev,doc]"]
