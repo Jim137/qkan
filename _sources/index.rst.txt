@@ -82,7 +82,7 @@ Here's a minimal working example for function fitting using QKAN:
 Citation
 --------
 
-If you find this project useful in your research, please consider citing the following paper:
+If you find this project useful in your research, please consider citing the following bibliographic references:
 
 .. code-block:: bibtex
 
@@ -92,6 +92,14 @@ If you find this project useful in your research, please consider citing the fol
       journal={arXiv preprint arXiv:2509.14026},
       year={2025},
       url={https://arxiv.org/abs/2509.14026}
+   }
+   @misc{jiang2025qkan_software,
+      title={QKAN: Quantum-inspired Kolmogorov-Arnold Network},
+      author={Jiang, Jiun-Cheng},
+      year={2025},
+      publisher={Zenodo},
+      doi={10.5281/zenodo.17437425},
+      url={https://doi.org/10.5281/zenodo.17437425}
    }
 
 .. toctree::

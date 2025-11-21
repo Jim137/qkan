@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.solver &mdash; QKAN 0.1.2 documentation</title>
+  <title>qkan.solver &mdash; QKAN 0.1.3 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver.html" />
       <script src="../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../_static/documentation_options.js?v=92734c54"></script>
+      <script src="../../_static/documentation_options.js?v=360bc84d"></script>
       <script src="../../_static/doctools.js?v=9bcbadda"></script>
       <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -150,10 +150,11 @@
 <span class="sd">        x : torch.Tensor</span>
 <span class="sd">            shape: (batch_size, in_dim)</span>
 <span class="sd">        theta : torch.Tensor</span>
+<span class="sd">            shape: (*group, reps, 2)</span>
 <span class="sd">        preacts_weight : torch.Tensor</span>
-<span class="sd">            shape: (out_dim, in_dim, reps)</span>
+<span class="sd">            shape: (*group, reps)</span>
 <span class="sd">        preacts_bias : torch.Tensor</span>
-<span class="sd">            shape: (out_dim, in_dim, reps)</span>
+<span class="sd">            shape: (*group, reps)</span>
 <span class="sd">        reps : int</span>
 <span class="sd">        ansatz : str</span>
 <span class="sd">            options: [&quot;pz_encoding&quot;, &quot;px_encoding&quot;], default: &quot;pz_encoding&quot;</span>
@@ -171,39 +172,46 @@
     <span class="c1"># group = kwargs.get(&quot;group&quot;, in_dim)</span>
     <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;preacts_trainable&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
     <span class="n">fast_measure</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;fast_measure&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
-    <span class="n">out_dim</span> <span class="o">=</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">out_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;out_dim&quot;</span><span class="p">,</span> <span class="n">in_dim</span><span class="p">)</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;dtype&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex64</span><span class="p">)</span>
 
-    <span class="k">if</span> <span class="n">preacts_trainable</span><span class="p">:</span>
-        <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="n">encoded_x</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;oi,bi-&gt;boi&quot;</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">l</span><span class="p">],</span> <span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
-                <span class="n">preacts_bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">l</span><span class="p">]</span>
-            <span class="p">)</span>
-            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">)</span>
-        <span class="p">]</span>  <span class="c1"># len: reps, shape: (batch_size, out_dim, in_dim)</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
         <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">in_dim</span><span class="p">:</span>
         <span class="n">repeat_out</span> <span class="o">=</span> <span class="n">out_dim</span>
         <span class="n">repeat_in</span> <span class="o">=</span> <span class="n">in_dim</span> <span class="o">//</span> <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
         <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>
+    <span class="k">if</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">in_dim</span><span class="p">:</span>
+            <span class="n">repeat_out</span> <span class="o">=</span> <span class="n">out_dim</span>
+            <span class="n">repeat_in</span> <span class="o">=</span> <span class="n">in_dim</span> <span class="o">//</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span>
+                <span class="p">:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:</span>
+            <span class="p">]</span>
+            <span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="n">encoded_x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;oir,bi-&gt;boir&quot;</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">preacts_bias</span><span class="p">)</span>
+        <span class="c1"># encoded_x shape: (batch_size, out_dim, in_dim, reps)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">pz_encoding</span><span class="p">(</span><span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_pz_encoding</span><span class="p">(</span><span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Args</span>
 <span class="sd">        ----</span>
 <span class="sd">            theta : torch.Tensor</span>
-<span class="sd">                shape: (out_dim, n_group, reps, 2)</span>
+<span class="sd">                shape: (*group, reps, 2)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">psi</span> <span class="o">=</span> <span class="n">StateVector</span><span class="p">(</span>
             <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
             <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
             <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
             <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
         <span class="p">)</span>  <span class="c1"># psi.state: torch.Tensor, shape: (batch_size, out_dim, in_dim, 2)</span>
         <span class="n">psi</span><span class="o">.</span><span class="n">h</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">preacts_trainable</span><span class="p">:</span>
-            <span class="n">rug</span> <span class="o">=</span> <span class="n">TorchGates</span><span class="o">.</span><span class="n">rz_gate</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="n">rug</span> <span class="o">=</span> <span class="n">TorchGates</span><span class="o">.</span><span class="n">rz_gate</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
             <span class="n">psi</span><span class="o">.</span><span class="n">rz</span><span class="p">(</span><span class="n">theta</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">l</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
             <span class="n">psi</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">theta</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">l</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
@@ -212,7 +220,7 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">psi</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
                     <span class="s2">&quot;mnboi,boin-&gt;boim&quot;</span><span class="p">,</span>
-                    <span class="n">TorchGates</span><span class="o">.</span><span class="n">rz_gate</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">]),</span>
+                    <span class="n">TorchGates</span><span class="o">.</span><span class="n">rz_gate</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="n">l</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">),</span>
                     <span class="n">psi</span><span class="o">.</span><span class="n">state</span><span class="p">,</span>
                 <span class="p">)</span>
 
@@ -220,42 +228,44 @@
         <span class="n">psi</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">theta</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">reps</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
         <span class="k">return</span> <span class="n">psi</span><span class="o">.</span><span class="n">measure_z</span><span class="p">(</span><span class="n">fast_measure</span><span class="p">)</span>  <span class="c1"># shape: (batch_size, out_dim, in_dim)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">rpz_enocding</span><span class="p">(</span><span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_rpz_encoding</span><span class="p">(</span><span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Args</span>
 <span class="sd">        ----</span>
 <span class="sd">            theta : torch.Tensor</span>
-<span class="sd">                shape: (out_dim, n_group, reps, 2)</span>
+<span class="sd">                shape: (*group, reps, 2)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">psi</span> <span class="o">=</span> <span class="n">StateVector</span><span class="p">(</span>
             <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
             <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
             <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
             <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">psi</span><span class="o">.</span><span class="n">h</span><span class="p">()</span>
         <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
             <span class="n">psi</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">theta</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">l</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
             <span class="n">psi</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
                 <span class="s2">&quot;mnboi,boin-&gt;boim&quot;</span><span class="p">,</span>
-                <span class="n">TorchGates</span><span class="o">.</span><span class="n">rz_gate</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">]),</span>
+                <span class="n">TorchGates</span><span class="o">.</span><span class="n">rz_gate</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="n">l</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">),</span>
                 <span class="n">psi</span><span class="o">.</span><span class="n">state</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="n">psi</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">theta</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">reps</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
         <span class="k">return</span> <span class="n">psi</span><span class="o">.</span><span class="n">measure_z</span><span class="p">(</span><span class="n">fast_measure</span><span class="p">)</span>  <span class="c1"># shape: (batch_size, out_dim, in_dim)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">px_encoding</span><span class="p">(</span><span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_px_encoding</span><span class="p">(</span><span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Args</span>
 <span class="sd">        ----</span>
 <span class="sd">            theta: torch.Tensor</span>
-<span class="sd">                shape: (out_dim, n_group, reps, 1)</span>
+<span class="sd">                shape: (*group, reps, 1)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">psi</span> <span class="o">=</span> <span class="n">StateVector</span><span class="p">(</span>
             <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
             <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
             <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
             <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
         <span class="p">)</span>  <span class="c1"># psi.state: torch.Tensor, shape: (batch_size * g, out_dim, n_group, 2)</span>
         <span class="n">psi</span><span class="o">.</span><span class="n">h</span><span class="p">()</span>
         <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
@@ -265,10 +275,11 @@
                 <span class="n">TorchGates</span><span class="o">.</span><span class="n">rx_gate</span><span class="p">(</span>
                     <span class="n">torch</span><span class="o">.</span><span class="n">acos</span><span class="p">(</span>
                         <span class="c1"># torch.sin(</span>
-                        <span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">]</span>
+                        <span class="n">encoded_x</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="n">l</span><span class="p">]</span>
                         <span class="c1"># )</span>
                         <span class="c1"># add sin to prevent input from exceeding pm 1</span>
-                    <span class="p">)</span>
+                    <span class="p">),</span>
+                    <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
                 <span class="p">),</span>
                 <span class="n">psi</span><span class="o">.</span><span class="n">state</span><span class="p">,</span>
             <span class="p">)</span>
@@ -285,12 +296,12 @@
         <span class="n">psi</span><span class="o">.</span><span class="n">rz</span><span class="p">(</span><span class="n">theta</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">reps</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
         <span class="k">return</span> <span class="n">psi</span><span class="o">.</span><span class="n">measure_z</span><span class="p">(</span><span class="n">fast_measure</span><span class="p">)</span>  <span class="c1"># shape: (batch_size, out_dim, in_dim)</span>
 
-    <span class="k">if</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;pz_encoding&quot;</span><span class="p">:</span>
-        <span class="n">circuit</span> <span class="o">=</span> <span class="n">pz_encoding</span>
-    <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;rpz_encoding&quot;</span><span class="p">:</span>
-        <span class="n">circuit</span> <span class="o">=</span> <span class="n">rpz_enocding</span>
-    <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;px_encoding&quot;</span><span class="p">:</span>
-        <span class="n">circuit</span> <span class="o">=</span> <span class="n">px_encoding</span>
+    <span class="k">if</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;pz_encoding&quot;</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;pz&quot;</span><span class="p">:</span>
+        <span class="n">circuit</span> <span class="o">=</span> <span class="n">_pz_encoding</span>
+    <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;rpz_encoding&quot;</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;rpz&quot;</span><span class="p">:</span>
+        <span class="n">circuit</span> <span class="o">=</span> <span class="n">_rpz_encoding</span>
+    <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;px_encoding&quot;</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;px&quot;</span><span class="p">:</span>
+        <span class="n">circuit</span> <span class="o">=</span> <span class="n">_px_encoding</span>
     <span class="k">elif</span> <span class="nb">callable</span><span class="p">(</span><span class="n">ansatz</span><span class="p">):</span>
         <span class="n">circuit</span> <span class="o">=</span> <span class="n">ansatz</span>
     <span class="k">else</span><span class="p">:</span>
