@@ -52,7 +52,7 @@ def print_banner():
 
 
 def print_version():
-    # print the version and the banner"
+    # print the version and the banner
     print0("=" * 60)
     print_banner()
     print0(f"QKAN version: {__version__}")
