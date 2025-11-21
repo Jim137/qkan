@@ -330,7 +330,7 @@ class QKANLayer(nn.Module):
         return x
 
     def reset_parameters(self):
-        self.theta.data.copy_(torch.zeros(self.theta.shape, self.p_dtype))
+        self.theta.data.copy_(torch.zeros(self.theta.shape, dtype=self.p_dtype))
 
     @torch.no_grad()
     def forward_no_sum(self, x: torch.Tensor):
