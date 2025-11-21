@@ -25,6 +25,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm  # type: ignore
 
+from .info import get_dist_info, print0, print_version
 from .solver import qml_solver, torch_exact_solver
 
 
@@ -139,11 +140,15 @@ class QKANLayer(nn.Module):
             if not theta_size:
                 raise ValueError("theta_size is required for custom ansatz")
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*theta_size, device=device, dtype=p_dtype))
+                nn.init.xavier_normal_(
+                    torch.empty(*theta_size, device=device, dtype=p_dtype)
+                )
             )
         elif ansatz == "pz_encoding":
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*group, reps + 1, 2, device=device, dtype=p_dtype))
+                nn.init.xavier_normal_(
+                    torch.empty(*group, reps + 1, 2, device=device, dtype=p_dtype)
+                )
             )
         elif ansatz == "rpz_encoding":
             if not preact_trainable:
@@ -152,11 +157,15 @@ class QKANLayer(nn.Module):
                 )
                 preact_trainable = True
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype))
+                nn.init.xavier_normal_(
+                    torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
+                )
             )
         elif ansatz == "px_encoding":
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype))
+                nn.init.xavier_normal_(
+                    torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
+                )
             )
         else:
             raise NotImplementedError()
@@ -168,7 +177,8 @@ class QKANLayer(nn.Module):
             )
         else:
             self.base_weight = torch.nn.Parameter(
-                torch.zeros(out_dim, in_dim, device=device, dtype=p_dtype), requires_grad=ba_trainable
+                torch.zeros(out_dim, in_dim, device=device, dtype=p_dtype),
+                requires_grad=ba_trainable,
             )
 
         self.preact_trainable = preact_trainable
@@ -183,11 +193,15 @@ class QKANLayer(nn.Module):
             )
         else:
             self.preacts_weight = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*group, reps, device=device, dtype=p_dtype)),
+                nn.init.xavier_normal_(
+                    torch.empty(*group, reps, device=device, dtype=p_dtype)
+                ),
                 requires_grad=preact_trainable,
             )
             self.preacts_bias = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(*group, reps, device=device, dtype=p_dtype)),
+                nn.init.xavier_normal_(
+                    torch.empty(*group, reps, device=device, dtype=p_dtype)
+                ),
                 requires_grad=preact_trainable,
             )
         self.preact_init = preact_init
@@ -203,7 +217,8 @@ class QKANLayer(nn.Module):
             requires_grad=postact_bias_trainable,
         )
         self.mask = nn.Parameter(
-            torch.ones(out_dim, in_dim, device=device, dtype=p_dtype), requires_grad=False
+            torch.ones(out_dim, in_dim, device=device, dtype=p_dtype),
+            requires_grad=False,
         )
         if is_batchnorm:
             self.bn = nn.BatchNorm1d(in_dim, device=device, dtype=p_dtype)
@@ -263,7 +278,9 @@ class QKANLayer(nn.Module):
             "oi,bi->boi", self.base_weight, self.base_activation(x)
         )
         if self.solver == "qml":
-            postacts = torch.zeros(batch, self.out_dim, self.in_dim, dtype=self.p_dtype).to(self.device)
+            postacts = torch.zeros(
+                batch, self.out_dim, self.in_dim, dtype=self.p_dtype
+            ).to(self.device)
             for j in range(self.out_dim):
                 for i in range(self.in_dim):
                     postacts[:, j, i] = qml_solver(
@@ -601,9 +618,13 @@ class QKAN(nn.Module):
         self.is_map = is_map
         self.hidden = hidden
         if is_map:
-            self.layers.append(nn.Linear(width[-2], hidden, device=self.device, dtype=self.p_dtype))
+            self.layers.append(
+                nn.Linear(width[-2], hidden, device=self.device, dtype=self.p_dtype)
+            )
             self.layers.append(nn.SiLU())
-            self.layers.append(nn.Linear(hidden, width[-1], device=self.device, dtype=self.p_dtype))
+            self.layers.append(
+                nn.Linear(hidden, width[-1], device=self.device, dtype=self.p_dtype)
+            )
         self.input_id: Optional[torch.Tensor] = None
 
     def to(self, *args, **kwargs):
@@ -1020,6 +1041,9 @@ class QKAN(nn.Module):
             dict
                 Dictionary containing train_loss and test_loss
         """
+        if not verbose:
+            print_version()
+
         if lamb > 0.0 and not self.save_act:
             lamb = 0.0
             warnings.warn(
@@ -1578,7 +1602,7 @@ class QKAN(nn.Module):
             self.attribute()
             input_score = self.node_scores[0]
             input_mask = input_score > threshold
-            print("keep:", input_mask.tolist())
+            print0("keep:", input_mask.tolist())
             input_id = torch.where(input_mask == True)[0]  # noqa: E712
 
         else:
@@ -1668,12 +1692,14 @@ class QKAN(nn.Module):
             folder : str
                 Folder containing checkpoints, default: "./model_ckpt"
         """
-        if os.path.exists(folder):
-            files = glob(folder + "/*")
-            for f in files:
-                os.remove(f)
-        else:
-            os.makedirs(folder)
+        is_ddp, ddp_rank, _, _ = get_dist_info()
+        if not is_ddp or ddp_rank == 0:
+            if os.path.exists(folder):
+                files = glob(folder + "/*")
+                for f in files:
+                    os.remove(f)
+            else:
+                os.makedirs(folder)
 
     def save_ckpt(self, name, folder="./model_ckpt"):
         """
@@ -1686,12 +1712,13 @@ class QKAN(nn.Module):
             folder : str
                 Folder to save the checkpoint, default: "./model_ckpt"
         """
+        is_ddp, ddp_rank, _, _ = get_dist_info()
+        if not is_ddp or ddp_rank == 0:
+            if not os.path.exists(folder):
+                os.makedirs(folder)
 
-        if not os.path.exists(folder):
-            os.makedirs(folder)
-
-        torch.save(self.state_dict(), folder + "/" + name)
-        print("save this model to", folder + "/" + name)
+            torch.save(self.state_dict(), folder + "/" + name)
+            print0("save this model to", folder + "/" + name)
 
     def load_ckpt(self, name, folder="./model_ckpt"):
         """
