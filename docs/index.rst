@@ -82,7 +82,7 @@ Here's a minimal working example for function fitting using QKAN:
 Citation
 --------
 
-If you find this project useful in your research, please consider citing the following biobliographic references:
+If you find this project useful in your research, please consider citing the following bibliographic references:
 
 .. code-block:: bibtex
 
