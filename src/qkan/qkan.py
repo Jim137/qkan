@@ -997,7 +997,7 @@ class QKAN(nn.Module):
         lamb_coef=0.0,
         lamb_coefdiff=0.0,
         reg_metric="edge_forward_dr_n",
-        verbose=False,
+        verbose=True,
     ):
         """
         Train the model
@@ -1034,14 +1034,14 @@ class QKAN(nn.Module):
                 Regularization metric.
                 'edge_forward_dr_n', 'edge_forward_dr_u', 'edge_forward_sum', 'edge_backward', 'node_backward'
             verbose : bool
-                Verbose mode, default: False
+                Verbose mode, default: True
 
         Returns
         -------
             dict
                 Dictionary containing train_loss and test_loss
         """
-        if not verbose:
+        if verbose:
             print_version()
 
         if lamb > 0.0 and not self.save_act:
