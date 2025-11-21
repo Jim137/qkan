@@ -148,7 +148,7 @@ def torch_exact_solver(
         psi.ry(theta[:, :, reps, 1])
         return psi.measure_z(fast_measure)  # shape: (batch_size, out_dim, in_dim)
 
-    def _rpz_enocding(theta: torch.Tensor):
+    def _rpz_encoding(theta: torch.Tensor):
         """
         Args
         ----
@@ -216,11 +216,11 @@ def torch_exact_solver(
         psi.rz(theta[:, :, reps, 0])
         return psi.measure_z(fast_measure)  # shape: (batch_size, out_dim, in_dim)
 
-    if ansatz == "pz_encoding":
+    if ansatz == "pz_encoding" or ansatz == "pz":
         circuit = _pz_encoding
-    elif ansatz == "rpz_encoding":
-        circuit = _rpz_enocding
-    elif ansatz == "px_encoding":
+    elif ansatz == "rpz_encoding" or ansatz == "rpz":
+        circuit = _rpz_encoding
+    elif ansatz == "px_encoding" or ansatz == "px":
         circuit = _px_encoding
     elif callable(ansatz):
         circuit = ansatz

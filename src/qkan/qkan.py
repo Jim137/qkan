@@ -144,13 +144,13 @@ class QKANLayer(nn.Module):
                     torch.empty(*theta_size, device=device, dtype=p_dtype)
                 )
             )
-        elif ansatz == "pz_encoding":
+        elif ansatz == "pz_encoding" or ansatz == "pz":
             self.theta = nn.Parameter(
                 nn.init.xavier_normal_(
                     torch.empty(*group, reps + 1, 2, device=device, dtype=p_dtype)
                 )
             )
-        elif ansatz == "rpz_encoding":
+        elif ansatz == "rpz_encoding" or ansatz == "rpz":
             if not preact_trainable:
                 warnings.warn(
                     "Reduced pz encoding requires preact_trainable=True, set automatically."
@@ -161,7 +161,7 @@ class QKANLayer(nn.Module):
                     torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
                 )
             )
-        elif ansatz == "px_encoding":
+        elif ansatz == "px_encoding" or ansatz == "px":
             self.theta = nn.Parameter(
                 nn.init.xavier_normal_(
                     torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
@@ -534,7 +534,7 @@ class QKAN(nn.Module):
             solver : Union[Literal["qml", "exact"], Callable]
                 Solver to use, default: "exact"
             ansatz : Union[str, Callable]
-                Ansatz to use, "pz_encoding", "px_encoding", "rpz_encoding" or custom
+                Ansatz to use, "pz_encoding" ("pz"), "px_encoding" ("px"), "rpz_encoding" ("rpz", reduced pz encoding) or custom
             qml_device : str
                 PennyLane device to use, default: "default.qubit"
             ansatz : str | Callable
