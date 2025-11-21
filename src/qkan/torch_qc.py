@@ -331,7 +331,7 @@ class StateVector:
         self.state = torch.index_select(
             self.state, dim=-1, index=torch.tensor([1, 0], device=self.device)
         )
-    
+
     def z(self):
         """
         Apply Pauli-Z gate to the state vector.
