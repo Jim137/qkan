@@ -131,7 +131,7 @@ pip install .[all] # install all optional dependencies
 ```bibtex
 @article{jiang2025qkan,
   title={Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks},
-  author={Jiang, Jiun-Cheng and Huang, Yu-Chao and Chen, Tianlong and Goan, Hsi-Sheng},
+  author={Jiang, Jiun-Cheng and Huang, Morris Yu-Chao and Chen, Tianlong and Goan, Hsi-Sheng},
   journal={arXiv preprint arXiv:2509.14026},
   year={2025},
   url={https://arxiv.org/abs/2509.14026}
