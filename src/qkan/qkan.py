@@ -136,7 +136,7 @@ class QKANLayer(nn.Module):
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
 
-        if callable("solver") or callable("ansatz"):
+        if callable(solver) or callable(ansatz):
             if not theta_size:
                 raise ValueError("theta_size is required for custom ansatz")
             self.theta = nn.Parameter(
@@ -498,6 +498,7 @@ class QKAN(nn.Module):
         solver: Union[Literal["qml", "exact"], Callable] = "exact",
         qml_device: str = "default.qubit",
         ansatz: Union[str, Callable] = "pz_encoding",
+        theta_size: Optional[list[int]] = None,
         norm_out: int = 0,
         preact_trainable: bool = False,
         preact_init: bool = False,
@@ -580,6 +581,7 @@ class QKAN(nn.Module):
         self.postact_bias_trainable = postact_bias_trainable
         self.preact_trainable = preact_trainable
         self.preact_init = preact_init
+        self.theta_size = theta_size
         self.base_activation = base_activation
         self.ba_trainable = ba_trainable
         self.fast_measure = fast_measure
@@ -600,6 +602,7 @@ class QKAN(nn.Module):
                     solver=self.solver,
                     qml_device=self.qml_device,
                     ansatz=self.ansatz,
+                    theta_size=theta_size,
                     preact_trainable=preact_trainable,
                     preact_init=preact_init,
                     postact_weight_trainable=postact_weight_trainable,
