@@ -136,7 +136,7 @@ class QKANLayer(nn.Module):
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
 
-        if callable("solver") or callable("ansatz"):
+        if callable(solver) or callable(ansatz):
             if not theta_size:
                 raise ValueError("theta_size is required for custom ansatz")
             self.theta = nn.Parameter(
