@@ -1,4 +1,4 @@
-__version__ = "0.1.4"
+__version__ = "0.1.5dev"
 
 from .feynman import dataset_range, get_feynman_dataset
 from .info import print0, print_banner, print_version
