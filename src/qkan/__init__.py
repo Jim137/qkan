@@ -1,5 +1,6 @@
 __version__ = "0.1.5dev"
 
+from .daruan import DARUAN
 from .feynman import dataset_range, get_feynman_dataset
 from .info import print0, print_banner, print_version
 from .kan import KAN
@@ -11,6 +12,7 @@ __author__ = "Jiun-Cheng Jiang"
 __email__ = "jcjiang@phys.ntu.edu.tw"
 
 __all__ = [
+    "DARUAN",
     "KAN",
     "QKAN",
     "QKANLayer",
