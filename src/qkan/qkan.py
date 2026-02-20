@@ -1,3 +1,17 @@
+# Copyright (c) 2024, Jiun-Cheng Jiang. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 Quantum-inspired Kolmogorov Arnold Networks (QKANs) implementation in PyTorch.
 Paper: Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks: https://arxiv.org/abs/2509.14026
@@ -6,9 +20,6 @@ Supported solvers:
     - PennyLane
     - Exact solver implemented in PyTorch (faster)
     - Custom solvers api
-
-Code author: Jiun-Cheng Jiang (Jim137@GitHub)
-Contact: [jcjiang@phys.ntu.edu.tw](mailto:jcjiang@phys.ntu.edu.tw)
 """
 
 import os
