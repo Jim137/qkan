@@ -772,6 +772,67 @@ class QKAN(nn.Module):
                 count += 2
         return self
 
+    def refine(self, new_reps: int) -> "QKAN":
+        """
+        Refine the model by layer extension, increasing the number of repetitions of quantum layers.
+
+        Args
+        ----
+            new_reps : int
+                New number of repetitions of quantum layers
+
+        Returns
+        -------
+            QKAN
+                New QKAN model with increased repetitions
+        """
+        assert new_reps > self.reps, (
+            "New repetitions must be greater than current repetitions"
+        )
+        new_model = QKAN(
+            width=self.width,
+            reps=new_reps,
+            group=self.group,
+            device=self.device,
+            solver=self.solver,
+            qml_device=self.qml_device,
+            ansatz=self.ansatz,
+            theta_size=self.theta_size,
+            norm_out=self.norm_out,
+            preact_trainable=self.preact_trainable,
+            preact_init=self.preact_init,
+            postact_weight_trainable=self.postact_weight_trainable,
+            postact_bias_trainable=self.postact_bias_trainable,
+            base_activation=self.base_activation,
+            ba_trainable=self.ba_trainable,
+            is_batchnorm=self.is_batchnorm,
+            is_map=self.is_map,
+            hidden=self.hidden,
+            fast_measure=self.fast_measure,
+            save_act=self.save_act,
+            c_dtype=self.c_dtype,
+            p_dtype=self.p_dtype,
+            seed=self.seed,
+        )
+        new_model.initialize_from_another_model(self)
+        return new_model
+
+    def layer_extension(self, new_reps: int) -> "QKAN":
+        """
+        Refine the model by layer extension, increasing the number of repetitions of quantum layers.
+
+        Args
+        ----
+            new_reps : int
+                New number of repetitions of quantum layers
+
+        Returns
+        -------
+            QKAN
+                New QKAN model with increased repetitions
+        """
+        return self.refine(new_reps)
+
     def _reg(
         self,
         reg_metric: str,
