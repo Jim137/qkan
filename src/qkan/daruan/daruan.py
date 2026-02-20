@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import random
-from typing import Literal, Union
+from typing import Literal
 
 import numpy as np
 import torch

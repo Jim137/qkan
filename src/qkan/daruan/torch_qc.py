@@ -22,6 +22,7 @@ Features:
 """
 
 import math
+
 import torch
 
 INV_SQRT2 = math.sqrt(2.0) / 2.0
