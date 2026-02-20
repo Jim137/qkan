@@ -105,13 +105,14 @@ class QKANLayer(nn.Module):
         fast_measure: bool = True,
         c_dtype=torch.complex64,
         p_dtype=torch.float32,
-        seed=0,
+        seed=None,
     ):
         super(QKANLayer, self).__init__()
 
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            random.seed(seed)
 
         if isinstance(group, int):
             if group == -1:
@@ -510,7 +511,7 @@ class QKAN(nn.Module):
         save_act: bool = False,
         c_dtype=torch.complex64,
         p_dtype=torch.float32,
-        seed=0,
+        seed=None,
         **kwargs,
     ):
         """
@@ -559,14 +560,15 @@ class QKAN(nn.Module):
                 Parameter dtype for quantum simulation, default: torch.float32
             c_dtype : torch.dtype
                 Compute dtype for quantum simulation, default: torch.complex64
-            seed : int
-                Random seed, default: 0
+            seed : Any
+                Random seed, default: None
         """
         super(QKAN, self).__init__()
 
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            random.seed(seed)
 
         self.depth = len(width) - (2 if is_map else 1)
         self.width = width
