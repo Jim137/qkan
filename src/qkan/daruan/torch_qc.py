@@ -155,18 +155,13 @@ class StateVector:
         self.device = device
         self.dtype = dtype
 
-        self.state = torch.zeros(
-            batch_size, dim, 2, dtype=dtype, device=device
-        )
+        self.state = torch.zeros(batch_size, dim, 2, dtype=dtype, device=device)
         self.state[..., 0] = 1.0
 
     def measure_z(self, fast_measure=True):
         if fast_measure:
             return self.state[..., 0].abs() - self.state[..., 1].abs()
-        return (
-            self.state[..., 0].abs().square()
-            - self.state[..., 1].abs().square()
-        )
+        return self.state[..., 0].abs().square() - self.state[..., 1].abs().square()
 
     def measure_x(self, fast_measure=True):
         tmp = StateVector(self.batch_size, self.dim, self.device, self.dtype)
