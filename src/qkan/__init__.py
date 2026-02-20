@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__version__ = "0.1.5"
+__version__ = "0.1.6dev"
 
 from .daruan import DARUAN
 from .feynman import dataset_range, get_feynman_dataset
