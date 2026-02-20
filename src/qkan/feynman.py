@@ -65,9 +65,10 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.6.20" | 2:
             symbol = theta, sigma = symbols("theta sigma")
             expr = exp(-(theta**2) / (2 * sigma**2)) / sqrt(2 * pi * sigma**2)
-            f = lambda x: torch.exp(
-                -(x[:, [0]] ** 2) / (2 * x[:, [1]] ** 2)
-            ) / torch.sqrt(2 * tpi * x[:, [1]] ** 2)
+            f = lambda x: (
+                torch.exp(-(x[:, [0]] ** 2) / (2 * x[:, [1]] ** 2))
+                / torch.sqrt(2 * tpi * x[:, [1]] ** 2)
+            )
             ranges = [[-1, 1], [0.5, 2]]
 
         case "I.6.20b" | 3:
@@ -75,9 +76,10 @@ def get_feynman_dataset(name: TyUnion[str, int]):
             expr = exp(-((theta - theta1) ** 2) / (2 * sigma**2)) / sqrt(
                 2 * pi * sigma**2
             )
-            f = lambda x: torch.exp(
-                -((x[:, [0]] - x[:, [1]]) ** 2) / (2 * x[:, [2]] ** 2)
-            ) / torch.sqrt(2 * tpi * x[:, [2]] ** 2)
+            f = lambda x: (
+                torch.exp(-((x[:, [0]] - x[:, [1]]) ** 2) / (2 * x[:, [2]] ** 2))
+                / torch.sqrt(2 * tpi * x[:, [2]] ** 2)
+            )
             ranges = [[-1.5, 1.5], [-1.5, 1.5], [0.5, 2]]
 
         case "I.8.4" | 4:
@@ -93,8 +95,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
                 "G m1 m2 x1 x2 y1 y2 z1 z2"
             )
             expr = G * m1 * m2 / ((x2 - x1) ** 2 + (y2 - y1) ** 2 + (z2 - z1) ** 2)
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * x[:, [1]]
                 * x[:, [2]]
                 / (
@@ -124,10 +126,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.11.19" | 7:
             symbol = x1, y1, x2, y2, x3, y3 = symbols("x1 y1 x2 y2 x3 y3")
             expr = x1 * y1 + x2 * y2 + x3 * y3
-            f = (
-                lambda x: x[:, [0]] * x[:, [1]]
-                + x[:, [2]] * x[:, [3]]
-                + x[:, [4]] * x[:, [5]]
+            f = lambda x: (
+                x[:, [0]] * x[:, [1]] + x[:, [2]] * x[:, [3]] + x[:, [4]] * x[:, [5]]
             )
             ranges = [[-1, 1]]
 
@@ -158,30 +158,24 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.12.11" | 12:
             symbol = q, Ef, B, v, theta = symbols("q E_f B v theta")
             expr = q * (Ef + B * v * sin(theta))
-            f = lambda x: x[:, [0]] * (
-                x[:, [1]] + x[:, [2]] * x[:, [3]] * torch.sin(x[:, [4]])
+            f = lambda x: (
+                x[:, [0]] * (x[:, [1]] + x[:, [2]] * x[:, [3]] * torch.sin(x[:, [4]]))
             )
             ranges = [[-1, 1], [-1, 1], [-1, 1], [-1, 1], [0, 2 * tpi]]
 
         case "I.13.4" | 13:
             symbol = m, v, u, w = symbols("m u v w")
             expr = 1 / 2 * m * (v**2 + u**2 + w**2)
-            f = (
-                lambda x: 1
-                / 2
-                * x[:, [0]]
-                * (x[:, [1]] ** 2 + x[:, [2]] ** 2 + x[:, [3]] ** 2)
+            f = lambda x: (
+                1 / 2 * x[:, [0]] * (x[:, [1]] ** 2 + x[:, [2]] ** 2 + x[:, [3]] ** 2)
             )
             ranges = [[-1, 1], [-1, 1], [-1, 1], [-1, 1]]
 
         case "I.13.12" | 14:
             symbol = G, m1, m2, r1, r2 = symbols("G m1 m2 r1 r2")
             expr = G * m1 * m2 * (1 / r2 - 1 / r1)
-            f = (
-                lambda x: x[:, [0]]
-                * x[:, [1]]
-                * x[:, [2]]
-                * (1 / x[:, [4]] - 1 / x[:, [3]])
+            f = lambda x: (
+                x[:, [0]] * x[:, [1]] * x[:, [2]] * (1 / x[:, [4]] - 1 / x[:, [3]])
             )
             ranges = [[0, 1], [0, 1], [0, 1], [0.5, 2], [0.5, 2]]
 
@@ -200,8 +194,9 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.15.3x" | 17:
             symbol = x, u, t, c = symbols("x u t c")
             expr = (x - u * t) / sqrt(1 - u**2 / c**2)
-            f = lambda x: (x[:, [0]] - x[:, [1]] * x[:, [2]]) / torch.sqrt(
-                1 - x[:, [1]] ** 2 / x[:, [3]] ** 2
+            f = lambda x: (
+                (x[:, [0]] - x[:, [1]] * x[:, [2]])
+                / torch.sqrt(1 - x[:, [1]] ** 2 / x[:, [3]] ** 2)
             )
             ranges = [[-1, 1], [-1, 1], [-1, 1], [1, 2]]
 
@@ -209,35 +204,33 @@ def get_feynman_dataset(name: TyUnion[str, int]):
             symbol = t, u, x, c = symbols("t u x c")
             expr = (t - u * x / c**2) / sqrt(1 - u**2 / c**2)
             f = lambda x: (
-                x[:, [0]] - x[:, [1]] * x[:, [2]] / x[:, [3]] ** 2
-            ) / torch.sqrt(1 - x[:, [1]] ** 2 / x[:, [3]] ** 2)
+                (x[:, [0]] - x[:, [1]] * x[:, [2]] / x[:, [3]] ** 2)
+                / torch.sqrt(1 - x[:, [1]] ** 2 / x[:, [3]] ** 2)
+            )
             ranges = [[-1, 1], [-1, 1], [-1, 1], [1, 2]]
 
         case "I.15.10" | 19:
             symbol = m0, v, c = symbols("m0 v c")
             expr = m0 * v / sqrt(1 - v**2 / c**2)
-            f = (
-                lambda x: x[:, [0]]
-                * x[:, [1]]
-                / torch.sqrt(1 - x[:, [1]] ** 2 / x[:, [2]] ** 2)
+            f = lambda x: (
+                x[:, [0]] * x[:, [1]] / torch.sqrt(1 - x[:, [1]] ** 2 / x[:, [2]] ** 2)
             )
             ranges = [[-1, 1], [-0.9, 0.9], [1.1, 2]]
 
         case "I.16.6" | 20:
             symbol = u, v, c = symbols("u v c")
             expr = (u + v) / (1 + u * v / c**2)
-            f = (
-                lambda x: x[:, [0]]
-                * x[:, [1]]
-                / (1 + x[:, [0]] * x[:, [1]] / x[:, [2]] ** 2)
+            f = lambda x: (
+                x[:, [0]] * x[:, [1]] / (1 + x[:, [0]] * x[:, [1]] / x[:, [2]] ** 2)
             )
             ranges = [[-0.8, 0.8], [-0.8, 0.8], [1, 2]]
 
         case "I.18.4" | 21:
             symbol = m1, r1, m2, r2 = symbols("m1 r1 m2 r2")
             expr = (m1 * r1 + m2 * r2) / (m1 + m2)
-            f = lambda x: (x[:, [0]] * x[:, [1]] + x[:, [2]] * x[:, [3]]) / (
-                x[:, [0]] + x[:, [2]]
+            f = lambda x: (
+                (x[:, [0]] * x[:, [1]] + x[:, [2]] * x[:, [3]])
+                / (x[:, [0]] + x[:, [2]])
             )
             ranges = [[0.5, 1], [-1, 1], [0.5, 1], [-1, 1]]
 
@@ -256,12 +249,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.24.6" | 24:
             symbol = m, omega, omega0, x = symbols("m omega omega_0 x")
             expr = 1 / 4 * m * (omega**2 + omega0**2) * x**2
-            f = (
-                lambda x: 1
-                / 4
-                * x[:, [0]]
-                * (x[:, [1]] ** 2 + x[:, [2]] ** 2)
-                * x[:, [3]] ** 2
+            f = lambda x: (
+                1 / 4 * x[:, [0]] * (x[:, [1]] ** 2 + x[:, [2]] ** 2) * x[:, [3]] ** 2
             )
             ranges = [[0, 1], [-1, 1], [-1, 1], [-1, 1]]
 
@@ -302,8 +291,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.30.3" | 30:
             symbol = I0, n, theta = symbols("I_0 n theta")
             expr = I0 * sin(n * theta / 2) ** 2 / sin(theta / 2) ** 2
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * torch.sin(x[:, [1]] * x[:, [2]] / 2) ** 2
                 / torch.sin(x[:, [2]] / 2) ** 2
             )
@@ -330,8 +319,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
                 * (8 * pi * r**2 / 3)
                 * (omega**4 / (omega**2 - omega0**2) ** 2)
             )
-            f = (
-                lambda x: (1 / 2 * x[:, [0]] * x[:, [1]] * x[:, [2]] ** 2)
+            f = lambda x: (
+                (1 / 2 * x[:, [0]] * x[:, [1]] * x[:, [2]] ** 2)
                 * (8 * tpi * x[:, [3]] ** 2 / 3)
                 * (x[:, [4]] ** 4 / (x[:, [4]] ** 2 - x[:, [5]] ** 2) ** 2)
             )
@@ -352,8 +341,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.34.14" | 36:
             symbol = omega0, v, c = symbols("omega_0 v c")
             expr = omega0 * (1 + v / c) / sqrt(1 - v**2 / c**2)
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * (1 + x[:, [1]] / x[:, [2]])
                 / torch.sqrt(1 - x[:, [1]] ** 2 / x[:, [2]] ** 2)
             )
@@ -368,8 +357,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.37.4" | 38:
             symbol = I1, I2, delta = symbols("I_1 I_2 delta")
             expr = I1 + I2 + 2 * sqrt(I1 * I2) * cos(delta)
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 + x[:, [1]]
                 + 2 * torch.sqrt(x[:, [0]] * x[:, [1]]) * torch.cos(x[:, [2]])
             )
@@ -378,12 +367,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.38.12" | 39:
             symbol = eps, hbar, m, q = symbols("epsilon hbar m q")
             expr = 4 * pi * eps * hbar**2 / (m * q**2)
-            f = (
-                lambda x: 4
-                * tpi
-                * x[:, [0]]
-                * x[:, [1]] ** 2
-                / (x[:, [2]] * x[:, [3]] ** 2)
+            f = lambda x: (
+                4 * tpi * x[:, [0]] * x[:, [1]] ** 2 / (x[:, [2]] * x[:, [3]] ** 2)
             )
             ranges = [[0, 1], [0, 1], [0.5, 2], [0.5, 2]]
 
@@ -408,16 +393,19 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.40.1" | 43:
             symbol = n0, m, g, x, kb, T = symbols("n_0 m g x k_b T")
             expr = n0 * exp(-m * g * x / (kb * T))
-            f = lambda x: x[:, [0]] * torch.exp(
-                -x[:, [1]] * x[:, [2]] * x[:, [3]] / (x[:, [4]] * x[:, [5]])
+            f = lambda x: (
+                x[:, [0]]
+                * torch.exp(
+                    -x[:, [1]] * x[:, [2]] * x[:, [3]] / (x[:, [4]] * x[:, [5]])
+                )
             )
             ranges = [[0, 1], [-1, 1], [-1, 1], [-1, 1], [1, 2], [1, 2]]
 
         case "I.41.16" | 44:
             symbol = hbar, omega, c, kb, T = symbols("hbar omega c k_b T")
             expr = hbar * omega**3 / (pi**2 * c**2 * (exp(hbar * omega / (kb * T)) - 1))
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * x[:, [1]] ** 3
                 / (
                     tpi**2
@@ -448,11 +436,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.44.4" | 48:
             symbol = n, kb, T, V1, V2 = symbols("n k_b T V_1 V_2")
             expr = n * kb * T * log(V2 / V1)
-            f = (
-                lambda x: x[:, [0]]
-                * x[:, [1]]
-                * x[:, [2]]
-                * torch.log(x[:, [4]] / x[:, [3]])
+            f = lambda x: (
+                x[:, [0]] * x[:, [1]] * x[:, [2]] * torch.log(x[:, [4]] / x[:, [3]])
             )
             ranges = [[0, 1], [0, 1], [0, 1], [0.5, 2], [0.5, 2]]
 
@@ -465,8 +450,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.48.20" | 50:
             symbol = m, v, c = symbols("m v c")
             expr = m * c**2 / sqrt(1 - v**2 / c**2)
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * x[:, [2]] ** 2
                 / torch.sqrt(1 - x[:, [1]] ** 2 / x[:, [2]] ** 2)
             )
@@ -475,9 +460,12 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "I.50.26" | 51:
             symbol = x1, alpha, omega, t = symbols("x_1 alpha omega t")
             expr = x1 * (cos(omega * t) + alpha * cos(omega * t) ** 2)
-            f = lambda x: x[:, [0]] * (
-                torch.cos(x[:, [2]] * x[:, [3]])
-                + x[:, [1]] * torch.cos(x[:, [2]] * x[:, [3]]) ** 2
+            f = lambda x: (
+                x[:, [0]]
+                * (
+                    torch.cos(x[:, [2]] * x[:, [3]])
+                    + x[:, [1]] * torch.cos(x[:, [2]] * x[:, [3]]) ** 2
+                )
             )
             ranges = [[0, 1], [0, 1], [0, 2 * tpi], [0, 1]]
 
@@ -502,8 +490,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "II.6.11" | 55:
             symbol = eps, pd, theta, r = symbols("epsilon p_d theta r")
             expr = 1 / (4 * pi * eps) * pd * cos(theta) / r**2
-            f = (
-                lambda x: 1
+            f = lambda x: (
+                1
                 / (4 * tpi * x[:, [0]])
                 * x[:, [1]]
                 * torch.cos(x[:, [2]])
@@ -514,8 +502,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "II.6.15a" | 56:
             symbol = eps, pd, z, x, y, r = symbols("epsilon p_d z x y r")
             expr = 3 / (4 * pi * eps) * pd * z / r**5 * sqrt(x**2 + y**2)
-            f = (
-                lambda x: 3
+            f = lambda x: (
+                3
                 / (4 * tpi * x[:, [0]])
                 * x[:, [1]]
                 * x[:, [2]]
@@ -527,8 +515,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "II.6.15b" | 57:
             symbol = eps, pd, r, theta = symbols("epsilon p_d r theta")
             expr = 3 / (4 * pi * eps) * pd / r**3 * cos(theta) * sin(theta)
-            f = (
-                lambda x: 3
+            f = lambda x: (
+                3
                 / (4 * tpi * x[:, [0]])
                 * x[:, [1]]
                 / x[:, [2]] ** 3
@@ -558,38 +546,39 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "II.11.3" | 61:
             symbol = q, Ef, m, omega0, omega = symbols("q E_f m omega_o omega")
             expr = q * Ef / (m * (omega0**2 - omega**2))
-            f = (
-                lambda x: x[:, [0]]
-                * x[:, [1]]
-                / (x[:, [2]] * (x[:, [3]] ** 2 - x[:, [4]] ** 2))
+            f = lambda x: (
+                x[:, [0]] * x[:, [1]] / (x[:, [2]] * (x[:, [3]] ** 2 - x[:, [4]] ** 2))
             )
             ranges = [[0, 1], [0, 1], [0.5, 2], [1.5, 3], [0, 1]]
 
         case "II.11.17" | 62:
             symbol = n0, pd, Ef, theta, kb, T = symbols("n_0 p_d E_f theta k_b T")
             expr = n0 * (1 + pd * Ef * cos(theta) / (kb * T))
-            f = lambda x: x[:, [0]] * (
-                1
-                + x[:, [1]] * x[:, [2]] * torch.cos(x[:, [3]]) / (x[:, [4]] * x[:, [5]])
+            f = lambda x: (
+                x[:, [0]]
+                * (
+                    1
+                    + x[:, [1]]
+                    * x[:, [2]]
+                    * torch.cos(x[:, [3]])
+                    / (x[:, [4]] * x[:, [5]])
+                )
             )
             ranges = [[0, 1], [-1, 1], [-1, 1], [0, 2 * tpi], [0.5, 2], [0.5, 2]]
 
         case "II.11.20" | 63:
             symbol = n, pd, Ef, kb, T = symbols("n p_d E_f k_b T")
             expr = n * pd**2 * Ef / (3 * kb * T)
-            f = (
-                lambda x: x[:, [0]]
-                * x[:, [1]] ** 2
-                * x[:, [2]]
-                / (3 * x[:, [3]] * x[:, [4]])
+            f = lambda x: (
+                x[:, [0]] * x[:, [1]] ** 2 * x[:, [2]] / (3 * x[:, [3]] * x[:, [4]])
             )
             ranges = [[0, 1], [0, 1], [0, 1], [0.5, 2], [0.5, 2]]
 
         case "II.11.27" | 64:
             symbol = n, alpha, eps, Ef = symbols("n alpha epsilon E_f")
             expr = n * alpha / (1 - n * alpha / 3) * eps * Ef
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * x[:, [1]]
                 / (1 - x[:, [0]] * x[:, [1]] / 3)
                 * x[:, [2]]
@@ -606,10 +595,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "II.13.17" | 66:
             symbol = eps, c, l, r = symbols("epsilon c l r")
             expr = 1 / (4 * pi * eps * c**2) * (2 * l / r)
-            f = (
-                lambda x: 1
-                / (4 * tpi * x[:, [0]] * x[:, [1]] ** 2)
-                * (2 * x[:, [2]] / x[:, [3]])
+            f = lambda x: (
+                1 / (4 * tpi * x[:, [0]] * x[:, [1]] ** 2) * (2 * x[:, [2]] / x[:, [3]])
             )
             ranges = [[0.5, 2], [0.5, 2], [0, 1], [0.5, 2]]
 
@@ -622,10 +609,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "II.13.34" | 68:
             symbol = rho, v, c = symbols("rho v c")
             expr = rho * v / sqrt(1 - v**2 / c**2)
-            f = (
-                lambda x: x[:, [0]]
-                * x[:, [1]]
-                / torch.sqrt(1 - x[:, [1]] ** 2 / x[:, [2]] ** 2)
+            f = lambda x: (
+                x[:, [0]] * x[:, [1]] / torch.sqrt(1 - x[:, [1]] ** 2 / x[:, [2]] ** 2)
             )
             ranges = [[0, 1], [0, 1], [1, 2]]
 
@@ -644,8 +629,9 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "II.21.32" | 71:
             symbol = q, eps, r, v, c = symbols("q epsilon r v c")
             expr = q / (4 * pi * eps * r * (1 - v / c))
-            f = lambda x: x[:, [0]] / (
-                4 * tpi * x[:, [1]] * x[:, [2]] * (1 - x[:, [3]] / x[:, [4]])
+            f = lambda x: (
+                x[:, [0]]
+                / (4 * tpi * x[:, [1]] * x[:, [2]] * (1 - x[:, [3]] / x[:, [4]]))
             )
             ranges = [[0, 1], [0.5, 2], [0.5, 2], [0, 1], [1, 2]]
 
@@ -702,17 +688,20 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "II.35.18" | 80:
             symbol = n0, mu, B, kb, T = symbols("n0 mu B k_b T")
             expr = n0 / (exp(mu * B / (kb * T)) + exp(-mu * B / (kb * T)))
-            f = lambda x: x[:, [0]] / (
-                torch.exp(x[:, [1]] * x[:, [2]] / (x[:, [3]] * x[:, [4]]))
-                + torch.exp(-x[:, [1]] * x[:, [2]] / (x[:, [3]] * x[:, [4]]))
+            f = lambda x: (
+                x[:, [0]]
+                / (
+                    torch.exp(x[:, [1]] * x[:, [2]] / (x[:, [3]] * x[:, [4]]))
+                    + torch.exp(-x[:, [1]] * x[:, [2]] / (x[:, [3]] * x[:, [4]]))
+                )
             )
             ranges = [[0, 1], [0, 1], [0, 1], [0.5, 2], [0.5, 2]]
 
         case "II.35.21" | 81:
             symbol = n, mu, B, kb, T = symbols("n mu B k_b T")
             expr = n * mu * tanh(mu * B / (kb * T))
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * x[:, [1]]
                 * torch.tanh(x[:, [1]] * x[:, [2]] / (x[:, [3]] * x[:, [4]]))
             )
@@ -723,10 +712,12 @@ def get_feynman_dataset(name: TyUnion[str, int]):
                 "mu B k_b T alpha M epsilon c"
             )
             expr = mu * B / (kb * T) + mu * alpha * M / (eps * c**2 * kb * T)
-            f = lambda x: x[:, [0]] * x[:, [1]] / (x[:, [2]] * x[:, [3]]) + x[
-                :, [0]
-            ] * x[:, [4]] * x[:, [5]] / (
-                x[:, [6]] * x[:, [7]] ** 2 * x[:, [2]] * x[:, [3]]
+            f = lambda x: (
+                x[:, [0]] * x[:, [1]] / (x[:, [2]] * x[:, [3]])
+                + x[:, [0]]
+                * x[:, [4]]
+                * x[:, [5]]
+                / (x[:, [6]] * x[:, [7]] ** 2 * x[:, [2]] * x[:, [3]])
             )
             ranges = [
                 [0, 1],
@@ -760,16 +751,16 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "III.4.32" | 86:
             symbol = hbar, omega, kb, T = symbols("hbar omega k_b T")
             expr = 1 / (exp(hbar * omega / (kb * T)) - 1)
-            f = lambda x: 1 / (
-                torch.exp(x[:, [0]] * x[:, [1]] / (x[:, [2]] * x[:, [3]])) - 1
+            f = lambda x: (
+                1 / (torch.exp(x[:, [0]] * x[:, [1]] / (x[:, [2]] * x[:, [3]])) - 1)
             )
             ranges = [[0.5, 1], [0.5, 1], [0.5, 2], [0.5, 2]]
 
         case "III.4.33" | 87:
             symbol = hbar, omega, kb, T = symbols("hbar omega k_b T")
             expr = hbar * omega / (exp(hbar * omega / (kb * T)) - 1)
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * x[:, [1]]
                 / (torch.exp(x[:, [0]] * x[:, [1]] / (x[:, [2]] * x[:, [3]])) - 1)
             )
@@ -799,8 +790,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
                 * sin((omega - omega0) * t / 2) ** 2
                 / ((omega - omega0) * t / 2) ** 2
             )
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * x[:, [1]]
                 * x[:, [2]]
                 / x[:, [3]]
@@ -812,8 +803,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "III.10.19" | 91:
             symbol = mu, Bx, By, Bz = symbols("mu B_x B_y B_z")
             expr = mu * sqrt(Bx**2 + By**2 + Bz**2)
-            f = lambda x: x[:, [0]] * torch.sqrt(
-                x[:, [1]] ** 2 + x[:, [2]] ** 2 + x[:, [3]] ** 2
+            f = lambda x: (
+                x[:, [0]] * torch.sqrt(x[:, [1]] ** 2 + x[:, [2]] ** 2 + x[:, [3]] ** 2)
             )
             ranges = [[0, 1], [0, 1], [0, 1], [0, 1]]
 
@@ -832,8 +823,9 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "III.14.14" | 94:
             symbol = I0, q, Ve, kb, T = symbols("I_0 q V_e k_b T")
             expr = I0 * (exp(q * Ve / (kb * T)) - 1)
-            f = lambda x: x[:, [0]] * (
-                torch.exp(x[:, [1]] * x[:, [2]] / (x[:, [3]] * x[:, [4]])) - 1
+            f = lambda x: (
+                x[:, [0]]
+                * (torch.exp(x[:, [1]] * x[:, [2]] / (x[:, [3]] * x[:, [4]])) - 1)
             )
             ranges = [[0, 1], [0, 1], [0, 1], [0.5, 2], [0.5, 2]]
 
@@ -864,8 +856,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "III.19.51" | 99:
             symbol = m, q, eps, hbar, n = symbols("m q epsilon hbar n")
             expr = -m * q**4 / (2 * (4 * pi * eps) ** 2 * hbar**2) * 1 / n**2
-            f = (
-                lambda x: -x[:, [0]]
+            f = lambda x: (
+                -x[:, [0]]
                 * x[:, [1]] ** 4
                 / (2 * (4 * tpi * x[:, [2]]) ** 2 * x[:, [3]] ** 2)
                 * 1
@@ -884,8 +876,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
                 "Z_1 Z_2 alpha hbar c E theta"
             )
             expr = (Z1 * Z2 * alpha * hbar * c / (4 * E * sin(theta / 2) ** 2)) ** 2
-            f = (
-                lambda x: (
+            f = lambda x: (
+                (
                     x[:, [0]]
                     * x[:, [1]]
                     * x[:, [2]]
@@ -917,17 +909,22 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "Compton scattering" | 103:
             symbol = E, m, c, theta = symbols("E m c theta")
             expr = E / (1 + E / (m * c**2) * (1 - cos(theta)))
-            f = lambda x: x[:, [0]] / (
-                1
-                + x[:, [0]] / (x[:, [1]] * x[:, [2]] ** 2) * (1 - torch.cos(x[:, [3]]))
+            f = lambda x: (
+                x[:, [0]]
+                / (
+                    1
+                    + x[:, [0]]
+                    / (x[:, [1]] * x[:, [2]] ** 2)
+                    * (1 - torch.cos(x[:, [3]]))
+                )
             )
             ranges = [[0, 1], [0.5, 2], [0.5, 2], [0, 2 * tpi]]
 
         case "Radiated gravitational wave power" | 104:
             symbol = G, c, m1, m2, r = symbols("G c m_1 m_2 r")
             expr = -32 / 5 * G**4 / c**5 * (m1 * m2) ** 2 * (m1 + m2) / r**5
-            f = (
-                lambda x: -32
+            f = lambda x: (
+                -32
                 / 5
                 * x[:, [0]] ** 4
                 / x[:, [1]] ** 5
@@ -953,8 +950,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
                 * (sin(alpha / 2) / (alpha / 2) * sin(N * delta / 2) / sin(delta / 2))
                 ** 2
             )
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * (
                     torch.sin(x[:, [1]] / 2)
                     / (x[:, [1]] / 2)
@@ -987,8 +984,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
                 / L**2
                 * (1 + sqrt(1 + 2 * E * L**2 / (m * kG**2)) * cos(theta1 - theta2))
             )
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * x[:, [1]]
                 / x[:, [2]] ** 2
                 * (
@@ -1005,8 +1002,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "Goldstein 3.64 (ellipse)" | 109:
             symbol = d, alpha, theta1, theta2 = symbols("d alpha theta_1 theta_2")
             expr = d * (1 - alpha**2) / (1 + alpha * cos(theta2 - theta1))
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * (1 - x[:, [1]] ** 2)
                 / (1 + x[:, [1]] * torch.cos(x[:, [2]] - x[:, [3]]))
             )
@@ -1015,8 +1012,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "Goldstein 3.74 (Kepler)" | 110:
             symbol = d, G, m1, m2 = symbols("d G m_1 m_2")
             expr = 2 * pi * d ** (3 / 2) / sqrt(G * (m1 + m2))
-            f = (
-                lambda x: 2
+            f = lambda x: (
+                2
                 * tpi
                 * x[:, [0]] ** (3 / 2)
                 / torch.sqrt(x[:, [1]] * (x[:, [2]] + x[:, [3]]))
@@ -1039,8 +1036,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "Goldstein 8.56" | 112:
             symbol = p, q, A, c, m, Ve = symbols("p q A c m V_e")
             expr = sqrt((p - q * A) ** 2 * c**2 + m**2 * c**4) + q * Ve
-            f = (
-                lambda x: torch.sqrt(
+            f = lambda x: (
+                torch.sqrt(
                     (x[:, [0]] - x[:, [1]] * x[:, [2]]) ** 2 * x[:, [3]] ** 2
                     + x[:, [4]] ** 2 * x[:, [3]] ** 4
                 )
@@ -1051,8 +1048,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "Goldstein 12.80" | 113:
             symbol = m, p, omega, x, alpha, y = symbols("m p omega x alpha y")
             expr = 1 / (2 * m) * (p**2 + m**2 * omega**2 * x**2 * (1 + alpha * y / x))
-            f = (
-                lambda x: 1
+            f = lambda x: (
+                1
                 / (2 * x[:, [0]])
                 * (
                     x[:, [1]] ** 2
@@ -1071,8 +1068,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
                 / (4 * pi * eps * y**2)
                 * (4 * pi * eps * Ve * d - q * d * y**3 / (y**2 - d**2) ** 2)
             )
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 / (4 * tpi * x[:, [1]] * x[:, [2]] ** 2)
                 * (
                     4 * tpi * x[:, [1]] * x[:, [3]] * x[:, [4]]
@@ -1087,18 +1084,21 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "Jackson 3.45" | 115:
             symbol = q, r, d, alpha = symbols("q r d alpha")
             expr = q / sqrt(r**2 + d**2 - 2 * d * r * cos(alpha))
-            f = lambda x: x[:, [0]] / torch.sqrt(
-                x[:, [1]] ** 2
-                + x[:, [2]] ** 2
-                - 2 * x[:, [1]] * x[:, [2]] * torch.cos(x[:, [3]])
+            f = lambda x: (
+                x[:, [0]]
+                / torch.sqrt(
+                    x[:, [1]] ** 2
+                    + x[:, [2]] ** 2
+                    - 2 * x[:, [1]] * x[:, [2]] * torch.cos(x[:, [3]])
+                )
             )
             ranges = [[0, 1], [0, 1], [0, 1], [0, 2 * tpi]]
 
         case "Jackson 4.60" | 116:
             symbol = Ef, theta, alpha, d, r = symbols("E_f theta alpha d r")
             expr = Ef * cos(theta) * ((alpha - 1) / (alpha + 2) * d**3 / r**2 - r)
-            f = (
-                lambda x: x[:, [0]]
+            f = lambda x: (
+                x[:, [0]]
                 * torch.cos(x[:, [1]])
                 * (
                     (x[:, [2]] - 1) / (x[:, [2]] + 2) * x[:, [3]] ** 3 / x[:, [4]] ** 2
@@ -1110,8 +1110,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "Jackson 11.38 (Doppler)" | 117:
             symbol = omega, v, c, theta = symbols("omega v c theta")
             expr = sqrt(1 - v**2 / c**2) / (1 + v / c * cos(theta)) * omega
-            f = (
-                lambda x: torch.sqrt(1 - x[:, [1]] ** 2 / x[:, [2]] ** 2)
+            f = lambda x: (
+                torch.sqrt(1 - x[:, [1]] ** 2 / x[:, [2]] ** 2)
                 / (1 + x[:, [1]] / x[:, [2]] * torch.cos(x[:, [3]]))
                 * x[:, [0]]
             )
@@ -1120,8 +1120,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
         case "Weinberg 15.2.1" | 118:
             symbol = G, c, kf, af, H = symbols("G c k_f a_f H")
             expr = 3 / (8 * pi * G) * (c**2 * kf / af**2 + H**2)
-            f = (
-                lambda x: 3
+            f = lambda x: (
+                3
                 / (8 * tpi * x[:, [0]])
                 * (x[:, [1]] ** 2 * x[:, [2]] / x[:, [3]] ** 2 + x[:, [4]] ** 2)
             )
@@ -1132,8 +1132,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
             expr = (
                 -1 / (8 * pi * G) * (c**4 * kf / af**2 + c**2 * H**2 * (1 - 2 * alpha))
             )
-            f = (
-                lambda x: -1
+            f = lambda x: (
+                -1
                 / (8 * tpi * x[:, [0]])
                 * (
                     x[:, [1]] ** 4 * x[:, [2]] / x[:, [3]] ** 2
@@ -1155,8 +1155,8 @@ def get_feynman_dataset(name: TyUnion[str, int]):
                 * (omega0 / omega) ** 2
                 * (omega0 / omega + omega / omega0 - sin(theta) ** 2)
             )
-            f = (
-                lambda x: tpi
+            f = lambda x: (
+                tpi
                 * x[:, [0]] ** 2
                 * x[:, [1]] ** 2
                 / x[:, [2]] ** 2

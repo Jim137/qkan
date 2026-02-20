@@ -1,3 +1,17 @@
+# Copyright (c) 2024, Jiun-Cheng Jiang. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 Quantum-inspired Kolmogorov Arnold Networks (QKANs) implementation in PyTorch.
 Paper: Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks: https://arxiv.org/abs/2509.14026
@@ -6,9 +20,6 @@ Supported solvers:
     - PennyLane
     - Exact solver implemented in PyTorch (faster)
     - Custom solvers api
-
-Code author: Jiun-Cheng Jiang (Jim137@GitHub)
-Contact: [jcjiang@phys.ntu.edu.tw](mailto:jcjiang@phys.ntu.edu.tw)
 """
 
 import os
@@ -105,13 +116,14 @@ class QKANLayer(nn.Module):
         fast_measure: bool = True,
         c_dtype=torch.complex64,
         p_dtype=torch.float32,
-        seed=0,
+        seed=None,
     ):
         super(QKANLayer, self).__init__()
 
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            random.seed(seed)
 
         if isinstance(group, int):
             if group == -1:
@@ -429,7 +441,7 @@ class QKANModuleList(nn.ModuleList):
         super(QKANModuleList, self).__init__()
 
     # make type hint for getitem method
-    def __getitem__(self, idx) -> Union[QKANLayer, nn.Linear, "QKANModuleList"]:
+    def __getitem__(self, idx) -> Union[QKANLayer, nn.Linear, "QKANModuleList"]:  # type: ignore
         return super(QKANModuleList, self).__getitem__(idx)
 
 
@@ -510,7 +522,7 @@ class QKAN(nn.Module):
         save_act: bool = False,
         c_dtype=torch.complex64,
         p_dtype=torch.float32,
-        seed=0,
+        seed=None,
         **kwargs,
     ):
         """
@@ -559,14 +571,15 @@ class QKAN(nn.Module):
                 Parameter dtype for quantum simulation, default: torch.float32
             c_dtype : torch.dtype
                 Compute dtype for quantum simulation, default: torch.complex64
-            seed : int
-                Random seed, default: 0
+            seed : Any
+                Random seed, default: None
         """
         super(QKAN, self).__init__()
 
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            random.seed(seed)
 
         self.depth = len(width) - (2 if is_map else 1)
         self.width = width
@@ -744,31 +757,92 @@ class QKAN(nn.Module):
         for l, layer in enumerate(self.layers):
             if isinstance(layer, QKANLayer):
                 layer.reset_parameters()
-                for i in range(another_model.layers[l].reps):
+                for i in range(another_model.layers[l].reps):  # type: ignore
                     layer.theta.data[:, :, i, :].copy_(
-                        another_model.layers[l].theta.data[:, :, i, :]
+                        another_model.layers[l].theta.data[:, :, i, :]  # type: ignore
                     )
                     layer.preacts_weight.data[:, :, i].copy_(
-                        another_model.layers[l].preacts_weight.data[:, :, i]
+                        another_model.layers[l].preacts_weight.data[:, :, i]  # type: ignore
                     )
                     layer.preacts_bias.data[:, :, i].copy_(
-                        another_model.layers[l].preacts_bias.data[:, :, i]
+                        another_model.layers[l].preacts_bias.data[:, :, i]  # type: ignore
                     )
-                layer.theta.data[:, :, another_model.layers[l].reps, :].copy_(
+                layer.theta.data[:, :, another_model.layers[l].reps, :].copy_(  # type: ignore
                     another_model.layers[l].theta.data[
-                        :, :, another_model.layers[l].reps, :
+                        :, :, another_model.layers[l].reps, :  # type: ignore
                     ]
                 )
                 layer.postact_weights.data.copy_(
-                    another_model.layers[l].postact_weights.data
+                    another_model.layers[l].postact_weights.data  # type: ignore
                 )
-                layer.postact_bias.data.copy_(another_model.layers[l].postact_bias.data)
-                layer.base_weight.data.copy_(another_model.layers[l].base_weight.data)
+                layer.postact_bias.data.copy_(another_model.layers[l].postact_bias.data)  # type: ignore
+                layer.base_weight.data.copy_(another_model.layers[l].base_weight.data)  # type: ignore
             if isinstance(layer, nn.Linear):
-                layer.weight.data.copy_(another_model.layers[count - 1].weight.data)
-                layer.bias.data.copy_(another_model.layers[count - 1].bias.data)
+                layer.weight.data.copy_(another_model.layers[count - 1].weight.data)  # type: ignore
+                layer.bias.data.copy_(another_model.layers[count - 1].bias.data)  # type: ignore
                 count += 2
         return self
+
+    def refine(self, new_reps: int) -> "QKAN":
+        """
+        Refine the model by layer extension, increasing the number of repetitions of quantum layers.
+
+        Args
+        ----
+            new_reps : int
+                New number of repetitions of quantum layers
+
+        Returns
+        -------
+            QKAN
+                New QKAN model with increased repetitions
+        """
+        assert new_reps > self.reps, (
+            "New repetitions must be greater than current repetitions"
+        )
+        new_model = QKAN(
+            width=self.width,
+            reps=new_reps,
+            group=self.group,
+            device=self.device,
+            solver=self.solver,
+            qml_device=self.qml_device,
+            ansatz=self.ansatz,
+            theta_size=self.theta_size,
+            norm_out=self.norm_out,
+            preact_trainable=self.preact_trainable,
+            preact_init=self.preact_init,
+            postact_weight_trainable=self.postact_weight_trainable,
+            postact_bias_trainable=self.postact_bias_trainable,
+            base_activation=self.base_activation,
+            ba_trainable=self.ba_trainable,
+            is_batchnorm=self.is_batchnorm,
+            is_map=self.is_map,
+            hidden=self.hidden,
+            fast_measure=self.fast_measure,
+            save_act=self.save_act,
+            c_dtype=self.c_dtype,
+            p_dtype=self.p_dtype,
+            seed=self.seed,
+        )
+        new_model.initialize_from_another_model(self)
+        return new_model
+
+    def layer_extension(self, new_reps: int) -> "QKAN":
+        """
+        Refine the model by layer extension, increasing the number of repetitions of quantum layers.
+
+        Args
+        ----
+            new_reps : int
+                New number of repetitions of quantum layers
+
+        Returns
+        -------
+            QKAN
+                New QKAN model with increased repetitions
+        """
+        return self.refine(new_reps)
 
     def _reg(
         self,
@@ -1633,7 +1707,8 @@ class QKAN(nn.Module):
         model2.load_state_dict(self.state_dict())
 
         model2.layers[0] = model2.layers[0].get_subset(
-            input_id, torch.arange(self.width[1])
+            input_id,
+            torch.arange(self.width[1]),  # type: ignore
         )
 
         model2.cache_data = self.cache_data
