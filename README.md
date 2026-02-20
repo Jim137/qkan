@@ -1,4 +1,4 @@
-# Quantum-inspired Kolmogorov-Arnold Network (QKAN)
+# QKAN: Quantum-inspired Kolmogorov-Arnold Network
 
 <div align='center'>
     <a>"Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks"</a>
