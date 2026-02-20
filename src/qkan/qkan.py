@@ -429,7 +429,7 @@ class QKANModuleList(nn.ModuleList):
         super(QKANModuleList, self).__init__()
 
     # make type hint for getitem method
-    def __getitem__(self, idx) -> Union[QKANLayer, nn.Linear, "QKANModuleList"]:
+    def __getitem__(self, idx) -> Union[QKANLayer, nn.Linear, "QKANModuleList"]:  # type: ignore
         return super(QKANModuleList, self).__getitem__(idx)
 
 
@@ -744,29 +744,29 @@ class QKAN(nn.Module):
         for l, layer in enumerate(self.layers):
             if isinstance(layer, QKANLayer):
                 layer.reset_parameters()
-                for i in range(another_model.layers[l].reps):
+                for i in range(another_model.layers[l].reps):  # type: ignore
                     layer.theta.data[:, :, i, :].copy_(
-                        another_model.layers[l].theta.data[:, :, i, :]
+                        another_model.layers[l].theta.data[:, :, i, :]  # type: ignore
                     )
                     layer.preacts_weight.data[:, :, i].copy_(
-                        another_model.layers[l].preacts_weight.data[:, :, i]
+                        another_model.layers[l].preacts_weight.data[:, :, i]  # type: ignore
                     )
                     layer.preacts_bias.data[:, :, i].copy_(
-                        another_model.layers[l].preacts_bias.data[:, :, i]
+                        another_model.layers[l].preacts_bias.data[:, :, i]  # type: ignore
                     )
-                layer.theta.data[:, :, another_model.layers[l].reps, :].copy_(
+                layer.theta.data[:, :, another_model.layers[l].reps, :].copy_(  # type: ignore
                     another_model.layers[l].theta.data[
-                        :, :, another_model.layers[l].reps, :
+                        :, :, another_model.layers[l].reps, :  # type: ignore
                     ]
                 )
                 layer.postact_weights.data.copy_(
-                    another_model.layers[l].postact_weights.data
+                    another_model.layers[l].postact_weights.data  # type: ignore
                 )
-                layer.postact_bias.data.copy_(another_model.layers[l].postact_bias.data)
-                layer.base_weight.data.copy_(another_model.layers[l].base_weight.data)
+                layer.postact_bias.data.copy_(another_model.layers[l].postact_bias.data)  # type: ignore
+                layer.base_weight.data.copy_(another_model.layers[l].base_weight.data)  # type: ignore
             if isinstance(layer, nn.Linear):
-                layer.weight.data.copy_(another_model.layers[count - 1].weight.data)
-                layer.bias.data.copy_(another_model.layers[count - 1].bias.data)
+                layer.weight.data.copy_(another_model.layers[count - 1].weight.data)  # type: ignore
+                layer.bias.data.copy_(another_model.layers[count - 1].bias.data)  # type: ignore
                 count += 2
         return self
 
@@ -1633,7 +1633,8 @@ class QKAN(nn.Module):
         model2.load_state_dict(self.state_dict())
 
         model2.layers[0] = model2.layers[0].get_subset(
-            input_id, torch.arange(self.width[1])
+            input_id,
+            torch.arange(self.width[1]),  # type: ignore
         )
 
         model2.cache_data = self.cache_data
