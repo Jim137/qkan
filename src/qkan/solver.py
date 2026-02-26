@@ -112,7 +112,9 @@ def torch_exact_solver(
         repeat_out = out_dim
         repeat_in = in_dim // theta.shape[1] + 1
         theta = theta.repeat(repeat_out, repeat_in, 1, 1)[:, :in_dim, :, :]
-    if preacts_trainable:
+    # rpz_encoding always needs encoded_x (with bias), even when preacts_trainable=False
+    _needs_encoded_x = preacts_trainable or ansatz in ("rpz_encoding", "rpz")
+    if _needs_encoded_x:
         if len(preacts_weight.shape) != 3:
             preacts_weight = preacts_weight.unsqueeze(0)
             preacts_bias = preacts_bias.unsqueeze(0)

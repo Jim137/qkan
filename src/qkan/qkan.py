@@ -170,11 +170,6 @@ class QKANLayer(nn.Module):
                 )
             )
         elif ansatz == "rpz_encoding" or ansatz == "rpz":
-            if not preact_trainable:
-                warnings.warn(
-                    "Reduced pz encoding requires preact_trainable=True, set automatically."
-                )
-                preact_trainable = True
             self.theta = nn.Parameter(
                 nn.init.xavier_normal_(
                     torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
@@ -201,6 +196,8 @@ class QKANLayer(nn.Module):
             )
 
         self.preact_trainable = preact_trainable
+        # rpz_encoding always needs trainable bias (even when preact_trainable=False)
+        _bias_trainable = preact_trainable or ansatz in ("rpz_encoding", "rpz")
         if not preact_init:
             self.preacts_weight = nn.Parameter(
                 torch.ones(*group, reps, device=device, dtype=p_dtype),
@@ -208,7 +205,7 @@ class QKANLayer(nn.Module):
             )
             self.preacts_bias = nn.Parameter(
                 torch.zeros(*group, reps, device=device, dtype=p_dtype),
-                requires_grad=preact_trainable,
+                requires_grad=_bias_trainable,
             )
         else:
             self.preacts_weight = nn.Parameter(
@@ -221,7 +218,7 @@ class QKANLayer(nn.Module):
                 nn.init.xavier_normal_(
                     torch.empty(*group, reps, device=device, dtype=p_dtype)
                 ),
-                requires_grad=preact_trainable,
+                requires_grad=_bias_trainable,
             )
         self.preact_init = preact_init
 
