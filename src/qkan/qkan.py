@@ -39,6 +39,13 @@ from tqdm import tqdm  # type: ignore
 from .info import get_dist_info, print0, print_version
 from .solver import qml_solver, torch_exact_solver
 
+try:
+    from .flashQKAN import flash_exact_solver
+
+    _FLASH_AVAILABLE = True
+except ImportError:
+    _FLASH_AVAILABLE = False
+
 
 class QKANLayer(nn.Module):
     """
@@ -56,7 +63,7 @@ class QKANLayer(nn.Module):
             Group of neurons
         device :
             Device to use
-        solver : Union[Literal["qml", "exact"], Callable]
+        solver : Union[Literal["qml", "exact", "flash"], Callable]
             Solver to use
         ansatz : Union[str, Callable]
             Ansatz to use, "pz_encoding", "px_encoding", "rpz_encoding" or custom
@@ -102,7 +109,7 @@ class QKANLayer(nn.Module):
         reps: int = 3,
         group: Union[int, tuple] = -1,
         device="cpu",
-        solver: Union[Literal["qml", "exact"], Callable] = "exact",
+        solver: Union[Literal["qml", "exact", "flash"], Callable] = "exact",
         qml_device="default.qubit",
         ansatz: Union[str, Callable] = "pz_encoding",
         theta_size: Optional[list[int]] = None,
@@ -136,7 +143,7 @@ class QKANLayer(nn.Module):
         self.reps = reps
         self.group = group
         self.device = device
-        self.solver: Union[Literal["qml", "exact"], Callable] = solver
+        self.solver: Union[Literal["qml", "exact", "flash"], Callable] = solver
         self.qml_device = qml_device
         self.ansatz = ansatz
         self.theta_size = theta_size
@@ -317,6 +324,26 @@ class QKANLayer(nn.Module):
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
             ).to(self.p_dtype)
+        elif self.solver == "flash":
+            if not _FLASH_AVAILABLE:
+                raise ImportError(
+                    "Triton is required for solver='flash'. "
+                    "Install with: pip install triton"
+                )
+            postacts = flash_exact_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
         elif callable(self.solver):
             postacts = self.solver(
                 x,
@@ -385,6 +412,26 @@ class QKANLayer(nn.Module):
                 group=self.group,
                 preacts_trainable=self.preact_trainable,
                 fast_measure=self.fast_measure,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
+        elif self.solver == "flash":
+            if not _FLASH_AVAILABLE:
+                raise ImportError(
+                    "Triton is required for solver='flash'. "
+                    "Install with: pip install triton"
+                )
+            postacts = flash_exact_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
                 dtype=self.c_dtype,
             ).to(self.p_dtype)
         else:
@@ -586,7 +633,7 @@ class QKAN(nn.Module):
         self.reps = reps
         self.group = group
         self.device = device
-        self.solver: Union[Literal["qml", "exact"], Callable] = solver
+        self.solver: Union[Literal["qml", "exact", "flash"], Callable] = solver
         self.ansatz = ansatz
         self.qml_device = qml_device
         self.norm_out = norm_out
