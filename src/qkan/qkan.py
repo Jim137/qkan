@@ -551,7 +551,7 @@ class QKAN(nn.Module):
         is_batchnorm: bool = False,
         hidden: int = 0,
         device="cpu",
-        solver: Union[Literal["qml", "exact"], Callable] = "exact",
+        solver: Union[Literal["qml", "exact", "flash"], Callable] = "exact",
         qml_device: str = "default.qubit",
         ansatz: Union[str, Callable] = "pz_encoding",
         theta_size: Optional[list[int]] = None,
@@ -588,7 +588,7 @@ class QKAN(nn.Module):
                 Number of hidden units in map layer, default: 0
             device :
                 Device to use, default: "cpu"
-            solver : Union[Literal["qml", "exact"], Callable]
+            solver : Union[Literal["qml", "exact", "flash"], Callable]
                 Solver to use, default: "exact"
             ansatz : Union[str, Callable]
                 Ansatz to use, "pz_encoding" ("pz"), "px_encoding" ("px"), "rpz_encoding" ("rpz", reduced pz encoding) or custom

@@ -2,25 +2,27 @@
 Flash (Triton-accelerated) QKAN solver.
 
 Provides a drop-in replacement for torch_exact_solver that uses Triton kernels
-for the pz_encoding forward pass. Backward uses PyTorch autograd via the
-original exact solver for correctness.
+for supported ansatzes (pz_encoding, rpz_encoding).
+Backward uses PyTorch autograd via the original exact solver for correctness.
 
 Usage:
-    - solver="flash" in QKANLayer/QKAN for Triton-accelerated pz_encoding
+    - solver="flash" in QKANLayer/QKAN for Triton-accelerated forward
     - Falls back to torch_exact_solver for unsupported ansatzes
 """
 
 import torch
 
-from .fused_ops import triton_pz_forward
+from .fused_ops import triton_pz_forward, triton_rpz_forward
 from .solver import torch_exact_solver
 
+_SUPPORTED_ANSATZES = {"pz_encoding", "pz", "rpz_encoding", "rpz"}
 
-class _FlashPZFunction(torch.autograd.Function):
+
+class _FlashFunction(torch.autograd.Function):
     """
     Custom autograd function: Triton forward, PyTorch backward.
 
-    Forward uses the fused Triton kernel for speed.
+    Forward dispatches to the appropriate Triton kernel based on ansatz.
     Backward recomputes via torch_exact_solver for correct gradients.
     """
 
@@ -36,6 +38,7 @@ class _FlashPZFunction(torch.autograd.Function):
         preacts_trainable,
         out_dim,
         c_dtype,
+        ansatz,
     ):
         ctx.save_for_backward(x, theta, preacts_w, preacts_b)
         ctx.reps = reps
@@ -43,9 +46,18 @@ class _FlashPZFunction(torch.autograd.Function):
         ctx.preacts_trainable = preacts_trainable
         ctx.out_dim = out_dim
         ctx.c_dtype = c_dtype
-        return triton_pz_forward(
-            x, theta, preacts_w, preacts_b, preacts_trainable, fast_measure
-        )
+        ctx.ansatz = ansatz
+
+        if ansatz in ("pz_encoding", "pz"):
+            return triton_pz_forward(
+                x, theta, preacts_w, preacts_b, preacts_trainable, fast_measure
+            )
+        elif ansatz in ("rpz_encoding", "rpz"):
+            return triton_rpz_forward(
+                x, theta, preacts_w, preacts_b, fast_measure
+            )
+        else:
+            raise ValueError(f"Unsupported ansatz for flash: {ansatz}")
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -58,15 +70,15 @@ class _FlashPZFunction(torch.autograd.Function):
             pw2 = preacts_w.detach().requires_grad_(preacts_w.requires_grad)
             pb2 = preacts_b.detach().requires_grad_(preacts_b.requires_grad)
 
-            # theta is already expanded to (out_dim, in_dim, reps+1, 2)
-            # so torch_exact_solver won't re-expand
+            # theta/preacts are already expanded, so torch_exact_solver
+            # won't re-expand them
             out = torch_exact_solver(
                 x2,
                 t2,
                 pw2,
                 pb2,
                 ctx.reps,
-                ansatz="pz_encoding",
+                ansatz=ctx.ansatz,
                 preacts_trainable=ctx.preacts_trainable,
                 fast_measure=ctx.fast_measure,
                 out_dim=ctx.out_dim,
@@ -77,13 +89,14 @@ class _FlashPZFunction(torch.autograd.Function):
         return (
             x2.grad,
             t2.grad,
-            pw2.grad if ctx.preacts_trainable else None,
-            pb2.grad if ctx.preacts_trainable else None,
+            pw2.grad,
+            pb2.grad,
             None,  # reps
             None,  # fast_measure
             None,  # preacts_trainable
             None,  # out_dim
             None,  # c_dtype
+            None,  # ansatz
         )
 
 
@@ -98,8 +111,8 @@ def flash_exact_solver(
     """
     Triton-accelerated exact solver. Drop-in replacement for torch_exact_solver.
 
-    Uses a fused Triton kernel for the pz_encoding forward pass.
-    Falls back to torch_exact_solver for other ansatzes.
+    Uses fused Triton kernels for pz_encoding and rpz_encoding ansatzes.
+    Falls back to torch_exact_solver for unsupported ansatzes.
 
     Args:
         Same as torch_exact_solver.
@@ -114,8 +127,8 @@ def flash_exact_solver(
     c_dtype = kwargs.get("dtype", torch.complex64)
     batch, in_dim = x.shape
 
-    # Only pz_encoding is supported with Triton
-    if ansatz not in ("pz_encoding", "pz"):
+    # Fallback for unsupported ansatzes
+    if ansatz not in _SUPPORTED_ANSATZES:
         return torch_exact_solver(
             x, theta, preacts_weight, preacts_bias, reps, **kwargs
         )
@@ -128,7 +141,9 @@ def flash_exact_solver(
         repeat_in = in_dim // theta.shape[1] + 1
         theta = theta.repeat(repeat_out, repeat_in, 1, 1)[:, :in_dim, :, :]
 
-    if preacts_trainable:
+    # rpz always needs encoded_x; others only when preacts_trainable
+    _needs_encoded_x = preacts_trainable or ansatz in ("rpz_encoding", "rpz")
+    if _needs_encoded_x:
         if len(preacts_weight.shape) != 3:
             preacts_weight = preacts_weight.unsqueeze(0)
             preacts_bias = preacts_bias.unsqueeze(0)
@@ -142,13 +157,19 @@ def flash_exact_solver(
                 :, :in_dim, :
             ]
 
-    # Use autograd.Function when gradients are needed (training)
+    # Check if gradients are needed (training)
     needs_grad = theta.requires_grad or x.requires_grad
-    if preacts_trainable:
-        needs_grad = needs_grad or preacts_weight.requires_grad or preacts_bias.requires_grad
+    if _needs_encoded_x:
+        needs_grad = (
+            needs_grad or preacts_weight.requires_grad or preacts_bias.requires_grad
+        )
+    elif preacts_trainable:
+        needs_grad = (
+            needs_grad or preacts_weight.requires_grad or preacts_bias.requires_grad
+        )
 
     if needs_grad:
-        return _FlashPZFunction.apply(
+        return _FlashFunction.apply(
             x,
             theta,
             preacts_weight,
@@ -158,8 +179,15 @@ def flash_exact_solver(
             preacts_trainable,
             out_dim,
             c_dtype,
+            ansatz,
         )
     else:
-        return triton_pz_forward(
-            x, theta, preacts_weight, preacts_bias, preacts_trainable, fast_measure
-        )
+        if ansatz in ("pz_encoding", "pz"):
+            return triton_pz_forward(
+                x, theta, preacts_weight, preacts_bias,
+                preacts_trainable, fast_measure,
+            )
+        else:  # rpz_encoding, rpz
+            return triton_rpz_forward(
+                x, theta, preacts_weight, preacts_bias, fast_measure,
+            )
