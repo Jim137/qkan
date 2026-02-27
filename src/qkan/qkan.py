@@ -155,90 +155,121 @@ class QKANLayer(nn.Module):
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
 
-        if callable(solver) or callable(ansatz):
-            if not theta_size:
+        self.preact_trainable = preact_trainable
+        self.preact_init = preact_init
+        self.postact_weight_trainable = postact_weight_trainable
+        self.postact_bias_trainable = postact_bias_trainable
+
+        self.init_parameters()
+
+    def init_parameters(self):
+        """Create all learnable parameters.
+
+        Called once from ``__init__`` to allocate ``nn.Parameter`` objects.
+        Reads configuration from ``self.*`` attributes.
+        If ``self.seed`` is set, the RNG is seeded for reproducibility.
+
+        Calls ``xavier_init()`` at the end to apply Xavier normal
+        initialization to theta (and preacts when ``preact_init`` is set).
+        """
+        if self.seed is not None:
+            torch.manual_seed(self.seed)
+            np.random.seed(self.seed)
+            random.seed(self.seed)
+
+        group = self.group
+        reps = self.reps
+        device = self.device
+        p_dtype = self.p_dtype
+
+        # -- theta --
+        if callable(self.solver) or callable(self.ansatz):
+            if not self.theta_size:
                 raise ValueError("theta_size is required for custom ansatz")
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*theta_size, device=device, dtype=p_dtype)
-                )
+                torch.zeros(*self.theta_size, device=device, dtype=p_dtype)
             )
-        elif ansatz == "pz_encoding" or ansatz == "pz":
+        elif self.ansatz in ("pz_encoding", "pz", "mix"):
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*group, reps + 1, 2, device=device, dtype=p_dtype)
-                )
+                torch.zeros(*group, reps + 1, 2, device=device, dtype=p_dtype)
             )
-        elif ansatz == "rpz_encoding" or ansatz == "rpz":
+        elif self.ansatz in ("rpz_encoding", "rpz"):
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
-                )
+                torch.zeros(*group, reps + 1, 1, device=device, dtype=p_dtype)
             )
-        elif ansatz == "px_encoding" or ansatz == "px":
+        elif self.ansatz in ("px_encoding", "px"):
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
-                )
+                torch.zeros(*group, reps + 1, 1, device=device, dtype=p_dtype)
             )
         else:
             raise NotImplementedError()
 
-        if ba_trainable:
+        # -- base_weight --
+        if self.ba_trainable:
             self.base_weight = torch.nn.Parameter(
-                0.5 * torch.ones(out_dim, in_dim, device=device, dtype=p_dtype),
-                requires_grad=ba_trainable,
+                0.5
+                * torch.ones(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
+                requires_grad=self.ba_trainable,
             )
         else:
             self.base_weight = torch.nn.Parameter(
-                torch.zeros(out_dim, in_dim, device=device, dtype=p_dtype),
-                requires_grad=ba_trainable,
+                torch.zeros(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
+                requires_grad=self.ba_trainable,
             )
 
-        self.preact_trainable = preact_trainable
+        # -- preacts_weight / preacts_bias --
         # rpz_encoding always needs trainable bias (even when preact_trainable=False)
-        _bias_trainable = preact_trainable or ansatz in ("rpz_encoding", "rpz")
-        if not preact_init:
-            self.preacts_weight = nn.Parameter(
-                torch.ones(*group, reps, device=device, dtype=p_dtype),
-                requires_grad=preact_trainable,
-            )
-            self.preacts_bias = nn.Parameter(
-                torch.zeros(*group, reps, device=device, dtype=p_dtype),
-                requires_grad=_bias_trainable,
-            )
-        else:
-            self.preacts_weight = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*group, reps, device=device, dtype=p_dtype)
-                ),
-                requires_grad=preact_trainable,
-            )
-            self.preacts_bias = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*group, reps, device=device, dtype=p_dtype)
-                ),
-                requires_grad=_bias_trainable,
-            )
-        self.preact_init = preact_init
+        _bias_trainable = self.preact_trainable or self.ansatz in (
+            "rpz_encoding",
+            "rpz",
+        )
+        self.preacts_weight = nn.Parameter(
+            torch.ones(*group, reps, device=device, dtype=p_dtype),
+            requires_grad=self.preact_trainable,
+        )
+        self.preacts_bias = nn.Parameter(
+            torch.zeros(*group, reps, device=device, dtype=p_dtype),
+            requires_grad=_bias_trainable,
+        )
 
-        self.postact_weight_trainable = postact_weight_trainable
+        # -- postact_weights / postact_bias --
         self.postact_weights = nn.Parameter(
-            torch.ones(out_dim, in_dim, device=device, dtype=p_dtype),
-            requires_grad=postact_weight_trainable,
+            torch.ones(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
+            requires_grad=self.postact_weight_trainable,
         )
-        self.postact_bias_trainable = postact_bias_trainable
         self.postact_bias = nn.Parameter(
-            torch.zeros(out_dim, in_dim, device=device, dtype=p_dtype),
-            requires_grad=postact_bias_trainable,
+            torch.zeros(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
+            requires_grad=self.postact_bias_trainable,
         )
+
+        # -- mask --
         self.mask = nn.Parameter(
-            torch.ones(out_dim, in_dim, device=device, dtype=p_dtype),
+            torch.ones(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
             requires_grad=False,
         )
-        if is_batchnorm:
-            self.bn = nn.BatchNorm1d(in_dim, device=device, dtype=p_dtype)
+
+        # -- batchnorm --
+        if self.is_batchnorm:
+            self.bn = nn.BatchNorm1d(self.in_dim, device=device, dtype=p_dtype)
+
         self._x0: Optional[torch.Tensor] = None
+
+        try:
+            self.xavier_init()
+        except Exception:
+            warnings.warn("xavier_init failed, using default initialization")
+
+    def xavier_init(self):
+        """Apply Xavier normal initialization to theta and preacts.
+
+        Applies ``nn.init.xavier_normal_`` in-place to ``self.theta``.
+        When ``self.preact_init`` is set, also applies it to
+        ``self.preacts_weight`` and ``self.preacts_bias``.
+        """
+        nn.init.xavier_normal_(self.theta.data)
+        if self.preact_init:
+            nn.init.xavier_normal_(self.preacts_weight.data)
+            nn.init.xavier_normal_(self.preacts_bias.data)
 
     def to(self, *args, **kwargs):
         """
@@ -366,7 +397,38 @@ class QKANLayer(nn.Module):
         return x
 
     def reset_parameters(self):
-        self.theta.data.copy_(torch.zeros(self.theta.shape, dtype=self.p_dtype))
+        """
+        Reset all learnable parameters to default values in-place.
+        
+        Note: The thetas are set to zero to do layer extension.
+        If you wish to re-init the parameters, please use `init_parameters` instead.
+        """
+        if self.seed is not None:
+            torch.manual_seed(self.seed)
+            np.random.seed(self.seed)
+            random.seed(self.seed)
+
+        self.theta.data.zero_()
+        if self.ansatz == "real":
+            self.c_dtype = torch.bfloat16
+
+        if self.ba_trainable:
+            self.base_weight.data.fill_(0.5)
+        else:
+            self.base_weight.data.zero_()
+
+        self.preacts_weight.data.fill_(1)
+        self.preacts_bias.data.zero_()
+
+        self.postact_weights.data.fill_(1)
+        self.postact_bias.data.zero_()
+
+        self.mask.data.fill_(1)
+
+        if self.is_batchnorm:
+            self.bn.reset_parameters()
+
+        self._x0 = None
 
     @torch.no_grad()
     def forward_no_sum(self, x: torch.Tensor):
@@ -825,6 +887,20 @@ class QKAN(nn.Module):
                 layer.weight.data.copy_(another_model.layers[count - 1].weight.data)  # type: ignore
                 layer.bias.data.copy_(another_model.layers[count - 1].bias.data)  # type: ignore
                 count += 2
+        return self
+
+    def initialize_parameters(self):
+        """Reinitialize parameters of all QKANLayer layers in-place."""
+        for layer in self.layers:
+            if isinstance(layer, QKANLayer):
+                layer.reset_parameters()
+        return self
+
+    def xavier_init(self):
+        """Apply Xavier normal initialization to all QKANLayer layers."""
+        for layer in self.layers:
+            if isinstance(layer, QKANLayer):
+                layer.xavier_init()
         return self
 
     def refine(self, new_reps: int) -> "QKAN":
