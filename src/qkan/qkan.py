@@ -691,6 +691,7 @@ class QKAN(nn.Module):
             raise NotImplementedError()
 
         x = x.view(-1, T)
+        B_flat = x.shape[0]  # Flattened batch size (e.g., (B,C,T) -> (B*C,T))
         if self.input_id is not None:
             x = x[:, self.input_id.long()]
 
@@ -708,7 +709,8 @@ class QKAN(nn.Module):
         for layer in self.layers:
             if self.save_act and isinstance(layer, QKANLayer):
                 self.subnode_actscale.append(torch.std(x, dim=0).detach())
-                preacts = x[:, None, :].expand(B, layer.out_dim, layer.in_dim)
+                # Use the flattened batch size to match x after view(-1, T)
+                preacts = x[:, None, :].expand(B_flat, layer.out_dim, layer.in_dim)
                 postacts = layer.forward_no_sum(x)  # shape: (batch, out_dim, in_dim)
 
             x = layer(x)
