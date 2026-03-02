@@ -37,14 +37,13 @@ import torch.nn.functional as F
 from tqdm import tqdm  # type: ignore
 
 from .info import get_dist_info, print0, print_version
-from .solver import qml_solver, torch_exact_solver
-
-try:
-    from .flashQKAN import flash_exact_solver
-
-    _FLASH_AVAILABLE = True
-except ImportError:
-    _FLASH_AVAILABLE = False
+from .solver import (
+    _FLASH_AVAILABLE,
+    cutn_solver,
+    flash_exact_solver,
+    qml_solver,
+    torch_exact_solver,
+)
 
 
 class QKANLayer(nn.Module):
@@ -63,8 +62,8 @@ class QKANLayer(nn.Module):
             Group of neurons
         device :
             Device to use
-        solver : Union[Literal["qml", "exact", "flash"], Callable]
-            Solver to use
+        solver : Union[str, Callable]
+            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable
         ansatz : Union[str, Callable]
             Ansatz to use, "pz_encoding", "px_encoding", "rpz_encoding" or custom
         qml_device : str
@@ -109,7 +108,16 @@ class QKANLayer(nn.Module):
         reps: int = 3,
         group: Union[int, tuple] = -1,
         device="cpu",
-        solver: Union[Literal["qml", "exact", "flash"], Callable] = "exact",
+        solver: Union[
+            Literal[
+                "qml",
+                "exact",
+                "flash",
+                "cutn",
+                "tn",
+            ],
+            Callable,
+        ] = "exact",
         qml_device="default.qubit",
         ansatz: Union[str, Callable] = "pz_encoding",
         theta_size: Optional[list[int]] = None,
@@ -143,7 +151,16 @@ class QKANLayer(nn.Module):
         self.reps = reps
         self.group = group
         self.device = device
-        self.solver: Union[Literal["qml", "exact", "flash"], Callable] = solver
+        self.solver: Union[
+            Literal[
+                "qml",
+                "exact",
+                "flash",
+                "cutn",
+                "tn",
+            ],
+            Callable,
+        ] = solver
         self.qml_device = qml_device
         self.ansatz = ansatz
         self.theta_size = theta_size
@@ -201,6 +218,11 @@ class QKANLayer(nn.Module):
             self.theta = nn.Parameter(
                 torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
             )
+        elif self.ansatz == "real":
+            self.theta = nn.Parameter(
+                torch.empty(*group, reps, 1, device=device, dtype=p_dtype)
+            )
+            self.c_dtype = torch.bfloat16
         else:
             raise NotImplementedError()
 
@@ -372,6 +394,21 @@ class QKANLayer(nn.Module):
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
             ).to(self.p_dtype)
+        elif self.solver == "cutn" or self.solver == "tn":
+            postacts = cutn_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
         elif callable(self.solver):
             postacts = self.solver(
                 x,
@@ -399,7 +436,7 @@ class QKANLayer(nn.Module):
     def reset_parameters(self):
         """
         Reset all learnable parameters to default values in-place.
-        
+
         Note: The thetas are set to zero to do layer extension.
         If you wish to re-init the parameters, please use `init_parameters` instead.
         """
@@ -493,6 +530,21 @@ class QKANLayer(nn.Module):
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
             ).to(self.p_dtype)
+        elif self.solver == "cutn":
+            postacts = cutn_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
         else:
             raise NotImplementedError()
         x_new = (
@@ -571,8 +623,8 @@ class QKAN(nn.Module):
             Group of neurons
         device : Literal["cpu", "cuda"]
             Device to use
-        solver : Literal["qml", "exact"]
-            Solver to use
+        solver : Union[str, Callable]
+            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable
         qml_device : str
             PennyLane device to use
         layers : QKANModuleList
@@ -613,7 +665,16 @@ class QKAN(nn.Module):
         is_batchnorm: bool = False,
         hidden: int = 0,
         device="cpu",
-        solver: Union[Literal["qml", "exact", "flash"], Callable] = "exact",
+        solver: Union[
+            Literal[
+                "qml",
+                "exact",
+                "flash",
+                "cutn",
+                "tn",
+            ],
+            Callable,
+        ] = "exact",
         qml_device: str = "default.qubit",
         ansatz: Union[str, Callable] = "pz_encoding",
         theta_size: Optional[list[int]] = None,
@@ -650,8 +711,8 @@ class QKAN(nn.Module):
                 Number of hidden units in map layer, default: 0
             device :
                 Device to use, default: "cpu"
-            solver : Union[Literal["qml", "exact", "flash"], Callable]
-                Solver to use, default: "exact"
+            solver : Union[str, Callable]
+                Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable, default: "exact"
             ansatz : Union[str, Callable]
                 Ansatz to use, "pz_encoding" ("pz"), "px_encoding" ("px"), "rpz_encoding" ("rpz", reduced pz encoding) or custom
             qml_device : str
@@ -692,7 +753,16 @@ class QKAN(nn.Module):
         self.reps = reps
         self.group = group
         self.device = device
-        self.solver: Union[Literal["qml", "exact", "flash"], Callable] = solver
+        self.solver: Union[
+            Literal[
+                "qml",
+                "exact",
+                "flash",
+                "cutn",
+                "tn",
+            ],
+            Callable,
+        ] = solver
         self.ansatz = ansatz
         self.qml_device = qml_device
         self.norm_out = norm_out
