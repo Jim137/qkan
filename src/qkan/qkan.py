@@ -187,19 +187,19 @@ class QKANLayer(nn.Module):
             if not self.theta_size:
                 raise ValueError("theta_size is required for custom ansatz")
             self.theta = nn.Parameter(
-                torch.zeros(*self.theta_size, device=device, dtype=p_dtype)
+                torch.empty(*self.theta_size, device=device, dtype=p_dtype)
             )
         elif self.ansatz in ("pz_encoding", "pz", "mix"):
             self.theta = nn.Parameter(
-                torch.zeros(*group, reps + 1, 2, device=device, dtype=p_dtype)
+                torch.empty(*group, reps + 1, 2, device=device, dtype=p_dtype)
             )
         elif self.ansatz in ("rpz_encoding", "rpz"):
             self.theta = nn.Parameter(
-                torch.zeros(*group, reps + 1, 1, device=device, dtype=p_dtype)
+                torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
             )
         elif self.ansatz in ("px_encoding", "px"):
             self.theta = nn.Parameter(
-                torch.zeros(*group, reps + 1, 1, device=device, dtype=p_dtype)
+                torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
             )
         else:
             raise NotImplementedError()
