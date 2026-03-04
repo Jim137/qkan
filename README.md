@@ -143,7 +143,8 @@ To start contributing, please fork the repository and create a new branch for yo
 In your environment, you can install the development dependencies with:
 
 ```bash
-git clone https://github.com/Jim137/qkan.git && cd qkan
+# clone your forked repository and navigate to the project directory
+# for example `git clone https://github.com/Jim137/qkan.git && cd qkan`
 
 pip install -e .[dev] # install development dependencies
 pip install -e .[doc] # install documentation dependencies
