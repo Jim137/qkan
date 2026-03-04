@@ -773,7 +773,8 @@ class _FlashFunction(torch.autograd.Function):
             return triton_rpz_forward(x, theta, preacts_w, preacts_b, fast_measure)
         elif ansatz == "real":
             return triton_real_forward(
-                x, theta, preacts_w, preacts_b, preacts_trainable, fast_measure
+                x, theta, preacts_w, preacts_b, preacts_trainable, fast_measure,
+                c_dtype=c_dtype,
             )
         else:
             raise ValueError(f"Unsupported ansatz for flash: {ansatz}")
@@ -811,7 +812,16 @@ class _FlashFunction(torch.autograd.Function):
                 grad_output,
                 ctx.preacts_trainable,
                 ctx.fast_measure,
+                c_dtype=ctx.c_dtype,
             )
+            # Cast gradients back to parameter dtype
+            p_dtype = x.dtype
+            grad_x = grad_x.to(p_dtype)
+            grad_theta = grad_theta.to(p_dtype)
+            if grad_pw is not None:
+                grad_pw = grad_pw.to(p_dtype)
+            if grad_pb is not None:
+                grad_pb = grad_pb.to(p_dtype)
         else:
             raise ValueError(f"Unsupported ansatz for flash backward: {ansatz}")
 
@@ -939,6 +949,7 @@ def flash_exact_solver(
                 preacts_bias,
                 preacts_trainable,
                 fast_measure,
+                c_dtype=c_dtype,
             )
         else:
             raise NotImplementedError

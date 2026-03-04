@@ -772,6 +772,46 @@ def triton_rpz_backward(x, theta, pw, pb, grad_output, fast_measure):
 
 
 @triton.jit
+def _round_to_int(x):
+    """Round scalar to nearest integer, returned as same dtype. bf16-safe."""
+    return tl.where(x >= 0, (x + 0.5).to(tl.int32), (x - 0.5).to(tl.int32)).to(tl.float32)
+
+
+@triton.jit
+def _approx_cos(x):
+    """Polynomial cosine approximation with range reduction. Works with any dtype including bf16."""
+    # Range reduce to [-π, π]: k = round(x / 2π)
+    INV_TWO_PI: tl.constexpr = 0.15915494309189535
+    TWO_PI: tl.constexpr = 6.283185307179586
+    k = _round_to_int(x * INV_TWO_PI)
+    x = x - k * TWO_PI
+    # cos(x) via Horner form: 1 - x²/2 + x⁴/24 - x⁶/720 + x⁸/40320
+    x2 = x * x
+    c = x2 * 2.48015873e-05 - 1.38888889e-03
+    c = c * x2 + 4.16666667e-02
+    c = c * x2 - 5.0e-01
+    c = c * x2 + 1.0
+    return c
+
+
+@triton.jit
+def _approx_sin(x):
+    """Polynomial sine approximation with range reduction. Works with any dtype including bf16."""
+    # Range reduce to [-π, π]: k = round(x / 2π)
+    INV_TWO_PI: tl.constexpr = 0.15915494309189535
+    TWO_PI: tl.constexpr = 6.283185307179586
+    k = _round_to_int(x * INV_TWO_PI)
+    x = x - k * TWO_PI
+    # sin(x) via Horner form: x*(1 - x²/6 + x⁴/120 - x⁶/5040 + x⁸/362880)
+    x2 = x * x
+    s = x2 * 2.75573192e-06 - 1.98412698e-04
+    s = s * x2 + 8.33333333e-03
+    s = s * x2 - 1.66666667e-01
+    s = s * x2 + 1.0
+    return s * x
+
+
+@triton.jit
 def _real_encoding_kernel(
     # Pointers
     x_ptr,  # [Batch, In_Dim]
@@ -807,12 +847,14 @@ def _real_encoding_kernel(
     # Compile-time constants
     PREACTS_TRAINABLE: tl.constexpr,
     FAST_MEASURE: tl.constexpr,
+    COMPUTE_BF16: tl.constexpr = False,
 ):
     """
     Fused real ansatz forward kernel.
 
     Circuit: H|0> -> [X, Ry(theta[l,0]), Z, Ry(enc_x)]×reps -> measure Z
     No final rotation. Data encoding uses Ry (not Rz).
+    When COMPUTE_BF16=True, uses polynomial trig approximations for bf16 compat.
     """
     pid = tl.program_id(0)
 
@@ -842,8 +884,12 @@ def _real_encoding_kernel(
         # Ry(theta[l, 0])
         t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
         a = t0 * 0.5
-        c = tl.cos(a)
-        s = tl.sin(a)
+        if COMPUTE_BF16:
+            c = _approx_cos(a)
+            s = _approx_sin(a)
+        else:
+            c = tl.cos(a)
+            s = tl.sin(a)
         nr0 = c * r0 - s * r1
         ni0 = c * i0 - s * i1
         nr1 = s * r0 + c * r1
@@ -866,8 +912,12 @@ def _real_encoding_kernel(
             enc = w * x_val + b
 
         a = enc * 0.5
-        c = tl.cos(a)
-        s = tl.sin(a)
+        if COMPUTE_BF16:
+            c = _approx_cos(a)
+            s = _approx_sin(a)
+        else:
+            c = tl.cos(a)
+            s = tl.sin(a)
         nr0 = c * r0 - s * r1
         ni0 = c * i0 - s * i1
         nr1 = s * r0 + c * r1
@@ -878,7 +928,11 @@ def _real_encoding_kernel(
 
     # Measure Z
     if FAST_MEASURE:
-        result = tl.sqrt(r0 * r0 + i0 * i0) - tl.sqrt(r1 * r1 + i1 * i1)
+        if COMPUTE_BF16:
+            # Real ansatz keeps state real, so |α| = |r0|, |β| = |r1|
+            result = tl.abs(r0) - tl.abs(r1)
+        else:
+            result = tl.sqrt(r0 * r0 + i0 * i0) - tl.sqrt(r1 * r1 + i1 * i1)
     else:
         result = (r0 * r0 + i0 * i0) - (r1 * r1 + i1 * i1)
 
@@ -1353,34 +1407,36 @@ def triton_real_forward(
     preacts_b: torch.Tensor,
     preacts_trainable: bool,
     fast_measure: bool = True,
+    c_dtype: torch.dtype = torch.bfloat16,
 ) -> torch.Tensor:
     """
     Launch the Triton real ansatz kernel.
 
     Args:
-        x: (batch, in_dim) float32
-        theta: (out_dim, in_dim, reps, 1) float32, already expanded (no +1 layer)
-        preacts_w: (out_dim, in_dim, reps) float32, or any tensor if not trainable
-        preacts_b: (out_dim, in_dim, reps) float32, or any tensor if not trainable
+        x: (batch, in_dim)
+        theta: (out_dim, in_dim, reps, 1), already expanded (no +1 layer)
+        preacts_w: (out_dim, in_dim, reps), or any tensor if not trainable
+        preacts_b: (out_dim, in_dim, reps), or any tensor if not trainable
         preacts_trainable: whether preacts are used
         fast_measure: measurement mode
+        c_dtype: compute dtype (torch.bfloat16 or torch.float32)
 
     Returns:
-        (batch, out_dim, in_dim) float32
+        (batch, out_dim, in_dim) in c_dtype
     """
     batch, in_dim = x.shape
     out_dim = theta.shape[0]
     reps = theta.shape[2]  # No +1 for real ansatz
 
-    x = x.contiguous()
-    theta = theta.contiguous()
+    x = x.to(c_dtype).contiguous()
+    theta = theta.to(c_dtype).contiguous()
+    preacts_w = preacts_w.to(c_dtype).contiguous()
+    preacts_b = preacts_b.to(c_dtype).contiguous()
 
-    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=x.dtype)
+    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
     grid = (batch * out_dim * in_dim,)
 
     if preacts_trainable:
-        preacts_w = preacts_w.contiguous()
-        preacts_b = preacts_b.contiguous()
         pw_strides = (preacts_w.stride(0), preacts_w.stride(1), preacts_w.stride(2))
         pb_strides = (preacts_b.stride(0), preacts_b.stride(1), preacts_b.stride(2))
     else:
@@ -1410,6 +1466,7 @@ def triton_real_forward(
         output.stride(2),
         PREACTS_TRAINABLE=preacts_trainable,
         FAST_MEASURE=fast_measure,
+        COMPUTE_BF16=(c_dtype == torch.bfloat16),
     )
 
     return output
@@ -1475,6 +1532,7 @@ def _real_encoding_backward_kernel(
     # Compile-time constants
     PREACTS_TRAINABLE: tl.constexpr,
     FAST_MEASURE: tl.constexpr,
+    COMPUTE_BF16: tl.constexpr = False,
 ):
     """Backward kernel for real ansatz. Circuit: H|0> -> [X, Ry(theta), Z, Ry(enc)]×reps -> measure Z"""
     pid = tl.program_id(0)
@@ -1516,8 +1574,12 @@ def _real_encoding_backward_kernel(
         # Ry(theta[l,0])
         t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
         a = t0 * 0.5
-        c = tl.cos(a)
-        s = tl.sin(a)
+        if COMPUTE_BF16:
+            c = _approx_cos(a)
+            s = _approx_sin(a)
+        else:
+            c = tl.cos(a)
+            s = tl.sin(a)
         nr0 = c * r0 - s * r1
         ni0 = c * i0 - s * i1
         nr1 = s * r0 + c * r1
@@ -1552,8 +1614,12 @@ def _real_encoding_backward_kernel(
             enc = w * x_val + b
 
         a = enc * 0.5
-        c = tl.cos(a)
-        s = tl.sin(a)
+        if COMPUTE_BF16:
+            c = _approx_cos(a)
+            s = _approx_sin(a)
+        else:
+            c = tl.cos(a)
+            s = tl.sin(a)
         nr0 = c * r0 - s * r1
         ni0 = c * i0 - s * i1
         nr1 = s * r0 + c * r1
@@ -1570,8 +1636,13 @@ def _real_encoding_backward_kernel(
     )
 
     if FAST_MEASURE:
-        alpha_norm = tl.sqrt(r0 * r0 + i0 * i0)
-        beta_norm = tl.sqrt(r1 * r1 + i1 * i1)
+        if COMPUTE_BF16:
+            # Real ansatz state is always real, so |α| = |r0|, |β| = |r1|
+            alpha_norm = tl.abs(r0)
+            beta_norm = tl.abs(r1)
+        else:
+            alpha_norm = tl.sqrt(r0 * r0 + i0 * i0)
+            beta_norm = tl.sqrt(r1 * r1 + i1 * i1)
         inv_alpha = tl.where(alpha_norm > 1e-30, 1.0 / alpha_norm, 0.0)
         inv_beta = tl.where(beta_norm > 1e-30, 1.0 / beta_norm, 0.0)
         ar0 = go * r0 * inv_alpha
@@ -1607,8 +1678,12 @@ def _real_encoding_backward_kernel(
             enc = w * x_val + b
 
         a = enc * 0.5
-        c = tl.cos(a)
-        s = tl.sin(a)
+        if COMPUTE_BF16:
+            c = _approx_cos(a)
+            s = _approx_sin(a)
+        else:
+            c = tl.cos(a)
+            s = tl.sin(a)
 
         grad_enc = 0.5 * (
             ar0 * (-s * sr0 - c * sr1)
@@ -1656,8 +1731,12 @@ def _real_encoding_backward_kernel(
 
         t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
         a = t0 * 0.5
-        c = tl.cos(a)
-        s = tl.sin(a)
+        if COMPUTE_BF16:
+            c = _approx_cos(a)
+            s = _approx_sin(a)
+        else:
+            c = tl.cos(a)
+            s = tl.sin(a)
 
         grad_t0 = 0.5 * (
             ar0 * (-s * sr0 - c * sr1)
@@ -1680,42 +1759,44 @@ def _real_encoding_backward_kernel(
 
 
 def triton_real_backward(
-    x, theta, pw, pb, grad_output, preacts_trainable, fast_measure
+    x, theta, pw, pb, grad_output, preacts_trainable, fast_measure,
+    c_dtype: torch.dtype = torch.bfloat16,
 ):
     """Launch real ansatz backward kernel. Returns (grad_x, grad_theta, grad_pw, grad_pb)."""
     batch, in_dim = x.shape
     out_dim = theta.shape[0]
     reps = theta.shape[2]  # No +1 for real ansatz
 
-    x = x.contiguous()
-    theta = theta.contiguous()
-    grad_output = grad_output.contiguous()
+    x = x.to(c_dtype).contiguous()
+    theta = theta.to(c_dtype).contiguous()
+    pw = pw.to(c_dtype).contiguous()
+    pb = pb.to(c_dtype).contiguous()
+    grad_output = grad_output.to(c_dtype).contiguous()
 
     n_states = 3 * reps + 1  # H state + 3 per layer (after X, Ry_theta, Z)
     N = batch * out_dim * in_dim
-    states = torch.empty(N, n_states, 4, device=x.device, dtype=x.dtype)
+    states = torch.empty(N, n_states, 4, device=x.device, dtype=c_dtype)
 
-    grad_theta = torch.zeros_like(theta)
-    grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=x.dtype)
+    grad_theta = torch.zeros(theta.shape, device=x.device, dtype=c_dtype)
+    grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=c_dtype)
 
     if preacts_trainable:
-        pw = pw.contiguous()
-        pb = pb.contiguous()
-        grad_pw = torch.zeros_like(pw)
-        grad_pb = torch.zeros_like(pb)
+        grad_pw = torch.zeros(pw.shape, device=x.device, dtype=c_dtype)
+        grad_pb = torch.zeros(pb.shape, device=x.device, dtype=c_dtype)
         pw_strides = (pw.stride(0), pw.stride(1), pw.stride(2))
         pb_strides = (pb.stride(0), pb.stride(1), pb.stride(2))
         gpw_strides = (grad_pw.stride(0), grad_pw.stride(1), grad_pw.stride(2))
         gpb_strides = (grad_pb.stride(0), grad_pb.stride(1), grad_pb.stride(2))
     else:
-        grad_pw = torch.zeros(1, device=x.device)
-        grad_pb = torch.zeros(1, device=x.device)
+        grad_pw = torch.zeros(1, device=x.device, dtype=c_dtype)
+        grad_pb = torch.zeros(1, device=x.device, dtype=c_dtype)
         pw_strides = (0, 0, 0)
         pb_strides = (0, 0, 0)
         gpw_strides = (0, 0, 0)
         gpb_strides = (0, 0, 0)
 
     grid = (N,)
+    compute_bf16 = (c_dtype == torch.bfloat16)
     _real_encoding_backward_kernel[grid](
         x,
         theta,
@@ -1755,6 +1836,7 @@ def triton_real_backward(
         *gpb_strides,
         PREACTS_TRAINABLE=preacts_trainable,
         FAST_MEASURE=fast_measure,
+        COMPUTE_BF16=compute_bf16,
     )
 
     return (
