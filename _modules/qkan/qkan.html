@@ -5,17 +5,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.qkan &mdash; QKAN 0.1.3 documentation</title>
+  <title>qkan.qkan &mdash; QKAN 0.2.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
-      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
 
   
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/qkan.html" />
       <script src="../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../_static/documentation_options.js?v=360bc84d"></script>
-      <script src="../../_static/doctools.js?v=9bcbadda"></script>
-      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../_static/documentation_options.js?v=938c9ccc"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
@@ -73,7 +73,21 @@
            <div itemprop="articleBody">
              
   <h1>Source code for qkan.qkan</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span></span><span class="c1"># Copyright (c) 2024, Jiun-Cheng Jiang. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">Quantum-inspired Kolmogorov Arnold Networks (QKANs) implementation in PyTorch.</span>
 <span class="sd">Paper: Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks: https://arxiv.org/abs/2509.14026</span>
 
@@ -81,9 +95,6 @@
 <span class="sd">    - PennyLane</span>
 <span class="sd">    - Exact solver implemented in PyTorch (faster)</span>
 <span class="sd">    - Custom solvers api</span>
-
-<span class="sd">Code author: Jiun-Cheng Jiang (Jim137@GitHub)</span>
-<span class="sd">Contact: [jcjiang@phys.ntu.edu.tw](mailto:jcjiang@phys.ntu.edu.tw)</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
@@ -101,7 +112,13 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>  <span class="c1"># type: ignore</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">.info</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_dist_info</span><span class="p">,</span> <span class="n">print0</span><span class="p">,</span> <span class="n">print_version</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.solver</span><span class="w"> </span><span class="kn">import</span> <span class="n">qml_solver</span><span class="p">,</span> <span class="n">torch_exact_solver</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.solver</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_FLASH_AVAILABLE</span><span class="p">,</span>
+    <span class="n">cutn_solver</span><span class="p">,</span>
+    <span class="n">flash_exact_solver</span><span class="p">,</span>
+    <span class="n">qml_solver</span><span class="p">,</span>
+    <span class="n">torch_exact_solver</span><span class="p">,</span>
+<span class="p">)</span>
 
 
 <div class="viewcode-block" id="QKANLayer">
@@ -122,8 +139,8 @@
 <span class="sd">            Group of neurons</span>
 <span class="sd">        device :</span>
 <span class="sd">            Device to use</span>
-<span class="sd">        solver : Union[Literal[&quot;qml&quot;, &quot;exact&quot;], Callable]</span>
-<span class="sd">            Solver to use</span>
+<span class="sd">        solver : Union[str, Callable]</span>
+<span class="sd">            Solver to use, currently supports &quot;qml&quot;, &quot;exact&quot;, &quot;flash&quot;, &quot;cutn&quot; or custom callable</span>
 <span class="sd">        ansatz : Union[str, Callable]</span>
 <span class="sd">            Ansatz to use, &quot;pz_encoding&quot;, &quot;px_encoding&quot;, &quot;rpz_encoding&quot; or custom</span>
 <span class="sd">        qml_device : str</span>
@@ -168,7 +185,16 @@
         <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
         <span class="n">group</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span>
         <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span>
-        <span class="n">solver</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;qml&quot;</span><span class="p">,</span> <span class="s2">&quot;exact&quot;</span><span class="p">],</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;exact&quot;</span><span class="p">,</span>
+        <span class="n">solver</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+            <span class="n">Literal</span><span class="p">[</span>
+                <span class="s2">&quot;qml&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;exact&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;flash&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;cutn&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;tn&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="n">Callable</span><span class="p">,</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;exact&quot;</span><span class="p">,</span>
         <span class="n">qml_device</span><span class="o">=</span><span class="s2">&quot;default.qubit&quot;</span><span class="p">,</span>
         <span class="n">ansatz</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span>
         <span class="n">theta_size</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -182,13 +208,14 @@
         <span class="n">fast_measure</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">c_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">complex64</span><span class="p">,</span>
         <span class="n">p_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
-        <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">seed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="nb">super</span><span class="p">(</span><span class="n">QKANLayer</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
-        <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
-        <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">seed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+            <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">group</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">group</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
@@ -201,7 +228,16 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">reps</span> <span class="o">=</span> <span class="n">reps</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">group</span> <span class="o">=</span> <span class="n">group</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">device</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">solver</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;qml&quot;</span><span class="p">,</span> <span class="s2">&quot;exact&quot;</span><span class="p">],</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="n">solver</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">solver</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+            <span class="n">Literal</span><span class="p">[</span>
+                <span class="s2">&quot;qml&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;exact&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;flash&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;cutn&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;tn&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="n">Callable</span><span class="p">,</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="n">solver</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">qml_device</span> <span class="o">=</span> <span class="n">qml_device</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span> <span class="o">=</span> <span class="n">ansatz</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">theta_size</span> <span class="o">=</span> <span class="n">theta_size</span>
@@ -213,93 +249,132 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span> <span class="o">=</span> <span class="n">c_dtype</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span> <span class="o">=</span> <span class="n">p_dtype</span>
 
-        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="s2">&quot;solver&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">callable</span><span class="p">(</span><span class="s2">&quot;ansatz&quot;</span><span class="p">):</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">theta_size</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span> <span class="o">=</span> <span class="n">preact_trainable</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">preact_init</span> <span class="o">=</span> <span class="n">preact_init</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">postact_weight_trainable</span> <span class="o">=</span> <span class="n">postact_weight_trainable</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">postact_bias_trainable</span> <span class="o">=</span> <span class="n">postact_bias_trainable</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">init_parameters</span><span class="p">()</span>
+
+<div class="viewcode-block" id="QKANLayer.init_parameters">
+<a class="viewcode-back" href="../../api.html#qkan.QKANLayer.init_parameters">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">init_parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create all learnable parameters.</span>
+
+<span class="sd">        Called once from ``__init__`` to allocate ``nn.Parameter`` objects.</span>
+<span class="sd">        Reads configuration from ``self.*`` attributes.</span>
+<span class="sd">        If ``self.seed`` is set, the RNG is seeded for reproducibility.</span>
+
+<span class="sd">        Calls ``xavier_init()`` at the end to apply Xavier normal</span>
+<span class="sd">        initialization to theta (and preacts when ``preact_init`` is set).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+            <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+
+        <span class="n">group</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">group</span>
+        <span class="n">reps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reps</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span>
+        <span class="n">p_dtype</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span>
+
+        <span class="c1"># -- theta --</span>
+        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">solver</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">callable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta_size</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;theta_size is required for custom ansatz&quot;</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">theta</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span>
-                    <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="o">*</span><span class="n">theta_size</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
-                <span class="p">)</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">theta_size</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;pz_encoding&quot;</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;pz&quot;</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">,</span> <span class="s2">&quot;mix&quot;</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">theta</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span>
-                    <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
-                <span class="p">)</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;rpz_encoding&quot;</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;rpz&quot;</span><span class="p">:</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">preact_trainable</span><span class="p">:</span>
-                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                    <span class="s2">&quot;Reduced pz encoding requires preact_trainable=True, set automatically.&quot;</span>
-                <span class="p">)</span>
-                <span class="n">preact_trainable</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">theta</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span>
-                    <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
-                <span class="p">)</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;px_encoding&quot;</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;px&quot;</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;px_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;px&quot;</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">theta</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span>
-                    <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
-                <span class="p">)</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
             <span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">theta</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
 
-        <span class="k">if</span> <span class="n">ba_trainable</span><span class="p">:</span>
+        <span class="c1"># -- base_weight --</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">base_weight</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="mf">0.5</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">out_dim</span><span class="p">,</span> <span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
-                <span class="n">requires_grad</span><span class="o">=</span><span class="n">ba_trainable</span><span class="p">,</span>
+                <span class="mf">0.5</span>
+                <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
+                <span class="n">requires_grad</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">base_weight</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">out_dim</span><span class="p">,</span> <span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
-                <span class="n">requires_grad</span><span class="o">=</span><span class="n">ba_trainable</span><span class="p">,</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
+                <span class="n">requires_grad</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span><span class="p">,</span>
             <span class="p">)</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span> <span class="o">=</span> <span class="n">preact_trainable</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">preact_init</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
-                <span class="n">requires_grad</span><span class="o">=</span><span class="n">preact_trainable</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
-                <span class="n">requires_grad</span><span class="o">=</span><span class="n">preact_trainable</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span>
-                    <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
-                <span class="p">),</span>
-                <span class="n">requires_grad</span><span class="o">=</span><span class="n">preact_trainable</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span>
-                    <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
-                <span class="p">),</span>
-                <span class="n">requires_grad</span><span class="o">=</span><span class="n">preact_trainable</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">preact_init</span> <span class="o">=</span> <span class="n">preact_init</span>
+        <span class="c1"># -- preacts_weight / preacts_bias --</span>
+        <span class="c1"># rpz_encoding always needs trainable bias (even when preact_trainable=False)</span>
+        <span class="n">_bias_trainable</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;rpz&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
+            <span class="n">requires_grad</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
+            <span class="n">requires_grad</span><span class="o">=</span><span class="n">_bias_trainable</span><span class="p">,</span>
+        <span class="p">)</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">postact_weight_trainable</span> <span class="o">=</span> <span class="n">postact_weight_trainable</span>
+        <span class="c1"># -- postact_weights / postact_bias --</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">postact_weights</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">out_dim</span><span class="p">,</span> <span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
-            <span class="n">requires_grad</span><span class="o">=</span><span class="n">postact_weight_trainable</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
+            <span class="n">requires_grad</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">postact_weight_trainable</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">postact_bias_trainable</span> <span class="o">=</span> <span class="n">postact_bias_trainable</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">postact_bias</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">out_dim</span><span class="p">,</span> <span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
-            <span class="n">requires_grad</span><span class="o">=</span><span class="n">postact_bias_trainable</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
+            <span class="n">requires_grad</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">postact_bias_trainable</span><span class="p">,</span>
         <span class="p">)</span>
+
+        <span class="c1"># -- mask --</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">out_dim</span><span class="p">,</span> <span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">),</span>
             <span class="n">requires_grad</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="k">if</span> <span class="n">is_batchnorm</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">bn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
+
+        <span class="c1"># -- batchnorm --</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_batchnorm</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">BatchNorm1d</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">in_dim</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">p_dtype</span><span class="p">)</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">_x0</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">xavier_init</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;xavier_init failed, using default initialization&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="QKANLayer.xavier_init">
+<a class="viewcode-back" href="../../api.html#qkan.QKANLayer.xavier_init">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">xavier_init</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply Xavier normal initialization to theta and preacts.</span>
+
+<span class="sd">        Applies ``nn.init.xavier_normal_`` in-place to ``self.theta``.</span>
+<span class="sd">        When ``self.preact_init`` is set, also applies it to</span>
+<span class="sd">        ``self.preacts_weight`` and ``self.preacts_bias``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">preact_init</span><span class="p">:</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">xavier_normal_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">preacts_bias</span><span class="o">.</span><span class="n">data</span><span class="p">)</span></div>
+
 
 <div class="viewcode-block" id="QKANLayer.to">
 <a class="viewcode-back" href="../../api.html#qkan.QKANLayer.to">[docs]</a>
@@ -387,6 +462,41 @@
                 <span class="n">out_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span>
                 <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">solver</span> <span class="o">==</span> <span class="s2">&quot;flash&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">_FLASH_AVAILABLE</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+                    <span class="s2">&quot;Triton is required for solver=&#39;flash&#39;. &quot;</span>
+                    <span class="s2">&quot;Install with: pip install triton&quot;</span>
+                <span class="p">)</span>
+            <span class="n">postacts</span> <span class="o">=</span> <span class="n">flash_exact_solver</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">preacts_bias</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">reps</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+                <span class="n">ansatz</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span><span class="p">,</span>
+                <span class="n">group</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">group</span><span class="p">,</span>
+                <span class="n">preacts_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span><span class="p">,</span>
+                <span class="n">fast_measure</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
+                <span class="n">out_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">solver</span> <span class="o">==</span> <span class="s2">&quot;cutn&quot;</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">solver</span> <span class="o">==</span> <span class="s2">&quot;tn&quot;</span><span class="p">:</span>
+            <span class="n">postacts</span> <span class="o">=</span> <span class="n">cutn_solver</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">preacts_bias</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">reps</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+                <span class="n">ansatz</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span><span class="p">,</span>
+                <span class="n">group</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">group</span><span class="p">,</span>
+                <span class="n">preacts_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span><span class="p">,</span>
+                <span class="n">fast_measure</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
+                <span class="n">out_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span><span class="p">)</span>
         <span class="k">elif</span> <span class="nb">callable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">solver</span><span class="p">):</span>
             <span class="n">postacts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">solver</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
@@ -415,7 +525,38 @@
 <div class="viewcode-block" id="QKANLayer.reset_parameters">
 <a class="viewcode-back" href="../../api.html#qkan.QKANLayer.reset_parameters">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">reset_parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span><span class="p">))</span></div>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Reset all learnable parameters to default values in-place.</span>
+
+<span class="sd">        Note: The thetas are set to zero to do layer extension.</span>
+<span class="sd">        If you wish to re-init the parameters, please use `init_parameters` instead.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+            <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">base_weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">base_weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">preacts_bias</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">postact_weights</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">postact_bias</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">mask</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_batchnorm</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bn</span><span class="o">.</span><span class="n">reset_parameters</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_x0</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 
 <div class="viewcode-block" id="QKANLayer.forward_no_sum">
@@ -461,6 +602,41 @@
                 <span class="n">group</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">group</span><span class="p">,</span>
                 <span class="n">preacts_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span><span class="p">,</span>
                 <span class="n">fast_measure</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">solver</span> <span class="o">==</span> <span class="s2">&quot;flash&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">_FLASH_AVAILABLE</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+                    <span class="s2">&quot;Triton is required for solver=&#39;flash&#39;. &quot;</span>
+                    <span class="s2">&quot;Install with: pip install triton&quot;</span>
+                <span class="p">)</span>
+            <span class="n">postacts</span> <span class="o">=</span> <span class="n">flash_exact_solver</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">preacts_bias</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">reps</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+                <span class="n">ansatz</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span><span class="p">,</span>
+                <span class="n">group</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">group</span><span class="p">,</span>
+                <span class="n">preacts_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span><span class="p">,</span>
+                <span class="n">fast_measure</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
+                <span class="n">out_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">solver</span> <span class="o">==</span> <span class="s2">&quot;cutn&quot;</span><span class="p">:</span>
+            <span class="n">postacts</span> <span class="o">=</span> <span class="n">cutn_solver</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">preacts_bias</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">reps</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+                <span class="n">ansatz</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span><span class="p">,</span>
+                <span class="n">group</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">group</span><span class="p">,</span>
+                <span class="n">preacts_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span><span class="p">,</span>
+                <span class="n">fast_measure</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
+                <span class="n">out_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span>
                 <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
@@ -522,7 +698,7 @@
         <span class="nb">super</span><span class="p">(</span><span class="n">QKANModuleList</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
     <span class="c1"># make type hint for getitem method</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">QKANLayer</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="s2">&quot;QKANModuleList&quot;</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">QKANLayer</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="s2">&quot;QKANModuleList&quot;</span><span class="p">]:</span>  <span class="c1"># type: ignore</span>
         <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">QKANModuleList</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__getitem__</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
 
 
@@ -548,8 +724,8 @@
 <span class="sd">            Group of neurons</span>
 <span class="sd">        device : Literal[&quot;cpu&quot;, &quot;cuda&quot;]</span>
 <span class="sd">            Device to use</span>
-<span class="sd">        solver : Literal[&quot;qml&quot;, &quot;exact&quot;]</span>
-<span class="sd">            Solver to use</span>
+<span class="sd">        solver : Union[str, Callable]</span>
+<span class="sd">            Solver to use, currently supports &quot;qml&quot;, &quot;exact&quot;, &quot;flash&quot;, &quot;cutn&quot; or custom callable</span>
 <span class="sd">        qml_device : str</span>
 <span class="sd">            PennyLane device to use</span>
 <span class="sd">        layers : QKANModuleList</span>
@@ -590,9 +766,19 @@
         <span class="n">is_batchnorm</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">hidden</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
         <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span>
-        <span class="n">solver</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;qml&quot;</span><span class="p">,</span> <span class="s2">&quot;exact&quot;</span><span class="p">],</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;exact&quot;</span><span class="p">,</span>
+        <span class="n">solver</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+            <span class="n">Literal</span><span class="p">[</span>
+                <span class="s2">&quot;qml&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;exact&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;flash&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;cutn&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;tn&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="n">Callable</span><span class="p">,</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;exact&quot;</span><span class="p">,</span>
         <span class="n">qml_device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;default.qubit&quot;</span><span class="p">,</span>
         <span class="n">ansatz</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span>
+        <span class="n">theta_size</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">norm_out</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
         <span class="n">preact_trainable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">preact_init</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -604,7 +790,7 @@
         <span class="n">save_act</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">c_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">complex64</span><span class="p">,</span>
         <span class="n">p_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
-        <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">seed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -626,8 +812,8 @@
 <span class="sd">                Number of hidden units in map layer, default: 0</span>
 <span class="sd">            device :</span>
 <span class="sd">                Device to use, default: &quot;cpu&quot;</span>
-<span class="sd">            solver : Union[Literal[&quot;qml&quot;, &quot;exact&quot;], Callable]</span>
-<span class="sd">                Solver to use, default: &quot;exact&quot;</span>
+<span class="sd">            solver : Union[str, Callable]</span>
+<span class="sd">                Solver to use, currently supports &quot;qml&quot;, &quot;exact&quot;, &quot;flash&quot;, &quot;cutn&quot; or custom callable, default: &quot;exact&quot;</span>
 <span class="sd">            ansatz : Union[str, Callable]</span>
 <span class="sd">                Ansatz to use, &quot;pz_encoding&quot; (&quot;pz&quot;), &quot;px_encoding&quot; (&quot;px&quot;), &quot;rpz_encoding&quot; (&quot;rpz&quot;, reduced pz encoding) or custom</span>
 <span class="sd">            qml_device : str</span>
@@ -653,21 +839,31 @@
 <span class="sd">                Parameter dtype for quantum simulation, default: torch.float32</span>
 <span class="sd">            c_dtype : torch.dtype</span>
 <span class="sd">                Compute dtype for quantum simulation, default: torch.complex64</span>
-<span class="sd">            seed : int</span>
-<span class="sd">                Random seed, default: 0</span>
+<span class="sd">            seed : Any</span>
+<span class="sd">                Random seed, default: None</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="nb">super</span><span class="p">(</span><span class="n">QKAN</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
-        <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
-        <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">seed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+            <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">depth</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">width</span><span class="p">)</span> <span class="o">-</span> <span class="p">(</span><span class="mi">2</span> <span class="k">if</span> <span class="n">is_map</span> <span class="k">else</span> <span class="mi">1</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">width</span> <span class="o">=</span> <span class="n">width</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">reps</span> <span class="o">=</span> <span class="n">reps</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">group</span> <span class="o">=</span> <span class="n">group</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">device</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">solver</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;qml&quot;</span><span class="p">,</span> <span class="s2">&quot;exact&quot;</span><span class="p">],</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="n">solver</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">solver</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+            <span class="n">Literal</span><span class="p">[</span>
+                <span class="s2">&quot;qml&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;exact&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;flash&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;cutn&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;tn&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="n">Callable</span><span class="p">,</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="n">solver</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span> <span class="o">=</span> <span class="n">ansatz</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">qml_device</span> <span class="o">=</span> <span class="n">qml_device</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">norm_out</span> <span class="o">=</span> <span class="n">norm_out</span>
@@ -675,6 +871,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">postact_bias_trainable</span> <span class="o">=</span> <span class="n">postact_bias_trainable</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span> <span class="o">=</span> <span class="n">preact_trainable</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">preact_init</span> <span class="o">=</span> <span class="n">preact_init</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">theta_size</span> <span class="o">=</span> <span class="n">theta_size</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">base_activation</span> <span class="o">=</span> <span class="n">base_activation</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span> <span class="o">=</span> <span class="n">ba_trainable</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span> <span class="o">=</span> <span class="n">fast_measure</span>
@@ -695,6 +892,7 @@
                     <span class="n">solver</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">solver</span><span class="p">,</span>
                     <span class="n">qml_device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">qml_device</span><span class="p">,</span>
                     <span class="n">ansatz</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span><span class="p">,</span>
+                    <span class="n">theta_size</span><span class="o">=</span><span class="n">theta_size</span><span class="p">,</span>
                     <span class="n">preact_trainable</span><span class="o">=</span><span class="n">preact_trainable</span><span class="p">,</span>
                     <span class="n">preact_init</span><span class="o">=</span><span class="n">preact_init</span><span class="p">,</span>
                     <span class="n">postact_weight_trainable</span><span class="o">=</span><span class="n">postact_weight_trainable</span><span class="p">,</span>
@@ -775,6 +973,7 @@
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
 
         <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="n">B_flat</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>  <span class="c1"># Flattened batch size (e.g., (B,C,T) -&gt; (B*C,T))</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_id</span><span class="o">.</span><span class="n">long</span><span class="p">()]</span>
 
@@ -792,7 +991,8 @@
         <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_act</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="n">QKANLayer</span><span class="p">):</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">subnode_actscale</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span>
-                <span class="n">preacts</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">layer</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span> <span class="n">layer</span><span class="o">.</span><span class="n">in_dim</span><span class="p">)</span>
+                <span class="c1"># Use the flattened batch size to match x after view(-1, T)</span>
+                <span class="n">preacts</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">B_flat</span><span class="p">,</span> <span class="n">layer</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span> <span class="n">layer</span><span class="o">.</span><span class="n">in_dim</span><span class="p">)</span>
                 <span class="n">postacts</span> <span class="o">=</span> <span class="n">layer</span><span class="o">.</span><span class="n">forward_no_sum</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>  <span class="c1"># shape: (batch, out_dim, in_dim)</span>
 
             <span class="n">x</span> <span class="o">=</span> <span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
@@ -844,31 +1044,118 @@
         <span class="k">for</span> <span class="n">l</span><span class="p">,</span> <span class="n">layer</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">):</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="n">QKANLayer</span><span class="p">):</span>
                 <span class="n">layer</span><span class="o">.</span><span class="n">reset_parameters</span><span class="p">()</span>
-                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">reps</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">reps</span><span class="p">):</span>  <span class="c1"># type: ignore</span>
                     <span class="n">layer</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">i</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
-                        <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">i</span><span class="p">,</span> <span class="p">:]</span>
+                        <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">i</span><span class="p">,</span> <span class="p">:]</span>  <span class="c1"># type: ignore</span>
                     <span class="p">)</span>
                     <span class="n">layer</span><span class="o">.</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
-                        <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">i</span><span class="p">]</span>
+                        <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">i</span><span class="p">]</span>  <span class="c1"># type: ignore</span>
                     <span class="p">)</span>
                     <span class="n">layer</span><span class="o">.</span><span class="n">preacts_bias</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
-                        <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">preacts_bias</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">i</span><span class="p">]</span>
+                        <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">preacts_bias</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">i</span><span class="p">]</span>  <span class="c1"># type: ignore</span>
                     <span class="p">)</span>
-                <span class="n">layer</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">reps</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
+                <span class="n">layer</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">reps</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>  <span class="c1"># type: ignore</span>
                     <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">data</span><span class="p">[</span>
-                        <span class="p">:,</span> <span class="p">:,</span> <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">reps</span><span class="p">,</span> <span class="p">:</span>
+                        <span class="p">:,</span> <span class="p">:,</span> <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">reps</span><span class="p">,</span> <span class="p">:</span>  <span class="c1"># type: ignore</span>
                     <span class="p">]</span>
                 <span class="p">)</span>
                 <span class="n">layer</span><span class="o">.</span><span class="n">postact_weights</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span>
-                    <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">postact_weights</span><span class="o">.</span><span class="n">data</span>
+                    <span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">postact_weights</span><span class="o">.</span><span class="n">data</span>  <span class="c1"># type: ignore</span>
                 <span class="p">)</span>
-                <span class="n">layer</span><span class="o">.</span><span class="n">postact_bias</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">postact_bias</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
-                <span class="n">layer</span><span class="o">.</span><span class="n">base_weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">base_weight</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+                <span class="n">layer</span><span class="o">.</span><span class="n">postact_bias</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">postact_bias</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+                <span class="n">layer</span><span class="o">.</span><span class="n">base_weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">l</span><span class="p">]</span><span class="o">.</span><span class="n">base_weight</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">):</span>
-                <span class="n">layer</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
-                <span class="n">layer</span><span class="o">.</span><span class="n">bias</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">bias</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+                <span class="n">layer</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+                <span class="n">layer</span><span class="o">.</span><span class="n">bias</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">another_model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">bias</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
                 <span class="n">count</span> <span class="o">+=</span> <span class="mi">2</span>
         <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<div class="viewcode-block" id="QKAN.initialize_parameters">
+<a class="viewcode-back" href="../../api.html#qkan.QKAN.initialize_parameters">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialize_parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reinitialize parameters of all QKANLayer layers in-place.&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="n">QKANLayer</span><span class="p">):</span>
+                <span class="n">layer</span><span class="o">.</span><span class="n">reset_parameters</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<div class="viewcode-block" id="QKAN.xavier_init">
+<a class="viewcode-back" href="../../api.html#qkan.QKAN.xavier_init">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">xavier_init</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply Xavier normal initialization to all QKANLayer layers.&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="n">QKANLayer</span><span class="p">):</span>
+                <span class="n">layer</span><span class="o">.</span><span class="n">xavier_init</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<div class="viewcode-block" id="QKAN.refine">
+<a class="viewcode-back" href="../../api.html#qkan.QKAN.refine">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">refine</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QKAN&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Refine the model by layer extension, increasing the number of repetitions of quantum layers.</span>
+
+<span class="sd">        Args</span>
+<span class="sd">        ----</span>
+<span class="sd">            new_reps : int</span>
+<span class="sd">                New number of repetitions of quantum layers</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            QKAN</span>
+<span class="sd">                New QKAN model with increased repetitions</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">new_reps</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">reps</span><span class="p">,</span> <span class="p">(</span>
+            <span class="s2">&quot;New repetitions must be greater than current repetitions&quot;</span>
+        <span class="p">)</span>
+        <span class="n">new_model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
+            <span class="n">width</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">,</span>
+            <span class="n">reps</span><span class="o">=</span><span class="n">new_reps</span><span class="p">,</span>
+            <span class="n">group</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">group</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">solver</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">solver</span><span class="p">,</span>
+            <span class="n">qml_device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">qml_device</span><span class="p">,</span>
+            <span class="n">ansatz</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span><span class="p">,</span>
+            <span class="n">theta_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">theta_size</span><span class="p">,</span>
+            <span class="n">norm_out</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">norm_out</span><span class="p">,</span>
+            <span class="n">preact_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span><span class="p">,</span>
+            <span class="n">preact_init</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">preact_init</span><span class="p">,</span>
+            <span class="n">postact_weight_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">postact_weight_trainable</span><span class="p">,</span>
+            <span class="n">postact_bias_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">postact_bias_trainable</span><span class="p">,</span>
+            <span class="n">base_activation</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base_activation</span><span class="p">,</span>
+            <span class="n">ba_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span><span class="p">,</span>
+            <span class="n">is_batchnorm</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">is_batchnorm</span><span class="p">,</span>
+            <span class="n">is_map</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">is_map</span><span class="p">,</span>
+            <span class="n">hidden</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">hidden</span><span class="p">,</span>
+            <span class="n">fast_measure</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
+            <span class="n">save_act</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">save_act</span><span class="p">,</span>
+            <span class="n">c_dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
+            <span class="n">p_dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span><span class="p">,</span>
+            <span class="n">seed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">new_model</span><span class="o">.</span><span class="n">initialize_from_another_model</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">new_model</span></div>
+
+
+<div class="viewcode-block" id="QKAN.layer_extension">
+<a class="viewcode-back" href="../../api.html#qkan.QKAN.layer_extension">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">layer_extension</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QKAN&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Refine the model by layer extension, increasing the number of repetitions of quantum layers.</span>
+
+<span class="sd">        Args</span>
+<span class="sd">        ----</span>
+<span class="sd">            new_reps : int</span>
+<span class="sd">                New number of repetitions of quantum layers</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            QKAN</span>
+<span class="sd">                New QKAN model with increased repetitions</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">refine</span><span class="p">(</span><span class="n">new_reps</span><span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_reg</span><span class="p">(</span>
@@ -1760,7 +2047,8 @@
         <span class="n">model2</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">state_dict</span><span class="p">())</span>
 
         <span class="n">model2</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">model2</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get_subset</span><span class="p">(</span>
-            <span class="n">input_id</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">input_id</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>  <span class="c1"># type: ignore</span>
         <span class="p">)</span>
 
         <span class="n">model2</span><span class="o">.</span><span class="n">cache_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache_data</span>

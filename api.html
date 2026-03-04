@@ -6,17 +6,17 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>API Reference &mdash; QKAN 0.1.3 documentation</title>
+  <title>API Reference &mdash; QKAN 0.2.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
   
     <link rel="canonical" href="https://qkan.jimq.cc/api.html" />
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=360bc84d"></script>
-      <script src="_static/doctools.js?v=9bcbadda"></script>
-      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/documentation_options.js?v=938c9ccc"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
@@ -49,10 +49,14 @@
 <li class="toctree-l1"><a class="reference internal" href="intro.html">Introduction</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#module-qkan">Core Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#qkan.DARUAN"><code class="docutils literal notranslate"><span class="pre">DARUAN</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.DARUAN.forward"><code class="docutils literal notranslate"><span class="pre">DARUAN.forward()</span></code></a></li>
+</ul>
+</li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.KAN"><code class="docutils literal notranslate"><span class="pre">KAN</span></code></a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.KAN.forward"><code class="docutils literal notranslate"><span class="pre">KAN.forward()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.KAN.initialize_from_qkan"><code class="docutils literal notranslate"><span class="pre">KAN.initialize_from_qkan()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.KAN.regularization_loss"><code class="docutils literal notranslate"><span class="pre">KAN.regularization_loss()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.KAN.initialize_from_qkan"><code class="docutils literal notranslate"><span class="pre">KAN.initialize_from_qkan()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.QKAN"><code class="docutils literal notranslate"><span class="pre">QKAN</span></code></a><ul>
@@ -75,24 +79,28 @@
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.fast_measure"><code class="docutils literal notranslate"><span class="pre">QKAN.fast_measure</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.save_act"><code class="docutils literal notranslate"><span class="pre">QKAN.save_act</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.seed"><code class="docutils literal notranslate"><span class="pre">QKAN.seed</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.attribute"><code class="docutils literal notranslate"><span class="pre">QKAN.attribute()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.clear_ckpts"><code class="docutils literal notranslate"><span class="pre">QKAN.clear_ckpts()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.forward"><code class="docutils literal notranslate"><span class="pre">QKAN.forward()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.get_reg"><code class="docutils literal notranslate"><span class="pre">QKAN.get_reg()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.initialize_from_another_model"><code class="docutils literal notranslate"><span class="pre">QKAN.initialize_from_another_model()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.load_ckpt"><code class="docutils literal notranslate"><span class="pre">QKAN.load_ckpt()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.node_attribute"><code class="docutils literal notranslate"><span class="pre">QKAN.node_attribute()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.to"><code class="docutils literal notranslate"><span class="pre">QKAN.to()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.param_size"><code class="docutils literal notranslate"><span class="pre">QKAN.param_size</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.forward"><code class="docutils literal notranslate"><span class="pre">QKAN.forward()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.initialize_from_another_model"><code class="docutils literal notranslate"><span class="pre">QKAN.initialize_from_another_model()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.initialize_parameters"><code class="docutils literal notranslate"><span class="pre">QKAN.initialize_parameters()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.xavier_init"><code class="docutils literal notranslate"><span class="pre">QKAN.xavier_init()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.refine"><code class="docutils literal notranslate"><span class="pre">QKAN.refine()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.layer_extension"><code class="docutils literal notranslate"><span class="pre">QKAN.layer_extension()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.get_reg"><code class="docutils literal notranslate"><span class="pre">QKAN.get_reg()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.attribute"><code class="docutils literal notranslate"><span class="pre">QKAN.attribute()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.node_attribute"><code class="docutils literal notranslate"><span class="pre">QKAN.node_attribute()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.train_"><code class="docutils literal notranslate"><span class="pre">QKAN.train_()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.plot"><code class="docutils literal notranslate"><span class="pre">QKAN.plot()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.prune"><code class="docutils literal notranslate"><span class="pre">QKAN.prune()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.prune_edge"><code class="docutils literal notranslate"><span class="pre">QKAN.prune_edge()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.prune_input"><code class="docutils literal notranslate"><span class="pre">QKAN.prune_input()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.prune_node"><code class="docutils literal notranslate"><span class="pre">QKAN.prune_node()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.prune_edge"><code class="docutils literal notranslate"><span class="pre">QKAN.prune_edge()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.prune"><code class="docutils literal notranslate"><span class="pre">QKAN.prune()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.prune_input"><code class="docutils literal notranslate"><span class="pre">QKAN.prune_input()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.remove_edge"><code class="docutils literal notranslate"><span class="pre">QKAN.remove_edge()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.remove_node"><code class="docutils literal notranslate"><span class="pre">QKAN.remove_node()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.clear_ckpts"><code class="docutils literal notranslate"><span class="pre">QKAN.clear_ckpts()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.save_ckpt"><code class="docutils literal notranslate"><span class="pre">QKAN.save_ckpt()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.to"><code class="docutils literal notranslate"><span class="pre">QKAN.to()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.train_"><code class="docutils literal notranslate"><span class="pre">QKAN.train_()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKAN.load_ckpt"><code class="docutils literal notranslate"><span class="pre">QKAN.load_ckpt()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.QKANLayer"><code class="docutils literal notranslate"><span class="pre">QKANLayer</span></code></a><ul>
@@ -119,41 +127,43 @@
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.c_dtype"><code class="docutils literal notranslate"><span class="pre">QKANLayer.c_dtype</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.p_dtype"><code class="docutils literal notranslate"><span class="pre">QKANLayer.p_dtype</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer._x0"><code class="docutils literal notranslate"><span class="pre">QKANLayer._x0</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.init_parameters"><code class="docutils literal notranslate"><span class="pre">QKANLayer.init_parameters()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.xavier_init"><code class="docutils literal notranslate"><span class="pre">QKANLayer.xavier_init()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.to"><code class="docutils literal notranslate"><span class="pre">QKANLayer.to()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.param_size"><code class="docutils literal notranslate"><span class="pre">QKANLayer.param_size</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.x0"><code class="docutils literal notranslate"><span class="pre">QKANLayer.x0</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.forward"><code class="docutils literal notranslate"><span class="pre">QKANLayer.forward()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.reset_parameters"><code class="docutils literal notranslate"><span class="pre">QKANLayer.reset_parameters()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.forward_no_sum"><code class="docutils literal notranslate"><span class="pre">QKANLayer.forward_no_sum()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.get_subset"><code class="docutils literal notranslate"><span class="pre">QKANLayer.get_subset()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.param_size"><code class="docutils literal notranslate"><span class="pre">QKANLayer.param_size</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.reset_parameters"><code class="docutils literal notranslate"><span class="pre">QKANLayer.reset_parameters()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.to"><code class="docutils literal notranslate"><span class="pre">QKANLayer.to()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.x0"><code class="docutils literal notranslate"><span class="pre">QKANLayer.x0</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.StateVector"><code class="docutils literal notranslate"><span class="pre">StateVector</span></code></a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.h"><code class="docutils literal notranslate"><span class="pre">StateVector.h()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.state"><code class="docutils literal notranslate"><span class="pre">StateVector.state</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.measure_z"><code class="docutils literal notranslate"><span class="pre">StateVector.measure_z()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.measure_x"><code class="docutils literal notranslate"><span class="pre">StateVector.measure_x()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.measure_y"><code class="docutils literal notranslate"><span class="pre">StateVector.measure_y()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.measure_z"><code class="docutils literal notranslate"><span class="pre">StateVector.measure_z()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.s"><code class="docutils literal notranslate"><span class="pre">StateVector.s()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.h"><code class="docutils literal notranslate"><span class="pre">StateVector.h()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.x"><code class="docutils literal notranslate"><span class="pre">StateVector.x()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.z"><code class="docutils literal notranslate"><span class="pre">StateVector.z()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.rx"><code class="docutils literal notranslate"><span class="pre">StateVector.rx()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.ry"><code class="docutils literal notranslate"><span class="pre">StateVector.ry()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.rz"><code class="docutils literal notranslate"><span class="pre">StateVector.rz()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.s"><code class="docutils literal notranslate"><span class="pre">StateVector.s()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.x"><code class="docutils literal notranslate"><span class="pre">StateVector.x()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.z"><code class="docutils literal notranslate"><span class="pre">StateVector.z()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.StateVector.state"><code class="docutils literal notranslate"><span class="pre">StateVector.state</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.TorchGates"><code class="docutils literal notranslate"><span class="pre">TorchGates</span></code></a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.acrx_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.acrx_gate()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.cx_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.cx_gate()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.cz_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.cz_gate()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.h_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.h_gate()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.i_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.i_gate()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.identity_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.identity_gate()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.i_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.i_gate()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.rx_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.rx_gate()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.ry_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.ry_gate()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.rz_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.rz_gate()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.h_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.h_gate()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.s_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.s_gate()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.acrx_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.acrx_gate()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.tensor_product"><code class="docutils literal notranslate"><span class="pre">TorchGates.tensor_product()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.cx_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.cx_gate()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.cz_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.cz_gate()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.create_dataset"><code class="docutils literal notranslate"><span class="pre">create_dataset()</span></code></a></li>
@@ -166,6 +176,8 @@
 <li class="toctree-l2"><a class="reference internal" href="#module-qkan.solver">Solver Module</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.solver.qml_solver"><code class="docutils literal notranslate"><span class="pre">qml_solver()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.solver.torch_exact_solver"><code class="docutils literal notranslate"><span class="pre">torch_exact_solver()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#qkan.solver.cutn_solver"><code class="docutils literal notranslate"><span class="pre">cutn_solver()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#qkan.solver.flash_exact_solver"><code class="docutils literal notranslate"><span class="pre">flash_exact_solver()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#module-qkan.utils">Utils Module</a><ul>
@@ -221,8 +233,28 @@
 <section id="module-qkan">
 <span id="core-module"></span><h2>Core Module<a class="headerlink" href="#module-qkan" title="Link to this heading"></a></h2>
 <dl class="py class">
+<dt class="sig sig-object py" id="qkan.DARUAN">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">DARUAN</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reps</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cpu'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'exact'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ansatz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'pz_encoding'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preact_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_weight_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_bias_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/daruan/daruan.html#DARUAN"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.DARUAN" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.DARUAN.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/daruan/daruan.html#DARUAN.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.DARUAN.forward" title="Link to this definition"></a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="qkan.KAN">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">KAN</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">layers_hidden,</span> <span class="pre">grid_size=5,</span> <span class="pre">spline_order=3,</span> <span class="pre">scale_noise=0.1,</span> <span class="pre">scale_base=1.0,</span> <span class="pre">scale_spline=1.0,</span> <span class="pre">base_activation=&lt;class</span> <span class="pre">'torch.nn.modules.activation.SiLU'&gt;,</span> <span class="pre">grid_eps=0.02,</span> <span class="pre">grid_range=[-1,</span> <span class="pre">1],</span> <span class="pre">device='cpu',</span> <span class="pre">seed=0,</span> <span class="pre">**kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/kan.html#KAN"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.KAN" title="Link to this definition"></a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">KAN</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">layers_hidden,</span> <span class="pre">grid_size=5,</span> <span class="pre">spline_order=3,</span> <span class="pre">scale_noise=0.1,</span> <span class="pre">scale_base=1.0,</span> <span class="pre">scale_spline=1.0,</span> <span class="pre">base_activation=&lt;class</span> <span class="pre">'torch.nn.modules.activation.SiLU'&gt;,</span> <span class="pre">grid_eps=0.02,</span> <span class="pre">grid_range=[-1,</span> <span class="pre">1],</span> <span class="pre">device='cpu',</span> <span class="pre">seed=0,</span> <span class="pre">**kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/kan.html#KAN"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.KAN" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
 <p>KAN (Kolmogorov-Arnold Network) model.
 This is an efficient implementation of the KAN model, which is a neural network that uses
@@ -243,6 +275,11 @@ registered hooks while the latter silently ignores them.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="qkan.KAN.regularization_loss">
+<span class="sig-name descname"><span class="pre">regularization_loss</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">regularize_activation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">regularize_entropy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/kan.html#KAN.regularization_loss"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.KAN.regularization_loss" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="qkan.KAN.initialize_from_qkan">
 <span class="sig-name descname"><span class="pre">initialize_from_qkan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">qkan</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sampling</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/kan.html#KAN.initialize_from_qkan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.KAN.initialize_from_qkan" title="Link to this definition"></a></dt>
 <dd><p>Initialize KAN from a QKAN.</p>
@@ -250,23 +287,18 @@ registered hooks while the latter silently ignores them.</p>
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>qkan</strong> (<a class="reference internal" href="#qkan.QKAN" title="qkan.QKAN"><em>QKAN</em></a>)</p></li>
-<li><p><strong>x0</strong> (<em>torch.Tensor</em><em> (</em><em>batch</em><em>, </em><em>in_dim</em><em>)</em>)</p></li>
+<li><p><strong>x0</strong> (<em>torch.Tensor</em><em> (</em><em>batch</em><em>, </em><a class="reference internal" href="#qkan.QKANLayer.in_dim" title="qkan.QKANLayer.in_dim"><em>in_dim</em></a><em>)</em>)</p></li>
 <li><p><strong>sampling</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
 </ul>
 </dd>
 </dl>
 </dd></dl>
 
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.KAN.regularization_loss">
-<span class="sig-name descname"><span class="pre">regularization_loss</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">regularize_activation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">regularize_entropy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/kan.html#KAN.regularization_loss"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.KAN.regularization_loss" title="Link to this definition"></a></dt>
-<dd></dd></dl>
-
 </dd></dl>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="qkan.QKAN">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">QKAN</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">width</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_map</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_batchnorm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hidden</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cpu'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'exact'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qml_device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'default.qubit'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ansatz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'pz_encoding'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">norm_out</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preact_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preact_init</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_weight_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_bias_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">base_activation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">SiLU()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ba_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fast_measure</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_act</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">c_dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p_dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.float32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN" title="Link to this definition"></a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">QKAN</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">width</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_map</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_batchnorm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hidden</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cpu'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'exact'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qml_device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'default.qubit'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ansatz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'pz_encoding'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">norm_out</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preact_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preact_init</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_weight_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_bias_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">base_activation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">SiLU()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ba_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fast_measure</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_act</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">c_dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p_dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.float32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
 <p>Quantum-inspired Kolmogorov Arnold Network (QKAN) Class</p>
 <p>A quantum-inspired neural network that uses DatA Re-Uploading ActivatioN (DARUAN)
@@ -320,10 +352,10 @@ as its learnable variation activation function.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="qkan.QKAN.solver">
 <span class="sig-name descname"><span class="pre">solver</span></span><a class="headerlink" href="#qkan.QKAN.solver" title="Link to this definition"></a></dt>
-<dd><p>Solver to use</p>
+<dd><p>Solver to use, currently supports “qml”, “exact”, “flash”, “cutn” or custom callable</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>Literal[“qml”, “exact”]</p>
+<dd class="field-odd"><p>Union[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a>, Callable]</p>
 </dd>
 </dl>
 </dd></dl>
@@ -484,39 +516,20 @@ When False, the exact solver simulates the exact measurement process of quantum 
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="qkan.QKAN.attribute">
-<span class="sig-name descname"><span class="pre">attribute</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">l</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">i</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_score</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.attribute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.attribute" title="Link to this definition"></a></dt>
-<dd><p>Get attribution scores</p>
-<p>Adapted from “pykan”.</p>
+<dt class="sig sig-object py" id="qkan.QKAN.to">
+<span class="sig-name descname"><span class="pre">to</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.to"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.to" title="Link to this definition"></a></dt>
+<dd><p>Move the model to the specified device.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>l</strong> (<em>None</em><em> | </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – layer index</p></li>
-<li><p><strong>i</strong> (<em>None</em><em> | </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – neuron index</p></li>
-<li><p><strong>out_score</strong> (<em>None</em><em> | </em><em>torch.Tensor</em>) – specify output scores</p></li>
-<li><p><strong>plot</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – when plot = True, display the bar show</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p><dl class="simple">
-<dt>torch.Tensor</dt><dd><p>attribution scores</p>
-</dd>
-</dl>
-</p>
+<dd class="field-odd"><p><strong>device</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> | </em><em>torch.device</em>) – Device to move the model to, default: “cpu”</p>
 </dd>
 </dl>
 </dd></dl>
 
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.QKAN.clear_ckpts">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">clear_ckpts</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">folder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'./model_ckpt'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.clear_ckpts"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.clear_ckpts" title="Link to this definition"></a></dt>
-<dd><p>Clear all checkpoints.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>folder</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Folder containing checkpoints, default: “./model_ckpt”</p>
-</dd>
-</dl>
-</dd></dl>
+<dl class="py property">
+<dt class="sig sig-object py" id="qkan.QKAN.param_size">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">param_size</span></span><a class="headerlink" href="#qkan.QKAN.param_size" title="Link to this definition"></a></dt>
+<dd></dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.QKAN.forward">
@@ -530,6 +543,72 @@ this function, one should call the <code class="xref py py-class docutils litera
 instead of this since the former takes care of running the
 registered hooks while the latter silently ignores them.</p>
 </div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKAN.initialize_from_another_model">
+<span class="sig-name descname"><span class="pre">initialize_from_another_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">another_model</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.initialize_from_another_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.initialize_from_another_model" title="Link to this definition"></a></dt>
+<dd><p>Initialize from another model.
+Used for layer extension to refine the model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>another_model</strong> (<a class="reference internal" href="#qkan.QKAN" title="qkan.QKAN"><em>QKAN</em></a>) – Another model to initialize from</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKAN.initialize_parameters">
+<span class="sig-name descname"><span class="pre">initialize_parameters</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.initialize_parameters"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.initialize_parameters" title="Link to this definition"></a></dt>
+<dd><p>Reinitialize parameters of all QKANLayer layers in-place.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKAN.xavier_init">
+<span class="sig-name descname"><span class="pre">xavier_init</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.xavier_init"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.xavier_init" title="Link to this definition"></a></dt>
+<dd><p>Apply Xavier normal initialization to all QKANLayer layers.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKAN.refine">
+<span class="sig-name descname"><span class="pre">refine</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_reps</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.refine"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.refine" title="Link to this definition"></a></dt>
+<dd><p>Refine the model by layer extension, increasing the number of repetitions of quantum layers.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>new_reps</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – New number of repetitions of quantum layers</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><a class="reference internal" href="#qkan.QKAN" title="qkan.qkan.QKAN"><code class="xref py py-class docutils literal notranslate"><span class="pre">QKAN</span></code></a></span></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><dl class="simple">
+<dt>QKAN</dt><dd><p>New QKAN model with increased repetitions</p>
+</dd>
+</dl>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKAN.layer_extension">
+<span class="sig-name descname"><span class="pre">layer_extension</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_reps</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.layer_extension"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.layer_extension" title="Link to this definition"></a></dt>
+<dd><p>Refine the model by layer extension, increasing the number of repetitions of quantum layers.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>new_reps</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – New number of repetitions of quantum layers</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><a class="reference internal" href="#qkan.QKAN" title="qkan.qkan.QKAN"><code class="xref py py-class docutils literal notranslate"><span class="pre">QKAN</span></code></a></span></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><dl class="simple">
+<dt>QKAN</dt><dd><p>New QKAN model with increased repetitions</p>
+</dd>
+</dl>
+</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
@@ -555,27 +634,25 @@ registered hooks while the latter silently ignores them.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="qkan.QKAN.initialize_from_another_model">
-<span class="sig-name descname"><span class="pre">initialize_from_another_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">another_model</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.initialize_from_another_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.initialize_from_another_model" title="Link to this definition"></a></dt>
-<dd><p>Initialize from another model.
-Used for layer extension to refine the model.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>another_model</strong> (<a class="reference internal" href="#qkan.QKAN" title="qkan.QKAN"><em>QKAN</em></a>) – Another model to initialize from</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.QKAN.load_ckpt">
-<span class="sig-name descname"><span class="pre">load_ckpt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">folder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'./model_ckpt'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.load_ckpt"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.load_ckpt" title="Link to this definition"></a></dt>
-<dd><p>Load a checkpoint to the current model.</p>
+<dt class="sig sig-object py" id="qkan.QKAN.attribute">
+<span class="sig-name descname"><span class="pre">attribute</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">l</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">i</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_score</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.attribute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.attribute" title="Link to this definition"></a></dt>
+<dd><p>Get attribution scores</p>
+<p>Adapted from “pykan”.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Name of the checkpoint</p></li>
-<li><p><strong>folder</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Folder containing the checkpoint, default: “./model_ckpt”</p></li>
+<li><p><strong>l</strong> (<em>None</em><em> | </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – layer index</p></li>
+<li><p><strong>i</strong> (<em>None</em><em> | </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – neuron index</p></li>
+<li><p><strong>out_score</strong> (<em>None</em><em> | </em><em>torch.Tensor</em>) – specify output scores</p></li>
+<li><p><strong>plot</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – when plot = True, display the bar show</p></li>
 </ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>torch.Tensor</dt><dd><p>attribution scores</p>
+</dd>
+</dl>
+</p>
 </dd>
 </dl>
 </dd></dl>
@@ -587,10 +664,40 @@ Used for layer extension to refine the model.</p>
 <p>Adapted from “pykan”.</p>
 </dd></dl>
 
-<dl class="py property">
-<dt class="sig sig-object py" id="qkan.QKAN.param_size">
-<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">param_size</span></span><a class="headerlink" href="#qkan.QKAN.param_size" title="Link to this definition"></a></dt>
-<dd></dd></dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKAN.train_">
+<span class="sig-name descname"><span class="pre">train_</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataset</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">optimizer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">closure</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scheduler</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">loss_fn</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_l1</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_entropy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_coef</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_coefdiff</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reg_metric</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'edge_forward_dr_n'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.train_"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.train_" title="Link to this definition"></a></dt>
+<dd><p>Train the model</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dataset</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – Dictionary containing train_input, train_label, test_input, test_label</p></li>
+<li><p><strong>optimizer</strong> (<em>torch.optim.Optimizer</em><em> | </em><em>None</em>) – Optimizer to use, default: None</p></li>
+<li><p><strong>closure</strong> (<em>Callable</em><em> | </em><em>None</em>) – Closure function for optimizer, default: None</p></li>
+<li><p><strong>scheduler</strong> (<em>torch.optim.lr_scheduler</em><em> | </em><em>None</em>) – Scheduler to use, default: None</p></li>
+<li><p><strong>steps</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of steps, default: 10</p></li>
+<li><p><strong>log</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Logging frequency, default: 1</p></li>
+<li><p><strong>loss_fn</strong> (torch.nn.Module | Callable <a href="#id3"><span class="problematic" id="id4">|</span></a>None) – Loss function to use, default: None</p></li>
+<li><p><strong>batch</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – batch size, if -1 then full., default: -1</p></li>
+<li><p><strong>lamb</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – L1 Regularization parameter. If 0, no regularization.</p></li>
+<li><p><strong>lamb_l1</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – L1 Regularization parameter</p></li>
+<li><p><strong>lamb_entropy</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Entropy Regularization parameter</p></li>
+<li><p><strong>lamb_coef</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Coefficient Regularization parameter</p></li>
+<li><p><strong>lamb_coefdiff</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Coefficient Smoothness Regularization parameter</p></li>
+<li><p><strong>reg_metric</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Regularization metric.
+‘edge_forward_dr_n’, ‘edge_forward_dr_u’, ‘edge_forward_sum’, ‘edge_backward’, ‘node_backward’</p></li>
+<li><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Verbose mode, default: True</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>dict</dt><dd><p>Dictionary containing train_loss and test_loss</p>
+</dd>
+</dl>
+</p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.QKAN.plot">
@@ -610,6 +717,42 @@ Used for layer extension to refine the model.</p>
 <li><p><strong>out_vars</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>] </em><em>| </em><em>None</em>) – Output variables to plot</p></li>
 <li><p><strong>title</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> | </em><em>None</em>) – Title of the plot</p></li>
 </ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKAN.prune_node">
+<span class="sig-name descname"><span class="pre">prune_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">active_neurons_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.prune_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.prune_node" title="Link to this definition"></a></dt>
+<dd><p>Pruning nodes.</p>
+<p>Adapted from “pykan”.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>threshold</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – if the attribution score of a neuron is below the threshold, it is considered dead and will be removed</p></li>
+<li><p><strong>mode</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – “auto” or “manual”. with “auto”, nodes are automatically pruned using threshold.
+With “manual”, active_neurons_id should be passed in.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>QKAN</dt><dd><p>pruned network</p>
+</dd>
+</dl>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKAN.prune_edge">
+<span class="sig-name descname"><span class="pre">prune_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.03</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.prune_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.prune_edge" title="Link to this definition"></a></dt>
+<dd><p>Pruning edges.</p>
+<p>Adapted from “pykan”.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>threshold</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code></a></span>) – float
+if the attribution score of an edge is below the threshold, it is considered dead and will be set to zero.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -637,19 +780,6 @@ Used for layer extension to refine the model.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="qkan.QKAN.prune_edge">
-<span class="sig-name descname"><span class="pre">prune_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.03</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.prune_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.prune_edge" title="Link to this definition"></a></dt>
-<dd><p>Pruning edges.</p>
-<p>Adapted from “pykan”.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>threshold</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code></a></span>) – float
-if the attribution score of an edge is below the threshold, it is considered dead and will be set to zero.</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
 <dt class="sig sig-object py" id="qkan.QKAN.prune_input">
 <span class="sig-name descname"><span class="pre">prune_input</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">active_inputs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.prune_input"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.prune_input" title="Link to this definition"></a></dt>
 <dd><p>Prune inputs.</p>
@@ -659,29 +789,6 @@ if the attribution score of an edge is below the threshold, it is considered dea
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>threshold</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – if the attribution score of the input feature is below threshold, it is considered irrelevant.</p></li>
 <li><p><strong>active_inputs</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em> | </em><em>None</em>) – if a list is passed, the manual mode will disregard attribution score and prune as instructed.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p><dl class="simple">
-<dt>QKAN</dt><dd><p>pruned network</p>
-</dd>
-</dl>
-</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.QKAN.prune_node">
-<span class="sig-name descname"><span class="pre">prune_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">active_neurons_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.prune_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.prune_node" title="Link to this definition"></a></dt>
-<dd><p>Pruning nodes.</p>
-<p>Adapted from “pykan”.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>threshold</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – if the attribution score of a neuron is below the threshold, it is considered dead and will be removed</p></li>
-<li><p><strong>mode</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – “auto” or “manual”. with “auto”, nodes are automatically pruned using threshold.
-With “manual”, active_neurons_id should be passed in.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
@@ -725,6 +832,17 @@ With “manual”, active_neurons_id should be passed in.</p></li>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKAN.clear_ckpts">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">clear_ckpts</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">folder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'./model_ckpt'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.clear_ckpts"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.clear_ckpts" title="Link to this definition"></a></dt>
+<dd><p>Clear all checkpoints.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>folder</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Folder containing checkpoints, default: “./model_ckpt”</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="qkan.QKAN.save_ckpt">
 <span class="sig-name descname"><span class="pre">save_ckpt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">folder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'./model_ckpt'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.save_ckpt"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.save_ckpt" title="Link to this definition"></a></dt>
 <dd><p>Save the current model as checkpoint.</p>
@@ -739,47 +857,15 @@ With “manual”, active_neurons_id should be passed in.</p></li>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="qkan.QKAN.to">
-<span class="sig-name descname"><span class="pre">to</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.to"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.to" title="Link to this definition"></a></dt>
-<dd><p>Move the model to the specified device.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>device</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> | </em><em>torch.device</em>) – Device to move the model to, default: “cpu”</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.QKAN.train_">
-<span class="sig-name descname"><span class="pre">train_</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataset</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">optimizer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">closure</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scheduler</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">loss_fn</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_l1</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_entropy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_coef</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lamb_coefdiff</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reg_metric</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'edge_forward_dr_n'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.train_"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.train_" title="Link to this definition"></a></dt>
-<dd><p>Train the model</p>
+<dt class="sig sig-object py" id="qkan.QKAN.load_ckpt">
+<span class="sig-name descname"><span class="pre">load_ckpt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">folder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'./model_ckpt'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKAN.load_ckpt"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKAN.load_ckpt" title="Link to this definition"></a></dt>
+<dd><p>Load a checkpoint to the current model.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>dataset</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – Dictionary containing train_input, train_label, test_input, test_label</p></li>
-<li><p><strong>optimizer</strong> (<em>torch.optim.Optimizer</em><em> | </em><em>None</em>) – Optimizer to use, default: None</p></li>
-<li><p><strong>closure</strong> (<em>Callable</em><em> | </em><em>None</em>) – Closure function for optimizer, default: None</p></li>
-<li><p><strong>scheduler</strong> (<em>torch.optim.lr_scheduler</em><em> | </em><em>None</em>) – Scheduler to use, default: None</p></li>
-<li><p><strong>steps</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of steps, default: 10</p></li>
-<li><p><strong>log</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Logging frequency, default: 1</p></li>
-<li><p><strong>loss_fn</strong> (torch.nn.Module | Callable <a href="#id3"><span class="problematic" id="id4">|</span></a>None) – Loss function to use, default: None</p></li>
-<li><p><strong>batch</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – batch size, if -1 then full., default: -1</p></li>
-<li><p><strong>lamb</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – L1 Regularization parameter. If 0, no regularization.</p></li>
-<li><p><strong>lamb_l1</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – L1 Regularization parameter</p></li>
-<li><p><strong>lamb_entropy</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Entropy Regularization parameter</p></li>
-<li><p><strong>lamb_coef</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Coefficient Regularization parameter</p></li>
-<li><p><strong>lamb_coefdiff</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Coefficient Smoothness Regularization parameter</p></li>
-<li><p><strong>reg_metric</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Regularization metric.
-‘edge_forward_dr_n’, ‘edge_forward_dr_u’, ‘edge_forward_sum’, ‘edge_backward’, ‘node_backward’</p></li>
-<li><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Verbose mode, default: True</p></li>
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Name of the checkpoint</p></li>
+<li><p><strong>folder</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Folder containing the checkpoint, default: “./model_ckpt”</p></li>
 </ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p><dl class="simple">
-<dt>dict</dt><dd><p>Dictionary containing train_loss and test_loss</p>
-</dd>
-</dl>
-</p>
 </dd>
 </dl>
 </dd></dl>
@@ -788,7 +874,7 @@ With “manual”, active_neurons_id should be passed in.</p></li>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="qkan.QKANLayer">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">QKANLayer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">in_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cpu'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'exact'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qml_device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'default.qubit'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ansatz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'pz_encoding'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preact_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preact_init</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_weight_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_bias_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">base_activation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">SiLU()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ba_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_batchnorm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fast_measure</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">c_dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p_dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.float32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer" title="Link to this definition"></a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">QKANLayer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">in_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cpu'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'exact'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qml_device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'default.qubit'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ansatz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'pz_encoding'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preact_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preact_init</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_weight_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_bias_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">base_activation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">SiLU()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ba_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_batchnorm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fast_measure</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">c_dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p_dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.float32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
 <p>QKANLayer Class</p>
 <dl class="py attribute">
@@ -844,10 +930,10 @@ With “manual”, active_neurons_id should be passed in.</p></li>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="qkan.QKANLayer.solver">
 <span class="sig-name descname"><span class="pre">solver</span></span><a class="headerlink" href="#qkan.QKANLayer.solver" title="Link to this definition"></a></dt>
-<dd><p>Solver to use</p>
+<dd><p>Solver to use, currently supports “qml”, “exact”, “flash”, “cutn” or custom callable</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>Union[Literal[“qml”, “exact”], Callable]</p>
+<dd class="field-odd"><p>Union[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a>, Callable]</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1041,6 +1127,47 @@ When False, the exact solver simulates the exact measurement process of quantum 
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKANLayer.init_parameters">
+<span class="sig-name descname"><span class="pre">init_parameters</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer.init_parameters"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer.init_parameters" title="Link to this definition"></a></dt>
+<dd><p>Create all learnable parameters.</p>
+<p>Called once from <code class="docutils literal notranslate"><span class="pre">__init__</span></code> to allocate <code class="docutils literal notranslate"><span class="pre">nn.Parameter</span></code> objects.
+Reads configuration from <code class="docutils literal notranslate"><span class="pre">self.*</span></code> attributes.
+If <code class="docutils literal notranslate"><span class="pre">self.seed</span></code> is set, the RNG is seeded for reproducibility.</p>
+<p>Calls <code class="docutils literal notranslate"><span class="pre">xavier_init()</span></code> at the end to apply Xavier normal
+initialization to theta (and preacts when <code class="docutils literal notranslate"><span class="pre">preact_init</span></code> is set).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKANLayer.xavier_init">
+<span class="sig-name descname"><span class="pre">xavier_init</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer.xavier_init"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer.xavier_init" title="Link to this definition"></a></dt>
+<dd><p>Apply Xavier normal initialization to theta and preacts.</p>
+<p>Applies <code class="docutils literal notranslate"><span class="pre">nn.init.xavier_normal_</span></code> in-place to <code class="docutils literal notranslate"><span class="pre">self.theta</span></code>.
+When <code class="docutils literal notranslate"><span class="pre">self.preact_init</span></code> is set, also applies it to
+<code class="docutils literal notranslate"><span class="pre">self.preacts_weight</span></code> and <code class="docutils literal notranslate"><span class="pre">self.preacts_bias</span></code>.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKANLayer.to">
+<span class="sig-name descname"><span class="pre">to</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer.to"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer.to" title="Link to this definition"></a></dt>
+<dd><p>Move the layer to the specified device.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>device</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> | </em><em>torch.device</em>) – Device to move the layer to, default: “cpu”</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="qkan.QKANLayer.param_size">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">param_size</span></span><a class="headerlink" href="#qkan.QKANLayer.param_size" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="qkan.QKANLayer.x0">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">x0</span></span><a class="headerlink" href="#qkan.QKANLayer.x0" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="qkan.QKANLayer.forward">
 <span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer.forward" title="Link to this definition"></a></dt>
 <dd><p>Define the computation performed at every call.</p>
@@ -1052,6 +1179,14 @@ this function, one should call the <code class="xref py py-class docutils litera
 instead of this since the former takes care of running the
 registered hooks while the latter silently ignores them.</p>
 </div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKANLayer.reset_parameters">
+<span class="sig-name descname"><span class="pre">reset_parameters</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer.reset_parameters"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer.reset_parameters" title="Link to this definition"></a></dt>
+<dd><p>Reset all learnable parameters to default values in-place.</p>
+<p>Note: The thetas are set to zero to do layer extension.
+If you wish to re-init the parameters, please use <cite>init_parameters</cite> instead.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -1080,46 +1215,34 @@ registered hooks while the latter silently ignores them.</p>
 </dl>
 </dd></dl>
 
-<dl class="py property">
-<dt class="sig sig-object py" id="qkan.QKANLayer.param_size">
-<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">param_size</span></span><a class="headerlink" href="#qkan.QKANLayer.param_size" title="Link to this definition"></a></dt>
-<dd></dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.QKANLayer.reset_parameters">
-<span class="sig-name descname"><span class="pre">reset_parameters</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer.reset_parameters"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer.reset_parameters" title="Link to this definition"></a></dt>
-<dd></dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.QKANLayer.to">
-<span class="sig-name descname"><span class="pre">to</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer.to"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer.to" title="Link to this definition"></a></dt>
-<dd><p>Move the layer to the specified device.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>device</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> | </em><em>torch.device</em>) – Device to move the layer to, default: “cpu”</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py property">
-<dt class="sig sig-object py" id="qkan.QKANLayer.x0">
-<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">x0</span></span><a class="headerlink" href="#qkan.QKANLayer.x0" title="Link to this definition"></a></dt>
-<dd></dd></dl>
-
 </dd></dl>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="qkan.StateVector">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">StateVector</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch_size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">in_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cpu'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector" title="Link to this definition"></a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">StateVector</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch_size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">in_dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cpu'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector" title="Link to this definition"></a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>1-qubit state vector.</p>
 <p>StateVector.state: torch.Tensor, shape: (batch_size, out_dim, in_dim, 2)</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="qkan.StateVector.state">
+<span class="sig-name descname"><span class="pre">state</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Tensor</span></span><a class="headerlink" href="#qkan.StateVector.state" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
 <dl class="py method">
-<dt class="sig sig-object py" id="qkan.StateVector.h">
-<span class="sig-name descname"><span class="pre">h</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_dagger</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector.h"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector.h" title="Link to this definition"></a></dt>
-<dd><p>Apply Hadamard gate to the state vector.</p>
-<p>:param :
-:type : is_dagger: bool, default: False</p>
+<dt class="sig sig-object py" id="qkan.StateVector.measure_z">
+<span class="sig-name descname"><span class="pre">measure_z</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fast_measure</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector.measure_z"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector.measure_z" title="Link to this definition"></a></dt>
+<dd><p>Measure the state vector in the Z basis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
+</dd>
+</dl>
+<dl>
+<dt>:param<span class="classifier">if False, return <a href="#id5"><span class="problematic" id="id6">|</span></a>α|^2 - <a href="#id7"><span class="problematic" id="id8">|</span></a>β|^2.</span></dt><dd><p>Which is quantum-inspired method and faster when it is True.</p>
+</dd>
+</dl>
+<p>:type : fast_measure: bool, default: True. If True, for state <a href="#id29"><span class="problematic" id="id30">|ψ⟩ = α|0⟩ + β|1⟩, return |α|</span></a> - <a href="#id31"><span class="problematic" id="id32">|β|</span></a>;</p>
+<p>return: torch.Tensor, shape: (batch_size, out_dim, in_dim)</p>
 </dd></dl>
 
 <dl class="py method">
@@ -1132,10 +1255,10 @@ registered hooks while the latter silently ignores them.</p>
 </dd>
 </dl>
 <dl>
-<dt>:param<span class="classifier">if False, return <a href="#id5"><span class="problematic" id="id6">|</span></a>α|^2 - <a href="#id7"><span class="problematic" id="id8">|</span></a>β|^2.</span></dt><dd><p>Which is quantum-inspired method and faster when it is True.</p>
+<dt>:param<span class="classifier">if False, return <a href="#id9"><span class="problematic" id="id10">|</span></a>α|^2 - <a href="#id11"><span class="problematic" id="id12">|</span></a>β|^2.</span></dt><dd><p>Which is quantum-inspired method and faster when it is True.</p>
 </dd>
 </dl>
-<p>:type : fast_measure: bool, default: True. If True, for state <a href="#id23"><span class="problematic" id="id24">|ψ⟩ = α|0⟩ + β|1⟩, return |α|</span></a> - <a href="#id25"><span class="problematic" id="id26">|β|</span></a>;</p>
+<p>:type : fast_measure: bool, default: True. If True, for state <a href="#id33"><span class="problematic" id="id34">|ψ⟩ = α|0⟩ + β|1⟩, return |α|</span></a> - <a href="#id35"><span class="problematic" id="id36">|β|</span></a>;</p>
 <p>return: torch.Tensor, shape: (batch_size, out_dim, in_dim)</p>
 </dd></dl>
 
@@ -1149,28 +1272,39 @@ registered hooks while the latter silently ignores them.</p>
 </dd>
 </dl>
 <dl>
-<dt>:param<span class="classifier">if False, return <a href="#id9"><span class="problematic" id="id10">|</span></a>α|^2 - <a href="#id11"><span class="problematic" id="id12">|</span></a>β|^2.</span></dt><dd><p>Which is quantum-inspired method and faster when it is True.</p>
+<dt>:param<span class="classifier">if False, return <a href="#id13"><span class="problematic" id="id14">|</span></a>α|^2 - <a href="#id15"><span class="problematic" id="id16">|</span></a>β|^2.</span></dt><dd><p>Which is quantum-inspired method and faster when it is True.</p>
 </dd>
 </dl>
-<p>:type : fast_measure: bool, default: True. If True, for state <a href="#id27"><span class="problematic" id="id28">|ψ⟩ = α|0⟩ + β|1⟩, return |α|</span></a> - <a href="#id29"><span class="problematic" id="id30">|β|</span></a>;</p>
+<p>:type : fast_measure: bool, default: True. If True, for state <a href="#id37"><span class="problematic" id="id38">|ψ⟩ = α|0⟩ + β|1⟩, return |α|</span></a> - <a href="#id39"><span class="problematic" id="id40">|β|</span></a>;</p>
 <p>return: torch.Tensor, shape: (batch_size, out_dim, in_dim)</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="qkan.StateVector.measure_z">
-<span class="sig-name descname"><span class="pre">measure_z</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fast_measure</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector.measure_z"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector.measure_z" title="Link to this definition"></a></dt>
-<dd><p>Measure the state vector in the Z basis.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
-</dd>
-</dl>
-<dl>
-<dt>:param<span class="classifier">if False, return <a href="#id13"><span class="problematic" id="id14">|</span></a>α|^2 - <a href="#id15"><span class="problematic" id="id16">|</span></a>β|^2.</span></dt><dd><p>Which is quantum-inspired method and faster when it is True.</p>
-</dd>
-</dl>
-<p>:type : fast_measure: bool, default: True. If True, for state <a href="#id31"><span class="problematic" id="id32">|ψ⟩ = α|0⟩ + β|1⟩, return |α|</span></a> - <a href="#id33"><span class="problematic" id="id34">|β|</span></a>;</p>
-<p>return: torch.Tensor, shape: (batch_size, out_dim, in_dim)</p>
+<dt class="sig sig-object py" id="qkan.StateVector.s">
+<span class="sig-name descname"><span class="pre">s</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_dagger</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector.s"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector.s" title="Link to this definition"></a></dt>
+<dd><p>Apply Phase gate (or S gate) to the state vector.</p>
+<p>:param :
+:type : is_dagger: bool, default: False</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.StateVector.h">
+<span class="sig-name descname"><span class="pre">h</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_dagger</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector.h"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector.h" title="Link to this definition"></a></dt>
+<dd><p>Apply Hadamard gate to the state vector.</p>
+<p>:param :
+:type : is_dagger: bool, default: False</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.StateVector.x">
+<span class="sig-name descname"><span class="pre">x</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector.x"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector.x" title="Link to this definition"></a></dt>
+<dd><p>Apply Pauli-X gate to the state vector.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.StateVector.z">
+<span class="sig-name descname"><span class="pre">z</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector.z"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector.z" title="Link to this definition"></a></dt>
+<dd><p>Apply Pauli-Z gate to the state vector.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -1203,40 +1337,99 @@ registered hooks while the latter silently ignores them.</p>
 :type : is_dagger: bool, default: False</p>
 </dd></dl>
 
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.StateVector.s">
-<span class="sig-name descname"><span class="pre">s</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_dagger</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector.s"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector.s" title="Link to this definition"></a></dt>
-<dd><p>Apply Phase gate (or S gate) to the state vector.</p>
-<p>:param :
-:type : is_dagger: bool, default: False</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.StateVector.x">
-<span class="sig-name descname"><span class="pre">x</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector.x"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector.x" title="Link to this definition"></a></dt>
-<dd><p>Apply Pauli-X gate to the state vector.</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.StateVector.z">
-<span class="sig-name descname"><span class="pre">z</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#StateVector.z"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.StateVector.z" title="Link to this definition"></a></dt>
-<dd><p>Apply Pauli-Z gate to the state vector.</p>
-</dd></dl>
-
-<dl class="py attribute">
-<dt class="sig sig-object py" id="qkan.StateVector.state">
-<span class="sig-name descname"><span class="pre">state</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></em><a class="headerlink" href="#qkan.StateVector.state" title="Link to this definition"></a></dt>
-<dd></dd></dl>
-
 </dd></dl>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="qkan.TorchGates">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">TorchGates</span></span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates" title="Link to this definition"></a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">TorchGates</span></span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates" title="Link to this definition"></a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <dl class="py method">
+<dt class="sig sig-object py" id="qkan.TorchGates.identity_gate">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">identity_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.identity_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.identity_gate" title="Link to this definition"></a></dt>
+<dd><p>shape: (out_dim, in_dim)</p>
+<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.TorchGates.i_gate">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">i_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.i_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.i_gate" title="Link to this definition"></a></dt>
+<dd><p>shape: (out_dim, in_dim)</p>
+<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.TorchGates.rx_gate">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">rx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.rx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.rx_gate" title="Link to this definition"></a></dt>
+<dd><p>theta: torch.Tensor, shape: (out_dim, in_dim)</p>
+<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.TorchGates.ry_gate">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">ry_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.ry_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.ry_gate" title="Link to this definition"></a></dt>
+<dd><p>theta: torch.Tensor, shape: (out_dim, in_dim)</p>
+<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.TorchGates.rz_gate">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">rz_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.rz_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.rz_gate" title="Link to this definition"></a></dt>
+<dd><p>theta: torch.Tensor, shape: (out_dim, in_dim)</p>
+<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.TorchGates.h_gate">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">h_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.h_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.h_gate" title="Link to this definition"></a></dt>
+<dd><p>shape: (out_dim, in_dim)</p>
+<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.TorchGates.s_gate">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">s_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.s_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.s_gate" title="Link to this definition"></a></dt>
+<dd><p>shape: (out_dim, in_dim)</p>
+<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="qkan.TorchGates.acrx_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">acrx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.acrx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.acrx_gate" title="Link to this definition"></a></dt>
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">acrx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.acrx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.acrx_gate" title="Link to this definition"></a></dt>
 <dd><p>Complex extension of RX(acos(theta)) gate.
 <em>Note: Physically unrealizable.</em></p>
 <p>theta: torch.Tensor, shape: (out_dim, in_dim)</p>
@@ -1249,8 +1442,21 @@ registered hooks while the latter silently ignores them.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="qkan.TorchGates.tensor_product">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">tensor_product</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gate</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">another_gate</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.tensor_product"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.tensor_product" title="Link to this definition"></a></dt>
+<dd><p>Compute tensor product of two gates.</p>
+<p>:param :
+:type : gate: torch.Tensor, shape: (2, 2, out_dim, in_dim)
+:param :
+:type : another_gate: torch.Tensor, shape: (2, 2, out_dim, in_dim)
+:param : Both gates should have the same dtype.
+:type : dtype: torch dtype, optional. If None, uses the dtype of the input gate.</p>
+<p>return: torch.Tensor, shape: (4, 4, out_dim, in_dim)</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="qkan.TorchGates.cx_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">control</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.cx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.cx_gate" title="Link to this definition"></a></dt>
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">cx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">control</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.cx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.cx_gate" title="Link to this definition"></a></dt>
 <dd><p>2-qubits CX (CNOT) gate.</p>
 <p>shape: (out_dim, in_dim)
 control: int</p>
@@ -1264,7 +1470,7 @@ control: int</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.TorchGates.cz_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cz_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.cz_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.cz_gate" title="Link to this definition"></a></dt>
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">cz_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.cz_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.cz_gate" title="Link to this definition"></a></dt>
 <dd><p>2-qubits CZ gate.</p>
 <p>shape: (out_dim, in_dim)
 control: int</p>
@@ -1274,103 +1480,6 @@ control: int</p>
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
 </dd>
 </dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.TorchGates.h_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">h_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.h_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.h_gate" title="Link to this definition"></a></dt>
-<dd><p>shape: (out_dim, in_dim)</p>
-<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.TorchGates.i_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">i_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.i_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.i_gate" title="Link to this definition"></a></dt>
-<dd><p>shape: (out_dim, in_dim)</p>
-<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.TorchGates.identity_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">identity_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.identity_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.identity_gate" title="Link to this definition"></a></dt>
-<dd><p>shape: (out_dim, in_dim)</p>
-<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.TorchGates.rx_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">rx_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.rx_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.rx_gate" title="Link to this definition"></a></dt>
-<dd><p>theta: torch.Tensor, shape: (out_dim, in_dim)</p>
-<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.TorchGates.ry_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ry_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.ry_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.ry_gate" title="Link to this definition"></a></dt>
-<dd><p>theta: torch.Tensor, shape: (out_dim, in_dim)</p>
-<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.TorchGates.rz_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">rz_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.complex64</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.rz_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.rz_gate" title="Link to this definition"></a></dt>
-<dd><p>theta: torch.Tensor, shape: (out_dim, in_dim)</p>
-<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.TorchGates.s_gate">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">s_gate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.s_gate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.s_gate" title="Link to this definition"></a></dt>
-<dd><p>shape: (out_dim, in_dim)</p>
-<p>return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="qkan.TorchGates.tensor_product">
-<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">tensor_product</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gate</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">another_gate</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/torch_qc.html#TorchGates.tensor_product"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.TorchGates.tensor_product" title="Link to this definition"></a></dt>
-<dd><p>Compute tensor product of two gates.</p>
-<p>:param :
-:type : gate: torch.Tensor, shape: (2, 2, out_dim, in_dim)
-:param :
-:type : another_gate: torch.Tensor, shape: (2, 2, out_dim, in_dim)
-:param : Both gates should have the same dtype.
-:type : dtype: torch dtype, optional. If None, uses the dtype of the input gate.</p>
-<p>return: torch.Tensor, shape: (4, 4, out_dim, in_dim)</p>
 </dd></dl>
 
 </dd></dl>
@@ -1450,9 +1559,8 @@ dataset[‘test_input’], dataset[‘test_label’]</p>
 <section id="module-qkan.solver">
 <span id="solver-module"></span><h2>Solver Module<a class="headerlink" href="#module-qkan.solver" title="Link to this heading"></a></h2>
 <p>QKAN layer simulating solver</p>
-<p>This module provides a solver for quantum neural networks using PyTorch or PennyLane</p>
-<p>Code author: Jiun-Cheng Jiang (<a class="reference external" href="mailto:Jim137&#37;&#52;&#48;GitHub">Jim137<span>&#64;</span>GitHub</a>)
-Contact: [<a class="reference external" href="mailto:jcjiang&#37;&#52;&#48;phys&#46;ntu&#46;edu&#46;tw">jcjiang<span>&#64;</span>phys<span>&#46;</span>ntu<span>&#46;</span>edu<span>&#46;</span>tw</a>](<a class="reference external" href="mailto:jcjiang&#37;&#52;&#48;phys&#46;ntu&#46;edu&#46;tw">mailto:jcjiang<span>&#64;</span>phys<span>&#46;</span>ntu<span>&#46;</span>edu<span>&#46;</span>tw</a>)</p>
+<p>This module provides a solver for quantum neural networks using PyTorch, PennyLane,
+Triton-accelerated kernels, or cuQuantum tensor network contraction.</p>
 <dl class="py function">
 <dt class="sig sig-object py" id="qkan.solver.qml_solver">
 <span class="sig-prename descclassname"><span class="pre">qkan.solver.</span></span><span class="sig-name descname"><span class="pre">qml_solver</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reps</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/solver.html#qml_solver"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.solver.qml_solver" title="Link to this definition"></a></dt>
@@ -1494,6 +1602,63 @@ Contact: [<a class="reference external" href="mailto:jcjiang&#37;&#52;&#48;phys&
 </dd>
 </dl>
 </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="qkan.solver.cutn_solver">
+<span class="sig-prename descclassname"><span class="pre">qkan.solver.</span></span><span class="sig-name descname"><span class="pre">cutn_solver</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preacts_weight</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preacts_bias</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reps</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/solver.html#cutn_solver"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.solver.cutn_solver" title="Link to this definition"></a></dt>
+<dd><p>Tensor network contraction solver using optimal contraction paths.</p>
+<p>Expresses the entire quantum circuit as a single tensor network and
+contracts it using an optimal path from cuQuantum or opt_einsum.
+The contraction plan is precompiled and cached so repeated forward
+calls pay no path-finding overhead.</p>
+<p>Supports <code class="docutils literal notranslate"><span class="pre">pz_encoding</span></code> (<code class="docutils literal notranslate"><span class="pre">pz</span></code>), <code class="docutils literal notranslate"><span class="pre">rpz_encoding</span></code> (<code class="docutils literal notranslate"><span class="pre">rpz</span></code>), and <code class="docutils literal notranslate"><span class="pre">real</span></code> ansatzes.
+Falls back to torch_exact_solver for unsupported ansatzes or reps &gt; 11.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>torch.Tensor</em>) – shape: (batch_size, in_dim)</p></li>
+<li><p><strong>theta</strong> (<em>torch.Tensor</em>) – shape: (<a href="#id23"><span class="problematic" id="id24">*</span></a>group, reps+1, n_params_per_gate)</p></li>
+<li><p><strong>preacts_weight</strong> (<em>torch.Tensor</em>) – shape: (<a href="#id25"><span class="problematic" id="id26">*</span></a>group, reps)</p></li>
+<li><p><strong>preacts_bias</strong> (<em>torch.Tensor</em>) – shape: (<a href="#id27"><span class="problematic" id="id28">*</span></a>group, reps)</p></li>
+<li><p><strong>reps</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>ansatz</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – options: “pz_encoding”, “pz”, “rpz_encoding”, “rpz”, “real”</p></li>
+<li><p><strong>preacts_trainable</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>fast_measure</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>out_dim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>dtype</strong> (<em>torch.dtype</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><dl class="simple">
+<dt>torch.Tensor</dt><dd><p>shape: (batch_size, out_dim, in_dim)</p>
+</dd>
+</dl>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="qkan.solver.flash_exact_solver">
+<span class="sig-prename descclassname"><span class="pre">qkan.solver.</span></span><span class="sig-name descname"><span class="pre">flash_exact_solver</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preacts_weight</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preacts_bias</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reps</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/solver.html#flash_exact_solver"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.solver.flash_exact_solver" title="Link to this definition"></a></dt>
+<dd><p>Triton-accelerated exact solver. Drop-in replacement for torch_exact_solver.</p>
+<p>Uses fused Triton kernels for pz_encoding, rpz_encoding, and real ansatzes.
+Falls back to torch_exact_solver for unsupported ansatzes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>torch_exact_solver.</strong> (<em>Same as</em>)</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>(batch_size, out_dim, in_dim)</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.Tensor, shape</p>
 </dd>
 </dl>
 </dd></dl>

@@ -15,6 +15,8 @@ This project builds upon the concepts introduced in the paper `Quantum Variation
 
 ``QKAN`` is a novel neural network architecture that integrates **Quantum Variational Activation Functions (QVAFs)** with the **Kolmogorov-Arnold Network (KAN)** paradigm, designed for expressive and efficient function approximation and machine learning tasks.
 
+2026-03: Released v0.2.0 with a more efficient quantum circuit implementation—using cuQuantum for the `cutn` solver and Triton for the `flash` solver—which significantly speeds up the activation function.
+
 Installation
 ------------
 
@@ -32,13 +34,19 @@ Or install from source:
    cd qkan
    pip install -e .
 
-We recommend using a virtual environment to avoid conflicts with other packages:
+To use the GPU-optimized solvers (including `flash` and `cutn` solver), you can install with the `gpu` extra:
 
 .. code-block:: bash
 
-   python -m venv qkan-env
-   source qkan-env/bin/activate  # On Windows: qkan-env\Scripts\activate
-   pip install qkan
+   pip install qkan[gpu]
+
+.. We recommend using a virtual environment to avoid conflicts with other packages:
+
+.. .. code-block:: bash
+
+..    python -m venv qkan-env
+..    source qkan-env/bin/activate  # On Windows: qkan-env\Scripts\activate
+..    pip install qkan
 
 Quick Start
 -----------

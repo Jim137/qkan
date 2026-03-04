@@ -6,17 +6,17 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quantum-Inspired Kolmogorov-Arnold Network (QKAN) &mdash; QKAN 0.1.3 documentation</title>
+  <title>Quantum-Inspired Kolmogorov-Arnold Network (QKAN) &mdash; QKAN 0.2.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
   
     <link rel="canonical" href="https://qkan.jimq.cc/index.html" />
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=360bc84d"></script>
-      <script src="_static/doctools.js?v=9bcbadda"></script>
-      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/documentation_options.js?v=938c9ccc"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
@@ -79,6 +79,7 @@
 <p>Welcome to the documentation for the <strong>Quantum-Inspired Kolmogorov-Arnold Network (QKAN)</strong>!</p>
 <p>This project builds upon the concepts introduced in the paper <a class="reference external" href="https://arxiv.org/abs/2509.14026">Quantum Variational Activation Functions Empower Kolmogorov-Arnold Networks</a> and is open-sourced at GitHub repository <a class="reference external" href="https://github.com/Jim137/qkan">Jim137/qkan</a>.</p>
 <p><code class="docutils literal notranslate"><span class="pre">QKAN</span></code> is a novel neural network architecture that integrates <strong>Quantum Variational Activation Functions (QVAFs)</strong> with the <strong>Kolmogorov-Arnold Network (KAN)</strong> paradigm, designed for expressive and efficient function approximation and machine learning tasks.</p>
+<p>2026-03: Released v0.2.0 with a more efficient quantum circuit implementation—using cuQuantum for the <cite>cutn</cite> solver and Triton for the <cite>flash</cite> solver—which significantly speeds up the activation function.</p>
 <section id="installation">
 <h2>Installation<a class="headerlink" href="#installation" title="Link to this heading"></a></h2>
 <p>Install via pip:</p>
@@ -91,10 +92,8 @@
 pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
 </pre></div>
 </div>
-<p>We recommend using a virtual environment to avoid conflicts with other packages:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>qkan-env
-<span class="nb">source</span><span class="w"> </span>qkan-env/bin/activate<span class="w">  </span><span class="c1"># On Windows: qkan-env\Scripts\activate</span>
-pip<span class="w"> </span>install<span class="w"> </span>qkan
+<p>To use the GPU-optimized solvers (including <cite>flash</cite> and <cite>cutn</cite> solver), you can install with the <cite>gpu</cite> extra:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>qkan<span class="o">[</span>gpu<span class="o">]</span>
 </pre></div>
 </div>
 </section>
