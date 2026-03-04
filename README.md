@@ -43,6 +43,8 @@ We provide a PyTorch implementation of QKAN with:
 
 A basic PennyLane version of the quantum circuit is also included for demonstration, but not optimized for performance.
 
+2026-03: Released v0.2.0 with a more efficient quantum circuit implementation—using cuQuantum for the `cutn` solver and Triton for the `flash` solver—which significantly speeds up the activation function.
+
 ## Installation
 
 You can install QKAN using pip:
@@ -57,7 +59,13 @@ If you want to install the latest development version, you can use:
 pip install git+https://github.com/Jim137/qkan.git
 ```
 
-To install QKAN from source, you can use the following command:
+To use the GPU-optimized solvers (including `flash` and `cutn` solver), you can install with the `gpu` extra:
+
+```bash
+pip install qkan[gpu]
+```
+
+<!-- To install QKAN from source, you can use the following command:
 
 ```bash
 git clone https://github.com/Jim137/qkan.git && cd qkan
@@ -70,7 +78,7 @@ It is recommended to use a virtual environment to avoid conflicts with other pac
 python -m venv qkan-env
 source qkan-env/bin/activate  # On Windows: qkan-env\Scripts\activate
 pip install qkan
-```
+``` -->
 
 ## Quick Start
 
@@ -135,9 +143,11 @@ To start contributing, please fork the repository and create a new branch for yo
 In your environment, you can install the development dependencies with:
 
 ```bash
-pip install .[dev] # install development dependencies
-pip install .[doc] # install documentation dependencies
-pip install .[all] # install all optional dependencies
+git clone https://github.com/Jim137/qkan.git && cd qkan
+
+pip install -e .[dev] # install development dependencies
+pip install -e .[doc] # install documentation dependencies
+pip install -e .[all] # install all optional dependencies
 ```
 
 ## Citation
