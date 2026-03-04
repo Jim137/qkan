@@ -125,10 +125,6 @@ def torch_exact_solver(
             preacts_bias = preacts_bias.repeat(repeat_out, repeat_in, 1)[:, :in_dim, :]
         encoded_x = torch.einsum("oir,bi->boir", preacts_weight, x).add(preacts_bias)
         # encoded_x shape: (batch_size, out_dim, in_dim, reps)
-    else:
-        # When pre-activation is not trainable, fall back to using raw x (broadcasted)
-        # so that ansatz implementations (e.g., px_encoding) can always index encoded_x.
-        encoded_x = x[:, None, :, None].expand(batch, out_dim, in_dim, reps)
 
     def _pz_encoding(theta: torch.Tensor):
         """
