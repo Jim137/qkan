@@ -848,98 +848,129 @@ def _real_encoding_kernel(
     PREACTS_TRAINABLE: tl.constexpr,
     FAST_MEASURE: tl.constexpr,
     COMPUTE_BF16: tl.constexpr = False,
+    BLOCK_B: tl.constexpr = 1,
 ):
     """
     Fused real ansatz forward kernel.
 
     Circuit: H|0> -> [X, Ry(theta[l,0]), Z, Ry(enc_x)]×reps -> measure Z
     No final rotation. Data encoding uses Ry (not Rz).
-    When COMPUTE_BF16=True, uses polynomial trig approximations for bf16 compat.
+    When COMPUTE_BF16=True, uses real-only fast path (no imaginary components).
+    When BLOCK_B>1, tiles over the batch dimension for better throughput:
+    theta loads/trig are amortized across the batch tile.
+    Grid: (out_dim * in_dim, cdiv(batch, BLOCK_B)).
     """
-    pid = tl.program_id(0)
+    pid_oi = tl.program_id(0)
+    pid_b = tl.program_id(1)
 
-    idx_i = pid % in_dim
-    tmp = pid // in_dim
-    idx_o = tmp % out_dim
-    idx_b = tmp // out_dim
+    idx_i = pid_oi % in_dim
+    idx_o = pid_oi // in_dim
 
-    if idx_b >= batch_size:
+    if idx_o >= out_dim:
         return
 
-    x_val = tl.load(x_ptr + idx_b * stride_x_b + idx_i * stride_x_i)
+    # Batch tile offsets
+    b_offs = pid_b * BLOCK_B + tl.arange(0, BLOCK_B)
+    b_mask = b_offs < batch_size
 
-    # H|0>
-    INV_SQRT2: tl.constexpr = 0.7071067811865476
-    r0 = INV_SQRT2
-    i0 = 0.0
-    r1 = INV_SQRT2
-    i1 = 0.0
+    # Load x values for the batch tile [BLOCK_B]
+    x_vals = tl.load(x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0)
 
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
+    INV_SQRT2: tl.constexpr = 0.7071067811865476
 
-    for layer in range(reps):
-        # X gate: swap |0> <-> |1>
-        r0, i0, r1, i1 = r1, i1, r0, i0
+    if COMPUTE_BF16:
+        # Real-only vectorized path: imaginary components always zero.
+        # Theta trig is scalar (shared across batch tile), data trig is vectorized.
+        r0 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
+        r1 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
 
-        # Ry(theta[l, 0])
-        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
-        a = t0 * 0.5
-        if COMPUTE_BF16:
-            c = _approx_cos(a)
-            s = _approx_sin(a)
-        else:
+        for layer in range(reps):
+            r0, r1 = r1, r0  # X gate
+
+            # Theta: scalar load + scalar trig, broadcast to batch tile
+            t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+            a = t0.to(tl.float32) * 0.5
             c = tl.cos(a)
             s = tl.sin(a)
-        nr0 = c * r0 - s * r1
-        ni0 = c * i0 - s * i1
-        nr1 = s * r0 + c * r1
-        ni1 = s * i0 + c * i1
-        r0, i0, r1, i1 = nr0, ni0, nr1, ni1
+            nr0 = c * r0 - s * r1
+            nr1 = s * r0 + c * r1
+            r0, r1 = nr0, nr1
 
-        # Z gate: negate |1> component
-        r1 = -r1
-        i1 = -i1
+            r1 = -r1  # Z gate
 
-        # Ry(enc_x) — data encoding with Ry
-        enc = x_val
-        if PREACTS_TRAINABLE:
-            w = tl.load(
-                pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
-            )
-            b = tl.load(
-                pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
-            )
-            enc = w * x_val + b
+            # Data encoding: vectorized trig over batch tile
+            enc = x_vals.to(tl.float32)
+            if PREACTS_TRAINABLE:
+                w = tl.load(
+                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                )
+                b = tl.load(
+                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                )
+                enc = w.to(tl.float32) * x_vals.to(tl.float32) + b.to(tl.float32)
 
-        a = enc * 0.5
-        if COMPUTE_BF16:
-            c = _approx_cos(a)
-            s = _approx_sin(a)
-        else:
+            a = enc * 0.5
             c = tl.cos(a)
             s = tl.sin(a)
-        nr0 = c * r0 - s * r1
-        ni0 = c * i0 - s * i1
-        nr1 = s * r0 + c * r1
-        ni1 = s * i0 + c * i1
-        r0, i0, r1, i1 = nr0, ni0, nr1, ni1
+            nr0 = c * r0 - s * r1
+            nr1 = s * r0 + c * r1
+            r0, r1 = nr0, nr1
 
-    # No final rotation — go straight to measurement
-
-    # Measure Z
-    if FAST_MEASURE:
-        if COMPUTE_BF16:
-            # Real ansatz keeps state real, so |α| = |r0|, |β| = |r1|
+        if FAST_MEASURE:
             result = tl.abs(r0) - tl.abs(r1)
         else:
-            result = tl.sqrt(r0 * r0 + i0 * i0) - tl.sqrt(r1 * r1 + i1 * i1)
+            result = r0 * r0 - r1 * r1
     else:
-        result = (r0 * r0 + i0 * i0) - (r1 * r1 + i1 * i1)
+        # Full complex vectorized path
+        r0 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
+        i0 = tl.zeros([BLOCK_B], dtype=tl.float32)
+        r1 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
+        i1 = tl.zeros([BLOCK_B], dtype=tl.float32)
 
-    tl.store(
-        out_ptr + idx_b * stride_o_b + idx_o * stride_o_o + idx_i * stride_o_i,
-        result,
-    )
+        for layer in range(reps):
+            r0, i0, r1, i1 = r1, i1, r0, i0  # X gate
+
+            t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+            a = t0 * 0.5
+            c = tl.cos(a)
+            s = tl.sin(a)
+            nr0 = c * r0 - s * r1
+            ni0 = c * i0 - s * i1
+            nr1 = s * r0 + c * r1
+            ni1 = s * i0 + c * i1
+            r0, i0, r1, i1 = nr0, ni0, nr1, ni1
+
+            r1 = -r1  # Z gate
+            i1 = -i1
+
+            enc = x_vals
+            if PREACTS_TRAINABLE:
+                w = tl.load(
+                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                )
+                b = tl.load(
+                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                )
+                enc = w * x_vals + b
+
+            a = enc * 0.5
+            c = tl.cos(a)
+            s = tl.sin(a)
+            nr0 = c * r0 - s * r1
+            ni0 = c * i0 - s * i1
+            nr1 = s * r0 + c * r1
+            ni1 = s * i0 + c * i1
+            r0, i0, r1, i1 = nr0, ni0, nr1, ni1
+
+        if FAST_MEASURE:
+            result = tl.sqrt(r0 * r0 + i0 * i0) - tl.sqrt(r1 * r1 + i1 * i1)
+        else:
+            result = (r0 * r0 + i0 * i0) - (r1 * r1 + i1 * i1)
+
+    # Vectorized store for batch tile
+    out_offs = b_offs * stride_o_b + idx_o * stride_o_o + idx_i * stride_o_i
+    tl.store(out_ptr + out_offs, result, mask=b_mask)
 
 
 # ── Backward kernels ───────────────────────────────────────────────────────
@@ -1434,7 +1465,10 @@ def triton_real_forward(
     preacts_b = preacts_b.to(c_dtype).contiguous()
 
     output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
-    grid = (batch * out_dim * in_dim,)
+
+    compute_bf16 = (c_dtype == torch.bfloat16)
+    BLOCK_B = 32 if compute_bf16 else 1
+    grid = (out_dim * in_dim, triton.cdiv(batch, BLOCK_B))
 
     if preacts_trainable:
         pw_strides = (preacts_w.stride(0), preacts_w.stride(1), preacts_w.stride(2))
@@ -1466,7 +1500,8 @@ def triton_real_forward(
         output.stride(2),
         PREACTS_TRAINABLE=preacts_trainable,
         FAST_MEASURE=fast_measure,
-        COMPUTE_BF16=(c_dtype == torch.bfloat16),
+        COMPUTE_BF16=compute_bf16,
+        BLOCK_B=BLOCK_B,
     )
 
     return output
@@ -1510,9 +1545,10 @@ def _real_encoding_backward_kernel(
     stride_go_b,
     stride_go_o,
     stride_go_i,
-    # Strides for states buffer
+    # Strides for states buffer: (n_programs, n_states, BLOCK_B, n_components)
     stride_s_n,
     stride_s_s,
+    stride_s_b,
     stride_s_c,
     # Strides for grad_theta
     stride_gt_o,
@@ -1533,229 +1569,376 @@ def _real_encoding_backward_kernel(
     PREACTS_TRAINABLE: tl.constexpr,
     FAST_MEASURE: tl.constexpr,
     COMPUTE_BF16: tl.constexpr = False,
+    BLOCK_B: tl.constexpr = 1,
 ):
-    """Backward kernel for real ansatz. Circuit: H|0> -> [X, Ry(theta), Z, Ry(enc)]×reps -> measure Z"""
-    pid = tl.program_id(0)
-    idx_i = pid % in_dim
-    tmp = pid // in_dim
-    idx_o = tmp % out_dim
-    idx_b = tmp // out_dim
+    """Backward kernel for real ansatz with batch tiling.
 
-    if idx_b >= batch_size:
+    Grid: (out_dim * in_dim, cdiv(batch, BLOCK_B)).
+    States: (n_programs, n_states, BLOCK_B, n_components).
+    Theta grads are accumulated locally over the batch tile before atomic_add,
+    reducing contention by BLOCK_B×.
+    """
+    pid_oi = tl.program_id(0)
+    pid_b = tl.program_id(1)
+
+    idx_i = pid_oi % in_dim
+    idx_o = pid_oi // in_dim
+
+    if idx_o >= out_dim:
         return
 
-    x_val = tl.load(x_ptr + idx_b * stride_x_b + idx_i * stride_x_i)
+    b_offs = pid_b * BLOCK_B + tl.arange(0, BLOCK_B)
+    b_mask = b_offs < batch_size
+
+    x_vals = tl.load(x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0)
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
-    states_base = states_ptr + pid * stride_s_n
-
-    # ── Phase 1: Forward recompute, saving states ──
+    # states_base indexes into (n_programs, n_states, BLOCK_B, n_components)
+    program_idx = pid_oi * tl.cdiv(batch_size, BLOCK_B) + pid_b
+    states_base = states_ptr + program_idx * stride_s_n
+    b_range = tl.arange(0, BLOCK_B)
     INV_SQRT2: tl.constexpr = 0.7071067811865476
-    r0 = INV_SQRT2
-    i0 = 0.0
-    r1 = INV_SQRT2
-    i1 = 0.0
 
-    tl.store(states_base + 0 * stride_s_s + 0 * stride_s_c, r0)
-    tl.store(states_base + 0 * stride_s_s + 1 * stride_s_c, i0)
-    tl.store(states_base + 0 * stride_s_s + 2 * stride_s_c, r1)
-    tl.store(states_base + 0 * stride_s_s + 3 * stride_s_c, i1)
+    if COMPUTE_BF16:
+        # ── Real-only batch-tiled path: states are (..., BLOCK_B, 2) ──
 
-    state_idx = 1
-    for layer in range(reps):
-        # X gate: swap |0> <-> |1>
-        r0, i0, r1, i1 = r1, i1, r0, i0
+        # Phase 1: Forward recompute, saving [r0, r1] per batch element
+        r0 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
+        r1 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
 
-        tl.store(states_base + state_idx * stride_s_s + 0 * stride_s_c, r0)
-        tl.store(states_base + state_idx * stride_s_s + 1 * stride_s_c, i0)
-        tl.store(states_base + state_idx * stride_s_s + 2 * stride_s_c, r1)
-        tl.store(states_base + state_idx * stride_s_s + 3 * stride_s_c, i1)
-        state_idx += 1
+        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
+        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, r1, mask=b_mask)
 
-        # Ry(theta[l,0])
-        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
-        a = t0 * 0.5
-        if COMPUTE_BF16:
-            c = _approx_cos(a)
-            s = _approx_sin(a)
-        else:
+        state_idx = 1
+        for layer in range(reps):
+            r0, r1 = r1, r0  # X gate
+
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, r1, mask=b_mask)
+            state_idx += 1
+
+            # Theta: scalar load + scalar trig, broadcast to batch tile
+            t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+            a = t0.to(tl.float32) * 0.5
             c = tl.cos(a)
             s = tl.sin(a)
-        nr0 = c * r0 - s * r1
-        ni0 = c * i0 - s * i1
-        nr1 = s * r0 + c * r1
-        ni1 = s * i0 + c * i1
-        r0, i0, r1, i1 = nr0, ni0, nr1, ni1
+            nr0 = c * r0 - s * r1
+            nr1 = s * r0 + c * r1
+            r0, r1 = nr0, nr1
 
-        tl.store(states_base + state_idx * stride_s_s + 0 * stride_s_c, r0)
-        tl.store(states_base + state_idx * stride_s_s + 1 * stride_s_c, i0)
-        tl.store(states_base + state_idx * stride_s_s + 2 * stride_s_c, r1)
-        tl.store(states_base + state_idx * stride_s_s + 3 * stride_s_c, i1)
-        state_idx += 1
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, r1, mask=b_mask)
+            state_idx += 1
 
-        # Z gate: negate |1>
-        r1 = -r1
-        i1 = -i1
+            r1 = -r1  # Z gate
 
-        tl.store(states_base + state_idx * stride_s_s + 0 * stride_s_c, r0)
-        tl.store(states_base + state_idx * stride_s_s + 1 * stride_s_c, i0)
-        tl.store(states_base + state_idx * stride_s_s + 2 * stride_s_c, r1)
-        tl.store(states_base + state_idx * stride_s_s + 3 * stride_s_c, i1)
-        state_idx += 1
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, r1, mask=b_mask)
+            state_idx += 1
 
-        # Ry(enc)
-        enc = x_val
-        if PREACTS_TRAINABLE:
-            w = tl.load(
-                pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
-            )
-            b = tl.load(
-                pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
-            )
-            enc = w * x_val + b
+            # Data encoding: vectorized over batch tile
+            enc = x_vals.to(tl.float32)
+            if PREACTS_TRAINABLE:
+                w = tl.load(
+                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                )
+                b = tl.load(
+                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                )
+                enc = w.to(tl.float32) * x_vals.to(tl.float32) + b.to(tl.float32)
 
-        a = enc * 0.5
-        if COMPUTE_BF16:
-            c = _approx_cos(a)
-            s = _approx_sin(a)
-        else:
+            a = enc * 0.5
             c = tl.cos(a)
             s = tl.sin(a)
-        nr0 = c * r0 - s * r1
-        ni0 = c * i0 - s * i1
-        nr1 = s * r0 + c * r1
-        ni1 = s * i0 + c * i1
-        r0, i0, r1, i1 = nr0, ni0, nr1, ni1
+            nr0 = c * r0 - s * r1
+            nr1 = s * r0 + c * r1
+            r0, r1 = nr0, nr1
 
-        # Don't save after Ry(enc): its output is the next iteration's
-        # input (or the final state for measurement). This keeps state_idx
-        # aligned so backward state_idx-1 points to the pre-gate state.
+        # Phase 2: Measurement gradient (vectorized over batch)
+        go = tl.load(
+            grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i,
+            mask=b_mask, other=0.0,
+        )
 
-    # ── Phase 2: Measurement gradient ──
-    go = tl.load(
-        grad_out_ptr + idx_b * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i
-    )
-
-    if FAST_MEASURE:
-        if COMPUTE_BF16:
-            # Real ansatz state is always real, so |α| = |r0|, |β| = |r1|
+        if FAST_MEASURE:
             alpha_norm = tl.abs(r0)
             beta_norm = tl.abs(r1)
+            inv_alpha = tl.where(alpha_norm > 1e-30, 1.0 / alpha_norm, 0.0)
+            inv_beta = tl.where(beta_norm > 1e-30, 1.0 / beta_norm, 0.0)
+            ar0 = go * r0 * inv_alpha
+            ar1 = -go * r1 * inv_beta
         else:
+            ar0 = 2.0 * go * r0
+            ar1 = -2.0 * go * r1
+
+        # Phase 3: Backward sweep (real-only, batch-tiled)
+        grad_x_local = tl.zeros([BLOCK_B], dtype=tl.float32)
+        gt_base = grad_theta_ptr + idx_o * stride_gt_o + idx_i * stride_gt_i
+
+        for layer in range(reps - 1, -1, -1):
+            # Backward through Ry(enc)
+            state_idx -= 1
+            sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
+            sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
+
+            enc = x_vals.to(tl.float32)
+            if PREACTS_TRAINABLE:
+                w = tl.load(
+                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                )
+                b = tl.load(
+                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                )
+                enc = w.to(tl.float32) * x_vals.to(tl.float32) + b.to(tl.float32)
+
+            a = enc * 0.5
+            c = tl.cos(a)
+            s = tl.sin(a)
+
+            # grad_enc is [BLOCK_B] vector
+            grad_enc = 0.5 * (
+                ar0 * (-s * sr0 - c * sr1)
+                + ar1 * (c * sr0 - s * sr1)
+            )
+
+            if PREACTS_TRAINABLE:
+                # Accumulate locally over batch tile, single atomic_add
+                tl.atomic_add(
+                    grad_pw_ptr
+                    + idx_o * stride_gpw_o
+                    + idx_i * stride_gpw_i
+                    + layer * stride_gpw_r,
+                    tl.sum(tl.where(b_mask, grad_enc * x_vals, 0.0)),
+                )
+                tl.atomic_add(
+                    grad_pb_ptr
+                    + idx_o * stride_gpb_o
+                    + idx_i * stride_gpb_i
+                    + layer * stride_gpb_r,
+                    tl.sum(tl.where(b_mask, grad_enc, 0.0)),
+                )
+                grad_x_local += grad_enc * w
+            else:
+                grad_x_local += grad_enc
+
+            nar0 = c * ar0 + s * ar1
+            nar1 = -s * ar0 + c * ar1
+            ar0, ar1 = nar0, nar1
+
+            # Backward through Z gate
+            ar1 = -ar1
+
+            # Backward through Ry(theta[l,0])
+            state_idx -= 2
+            sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
+            sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
+
+            # Theta: scalar trig, vectorized grad accumulation
+            t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+            a = t0.to(tl.float32) * 0.5
+            c = tl.cos(a)
+            s = tl.sin(a)
+
+            # grad_t0 per batch element, sum locally before atomic_add
+            grad_t0_vec = 0.5 * (
+                ar0 * (-s * sr0 - c * sr1)
+                + ar1 * (c * sr0 - s * sr1)
+            )
+            tl.atomic_add(gt_base + layer * stride_gt_r + 0 * stride_gt_p,
+                          tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)))
+
+            nar0 = c * ar0 + s * ar1
+            nar1 = -s * ar0 + c * ar1
+            ar0, ar1 = nar0, nar1
+
+            # Backward through X gate
+            ar0, ar1 = ar1, ar0
+
+        # grad_x: vectorized masked atomic_add
+        gx_offs = grad_x_ptr + b_offs * stride_gx_b + idx_i * stride_gx_i
+        tl.atomic_add(gx_offs, grad_x_local, mask=b_mask)
+    else:
+        # ── Full complex state path: states are (..., BLOCK_B, 4) ──
+
+        # Phase 1: Forward recompute, saving states
+        r0 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
+        i0 = tl.zeros([BLOCK_B], dtype=tl.float32)
+        r1 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
+        i1 = tl.zeros([BLOCK_B], dtype=tl.float32)
+
+        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
+        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
+        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
+        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+
+        state_idx = 1
+        for layer in range(reps):
+            r0, i0, r1, i1 = r1, i1, r0, i0  # X gate
+
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+            state_idx += 1
+
+            t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+            a = t0 * 0.5
+            c = tl.cos(a)
+            s = tl.sin(a)
+            nr0 = c * r0 - s * r1
+            ni0 = c * i0 - s * i1
+            nr1 = s * r0 + c * r1
+            ni1 = s * i0 + c * i1
+            r0, i0, r1, i1 = nr0, ni0, nr1, ni1
+
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+            state_idx += 1
+
+            r1 = -r1  # Z gate
+            i1 = -i1
+
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
+            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+            state_idx += 1
+
+            enc = x_vals
+            if PREACTS_TRAINABLE:
+                w = tl.load(
+                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                )
+                b = tl.load(
+                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                )
+                enc = w * x_vals + b
+
+            a = enc * 0.5
+            c = tl.cos(a)
+            s = tl.sin(a)
+            nr0 = c * r0 - s * r1
+            ni0 = c * i0 - s * i1
+            nr1 = s * r0 + c * r1
+            ni1 = s * i0 + c * i1
+            r0, i0, r1, i1 = nr0, ni0, nr1, ni1
+
+        # Phase 2: Measurement gradient
+        go = tl.load(
+            grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i,
+            mask=b_mask, other=0.0,
+        )
+
+        if FAST_MEASURE:
             alpha_norm = tl.sqrt(r0 * r0 + i0 * i0)
             beta_norm = tl.sqrt(r1 * r1 + i1 * i1)
-        inv_alpha = tl.where(alpha_norm > 1e-30, 1.0 / alpha_norm, 0.0)
-        inv_beta = tl.where(beta_norm > 1e-30, 1.0 / beta_norm, 0.0)
-        ar0 = go * r0 * inv_alpha
-        ai0 = go * i0 * inv_alpha
-        ar1 = -go * r1 * inv_beta
-        ai1 = -go * i1 * inv_beta
-    else:
-        ar0 = 2.0 * go * r0
-        ai0 = 2.0 * go * i0
-        ar1 = -2.0 * go * r1
-        ai1 = -2.0 * go * i1
-
-    # ── Phase 3: Backward sweep ──
-    grad_x_local = 0.0
-    gt_base = grad_theta_ptr + idx_o * stride_gt_o + idx_i * stride_gt_i
-
-    for layer in range(reps - 1, -1, -1):
-        # Backward through Ry(enc) — pre-gate state = after Z = state[3l+3]
-        state_idx -= 1
-        sr0 = tl.load(states_base + state_idx * stride_s_s + 0 * stride_s_c)
-        si0 = tl.load(states_base + state_idx * stride_s_s + 1 * stride_s_c)
-        sr1 = tl.load(states_base + state_idx * stride_s_s + 2 * stride_s_c)
-        si1 = tl.load(states_base + state_idx * stride_s_s + 3 * stride_s_c)
-
-        enc = x_val
-        if PREACTS_TRAINABLE:
-            w = tl.load(
-                pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
-            )
-            b = tl.load(
-                pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
-            )
-            enc = w * x_val + b
-
-        a = enc * 0.5
-        if COMPUTE_BF16:
-            c = _approx_cos(a)
-            s = _approx_sin(a)
+            inv_alpha = tl.where(alpha_norm > 1e-30, 1.0 / alpha_norm, 0.0)
+            inv_beta = tl.where(beta_norm > 1e-30, 1.0 / beta_norm, 0.0)
+            ar0 = go * r0 * inv_alpha
+            ai0 = go * i0 * inv_alpha
+            ar1 = -go * r1 * inv_beta
+            ai1 = -go * i1 * inv_beta
         else:
+            ar0 = 2.0 * go * r0
+            ai0 = 2.0 * go * i0
+            ar1 = -2.0 * go * r1
+            ai1 = -2.0 * go * i1
+
+        # Phase 3: Backward sweep
+        grad_x_local = tl.zeros([BLOCK_B], dtype=tl.float32)
+        gt_base = grad_theta_ptr + idx_o * stride_gt_o + idx_i * stride_gt_i
+
+        for layer in range(reps - 1, -1, -1):
+            # Backward through Ry(enc)
+            state_idx -= 1
+            sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
+            si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
+            sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
+            si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+
+            enc = x_vals
+            if PREACTS_TRAINABLE:
+                w = tl.load(
+                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                )
+                b = tl.load(
+                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                )
+                enc = w * x_vals + b
+
+            a = enc * 0.5
             c = tl.cos(a)
             s = tl.sin(a)
 
-        grad_enc = 0.5 * (
-            ar0 * (-s * sr0 - c * sr1)
-            + ai0 * (-s * si0 - c * si1)
-            + ar1 * (c * sr0 - s * sr1)
-            + ai1 * (c * si0 - s * si1)
-        )
-
-        if PREACTS_TRAINABLE:
-            tl.atomic_add(
-                grad_pw_ptr
-                + idx_o * stride_gpw_o
-                + idx_i * stride_gpw_i
-                + layer * stride_gpw_r,
-                grad_enc * x_val,
+            grad_enc = 0.5 * (
+                ar0 * (-s * sr0 - c * sr1)
+                + ai0 * (-s * si0 - c * si1)
+                + ar1 * (c * sr0 - s * sr1)
+                + ai1 * (c * si0 - s * si1)
             )
-            tl.atomic_add(
-                grad_pb_ptr
-                + idx_o * stride_gpb_o
-                + idx_i * stride_gpb_i
-                + layer * stride_gpb_r,
-                grad_enc,
-            )
-            grad_x_local += grad_enc * w
-        else:
-            grad_x_local += grad_enc
 
-        # Adjoint prop Ry^T
-        nar0 = c * ar0 + s * ar1
-        nai0 = c * ai0 + s * ai1
-        nar1 = -s * ar0 + c * ar1
-        nai1 = -s * ai0 + c * ai1
-        ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
+            if PREACTS_TRAINABLE:
+                tl.atomic_add(
+                    grad_pw_ptr
+                    + idx_o * stride_gpw_o
+                    + idx_i * stride_gpw_i
+                    + layer * stride_gpw_r,
+                    tl.sum(tl.where(b_mask, grad_enc * x_vals, 0.0)),
+                )
+                tl.atomic_add(
+                    grad_pb_ptr
+                    + idx_o * stride_gpb_o
+                    + idx_i * stride_gpb_i
+                    + layer * stride_gpb_r,
+                    tl.sum(tl.where(b_mask, grad_enc, 0.0)),
+                )
+                grad_x_local += grad_enc * w
+            else:
+                grad_x_local += grad_enc
 
-        # Backward through Z gate: negate ar1, ai1 (no state needed)
-        ar1 = -ar1
-        ai1 = -ai1
+            nar0 = c * ar0 + s * ar1
+            nai0 = c * ai0 + s * ai1
+            nar1 = -s * ar0 + c * ar1
+            nai1 = -s * ai0 + c * ai1
+            ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-        # Backward through Ry(theta[l,0]) — pre-gate state = after X = state[3l+1]
-        state_idx -= 2  # skip over after-Ry(theta) state to reach after-X state
-        sr0 = tl.load(states_base + state_idx * stride_s_s + 0 * stride_s_c)
-        si0 = tl.load(states_base + state_idx * stride_s_s + 1 * stride_s_c)
-        sr1 = tl.load(states_base + state_idx * stride_s_s + 2 * stride_s_c)
-        si1 = tl.load(states_base + state_idx * stride_s_s + 3 * stride_s_c)
+            # Backward through Z gate
+            ar1 = -ar1
+            ai1 = -ai1
 
-        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
-        a = t0 * 0.5
-        if COMPUTE_BF16:
-            c = _approx_cos(a)
-            s = _approx_sin(a)
-        else:
+            # Backward through Ry(theta[l,0])
+            state_idx -= 2
+            sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
+            si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
+            sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
+            si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+
+            t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+            a = t0 * 0.5
             c = tl.cos(a)
             s = tl.sin(a)
 
-        grad_t0 = 0.5 * (
-            ar0 * (-s * sr0 - c * sr1)
-            + ai0 * (-s * si0 - c * si1)
-            + ar1 * (c * sr0 - s * sr1)
-            + ai1 * (c * si0 - s * si1)
-        )
-        tl.atomic_add(gt_base + layer * stride_gt_r + 0 * stride_gt_p, grad_t0)
+            grad_t0_vec = 0.5 * (
+                ar0 * (-s * sr0 - c * sr1)
+                + ai0 * (-s * si0 - c * si1)
+                + ar1 * (c * sr0 - s * sr1)
+                + ai1 * (c * si0 - s * si1)
+            )
+            tl.atomic_add(gt_base + layer * stride_gt_r + 0 * stride_gt_p,
+                          tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)))
 
-        nar0 = c * ar0 + s * ar1
-        nai0 = c * ai0 + s * ai1
-        nar1 = -s * ar0 + c * ar1
-        nai1 = -s * ai0 + c * ai1
-        ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
+            nar0 = c * ar0 + s * ar1
+            nai0 = c * ai0 + s * ai1
+            nar1 = -s * ar0 + c * ar1
+            nai1 = -s * ai0 + c * ai1
+            ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-        # Backward through X gate: swap adjoint components (no state needed)
-        ar0, ai0, ar1, ai1 = ar1, ai1, ar0, ai0
+            # Backward through X gate
+            ar0, ai0, ar1, ai1 = ar1, ai1, ar0, ai0
 
-    tl.atomic_add(grad_x_ptr + idx_b * stride_gx_b + idx_i * stride_gx_i, grad_x_local)
+        gx_offs = grad_x_ptr + b_offs * stride_gx_b + idx_i * stride_gx_i
+        tl.atomic_add(gx_offs, grad_x_local, mask=b_mask)
 
 
 def triton_real_backward(
@@ -1771,32 +1954,39 @@ def triton_real_backward(
     theta = theta.to(c_dtype).contiguous()
     pw = pw.to(c_dtype).contiguous()
     pb = pb.to(c_dtype).contiguous()
-    grad_output = grad_output.to(c_dtype).contiguous()
+    grad_output = grad_output.contiguous()
+
+    compute_bf16 = (c_dtype == torch.bfloat16)
+    BLOCK_B = 32 if compute_bf16 else 1
 
     n_states = 3 * reps + 1  # H state + 3 per layer (after X, Ry_theta, Z)
-    N = batch * out_dim * in_dim
-    states = torch.empty(N, n_states, 4, device=x.device, dtype=c_dtype)
+    n_b_blocks = triton.cdiv(batch, BLOCK_B)
+    n_programs = out_dim * in_dim * n_b_blocks
+    # Real-only bf16 path stores 2 components (r0, r1); full path stores 4
+    n_components = 2 if compute_bf16 else 4
+    # States: (n_programs, n_states, BLOCK_B, n_components)
+    states = torch.empty(n_programs, n_states, BLOCK_B, n_components, device=x.device, dtype=torch.float32)
 
-    grad_theta = torch.zeros(theta.shape, device=x.device, dtype=c_dtype)
-    grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=c_dtype)
+    # Gradient accumulation tensors use float32 for efficient atomic operations
+    grad_theta = torch.zeros(theta.shape, device=x.device, dtype=torch.float32)
+    grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=torch.float32)
 
     if preacts_trainable:
-        grad_pw = torch.zeros(pw.shape, device=x.device, dtype=c_dtype)
-        grad_pb = torch.zeros(pb.shape, device=x.device, dtype=c_dtype)
+        grad_pw = torch.zeros(pw.shape, device=x.device, dtype=torch.float32)
+        grad_pb = torch.zeros(pb.shape, device=x.device, dtype=torch.float32)
         pw_strides = (pw.stride(0), pw.stride(1), pw.stride(2))
         pb_strides = (pb.stride(0), pb.stride(1), pb.stride(2))
         gpw_strides = (grad_pw.stride(0), grad_pw.stride(1), grad_pw.stride(2))
         gpb_strides = (grad_pb.stride(0), grad_pb.stride(1), grad_pb.stride(2))
     else:
-        grad_pw = torch.zeros(1, device=x.device, dtype=c_dtype)
-        grad_pb = torch.zeros(1, device=x.device, dtype=c_dtype)
+        grad_pw = torch.zeros(1, device=x.device, dtype=torch.float32)
+        grad_pb = torch.zeros(1, device=x.device, dtype=torch.float32)
         pw_strides = (0, 0, 0)
         pb_strides = (0, 0, 0)
         gpw_strides = (0, 0, 0)
         gpb_strides = (0, 0, 0)
 
-    grid = (N,)
-    compute_bf16 = (c_dtype == torch.bfloat16)
+    grid = (out_dim * in_dim, n_b_blocks)
     _real_encoding_backward_kernel[grid](
         x,
         theta,
@@ -1826,6 +2016,7 @@ def triton_real_backward(
         states.stride(0),
         states.stride(1),
         states.stride(2),
+        states.stride(3),
         grad_theta.stride(0),
         grad_theta.stride(1),
         grad_theta.stride(2),
@@ -1837,6 +2028,7 @@ def triton_real_backward(
         PREACTS_TRAINABLE=preacts_trainable,
         FAST_MEASURE=fast_measure,
         COMPUTE_BF16=compute_bf16,
+        BLOCK_B=BLOCK_B,
     )
 
     return (
