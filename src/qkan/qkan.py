@@ -37,7 +37,13 @@ import torch.nn.functional as F
 from tqdm import tqdm  # type: ignore
 
 from .info import get_dist_info, print0, print_version
-from .solver import qml_solver, torch_exact_solver
+from .solver import (
+    _FLASH_AVAILABLE,
+    cutn_solver,
+    flash_exact_solver,
+    qml_solver,
+    torch_exact_solver,
+)
 
 
 class QKANLayer(nn.Module):
@@ -56,8 +62,8 @@ class QKANLayer(nn.Module):
             Group of neurons
         device :
             Device to use
-        solver : Union[Literal["qml", "exact"], Callable]
-            Solver to use
+        solver : Union[str, Callable]
+            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable
         ansatz : Union[str, Callable]
             Ansatz to use, "pz_encoding", "px_encoding", "rpz_encoding" or custom
         qml_device : str
@@ -102,7 +108,16 @@ class QKANLayer(nn.Module):
         reps: int = 3,
         group: Union[int, tuple] = -1,
         device="cpu",
-        solver: Union[Literal["qml", "exact"], Callable] = "exact",
+        solver: Union[
+            Literal[
+                "qml",
+                "exact",
+                "flash",
+                "cutn",
+                "tn",
+            ],
+            Callable,
+        ] = "exact",
         qml_device="default.qubit",
         ansatz: Union[str, Callable] = "pz_encoding",
         theta_size: Optional[list[int]] = None,
@@ -136,7 +151,16 @@ class QKANLayer(nn.Module):
         self.reps = reps
         self.group = group
         self.device = device
-        self.solver: Union[Literal["qml", "exact"], Callable] = solver
+        self.solver: Union[
+            Literal[
+                "qml",
+                "exact",
+                "flash",
+                "cutn",
+                "tn",
+            ],
+            Callable,
+        ] = solver
         self.qml_device = qml_device
         self.ansatz = ansatz
         self.theta_size = theta_size
@@ -148,93 +172,126 @@ class QKANLayer(nn.Module):
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
 
-        if callable(solver) or callable(ansatz):
-            if not theta_size:
+        self.preact_trainable = preact_trainable
+        self.preact_init = preact_init
+        self.postact_weight_trainable = postact_weight_trainable
+        self.postact_bias_trainable = postact_bias_trainable
+
+        self.init_parameters()
+
+    def init_parameters(self):
+        """Create all learnable parameters.
+
+        Called once from ``__init__`` to allocate ``nn.Parameter`` objects.
+        Reads configuration from ``self.*`` attributes.
+        If ``self.seed`` is set, the RNG is seeded for reproducibility.
+
+        Calls ``xavier_init()`` at the end to apply Xavier normal
+        initialization to theta (and preacts when ``preact_init`` is set).
+        """
+        if self.seed is not None:
+            torch.manual_seed(self.seed)
+            np.random.seed(self.seed)
+            random.seed(self.seed)
+
+        group = self.group
+        reps = self.reps
+        device = self.device
+        p_dtype = self.p_dtype
+
+        # -- theta --
+        if callable(self.solver) or callable(self.ansatz):
+            if not self.theta_size:
                 raise ValueError("theta_size is required for custom ansatz")
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*theta_size, device=device, dtype=p_dtype)
-                )
+                torch.empty(*self.theta_size, device=device, dtype=p_dtype)
             )
-        elif ansatz == "pz_encoding" or ansatz == "pz":
+        elif self.ansatz in ("pz_encoding", "pz", "mix"):
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*group, reps + 1, 2, device=device, dtype=p_dtype)
-                )
+                torch.empty(*group, reps + 1, 2, device=device, dtype=p_dtype)
             )
-        elif ansatz == "rpz_encoding" or ansatz == "rpz":
-            if not preact_trainable:
-                warnings.warn(
-                    "Reduced pz encoding requires preact_trainable=True, set automatically."
-                )
-                preact_trainable = True
+        elif self.ansatz in ("rpz_encoding", "rpz"):
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
-                )
+                torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
             )
-        elif ansatz == "px_encoding" or ansatz == "px":
+        elif self.ansatz in ("px_encoding", "px"):
             self.theta = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
-                )
+                torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
             )
+        elif self.ansatz == "real":
+            self.theta = nn.Parameter(
+                torch.empty(*group, reps, 1, device=device, dtype=p_dtype)
+            )
+            self.c_dtype = torch.bfloat16
         else:
             raise NotImplementedError()
 
-        if ba_trainable:
+        # -- base_weight --
+        if self.ba_trainable:
             self.base_weight = torch.nn.Parameter(
-                0.5 * torch.ones(out_dim, in_dim, device=device, dtype=p_dtype),
-                requires_grad=ba_trainable,
+                0.5
+                * torch.ones(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
+                requires_grad=self.ba_trainable,
             )
         else:
             self.base_weight = torch.nn.Parameter(
-                torch.zeros(out_dim, in_dim, device=device, dtype=p_dtype),
-                requires_grad=ba_trainable,
+                torch.zeros(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
+                requires_grad=self.ba_trainable,
             )
 
-        self.preact_trainable = preact_trainable
-        if not preact_init:
-            self.preacts_weight = nn.Parameter(
-                torch.ones(*group, reps, device=device, dtype=p_dtype),
-                requires_grad=preact_trainable,
-            )
-            self.preacts_bias = nn.Parameter(
-                torch.zeros(*group, reps, device=device, dtype=p_dtype),
-                requires_grad=preact_trainable,
-            )
-        else:
-            self.preacts_weight = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*group, reps, device=device, dtype=p_dtype)
-                ),
-                requires_grad=preact_trainable,
-            )
-            self.preacts_bias = nn.Parameter(
-                nn.init.xavier_normal_(
-                    torch.empty(*group, reps, device=device, dtype=p_dtype)
-                ),
-                requires_grad=preact_trainable,
-            )
-        self.preact_init = preact_init
+        # -- preacts_weight / preacts_bias --
+        # rpz_encoding always needs trainable bias (even when preact_trainable=False)
+        _bias_trainable = self.preact_trainable or self.ansatz in (
+            "rpz_encoding",
+            "rpz",
+        )
+        self.preacts_weight = nn.Parameter(
+            torch.ones(*group, reps, device=device, dtype=p_dtype),
+            requires_grad=self.preact_trainable,
+        )
+        self.preacts_bias = nn.Parameter(
+            torch.zeros(*group, reps, device=device, dtype=p_dtype),
+            requires_grad=_bias_trainable,
+        )
 
-        self.postact_weight_trainable = postact_weight_trainable
+        # -- postact_weights / postact_bias --
         self.postact_weights = nn.Parameter(
-            torch.ones(out_dim, in_dim, device=device, dtype=p_dtype),
-            requires_grad=postact_weight_trainable,
+            torch.ones(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
+            requires_grad=self.postact_weight_trainable,
         )
-        self.postact_bias_trainable = postact_bias_trainable
         self.postact_bias = nn.Parameter(
-            torch.zeros(out_dim, in_dim, device=device, dtype=p_dtype),
-            requires_grad=postact_bias_trainable,
+            torch.zeros(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
+            requires_grad=self.postact_bias_trainable,
         )
+
+        # -- mask --
         self.mask = nn.Parameter(
-            torch.ones(out_dim, in_dim, device=device, dtype=p_dtype),
+            torch.ones(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
             requires_grad=False,
         )
-        if is_batchnorm:
-            self.bn = nn.BatchNorm1d(in_dim, device=device, dtype=p_dtype)
+
+        # -- batchnorm --
+        if self.is_batchnorm:
+            self.bn = nn.BatchNorm1d(self.in_dim, device=device, dtype=p_dtype)
+
         self._x0: Optional[torch.Tensor] = None
+
+        try:
+            self.xavier_init()
+        except Exception:
+            warnings.warn("xavier_init failed, using default initialization")
+
+    def xavier_init(self):
+        """Apply Xavier normal initialization to theta and preacts.
+
+        Applies ``nn.init.xavier_normal_`` in-place to ``self.theta``.
+        When ``self.preact_init`` is set, also applies it to
+        ``self.preacts_weight`` and ``self.preacts_bias``.
+        """
+        nn.init.xavier_normal_(self.theta.data)
+        if self.preact_init:
+            nn.init.xavier_normal_(self.preacts_weight.data)
+            nn.init.xavier_normal_(self.preacts_bias.data)
 
     def to(self, *args, **kwargs):
         """
@@ -317,6 +374,41 @@ class QKANLayer(nn.Module):
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
             ).to(self.p_dtype)
+        elif self.solver == "flash":
+            if not _FLASH_AVAILABLE:
+                raise ImportError(
+                    "Triton is required for solver='flash'. "
+                    "Install with: pip install triton"
+                )
+            postacts = flash_exact_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
+        elif self.solver == "cutn" or self.solver == "tn":
+            postacts = cutn_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
         elif callable(self.solver):
             postacts = self.solver(
                 x,
@@ -342,7 +434,38 @@ class QKANLayer(nn.Module):
         return x
 
     def reset_parameters(self):
-        self.theta.data.copy_(torch.zeros(self.theta.shape, dtype=self.p_dtype))
+        """
+        Reset all learnable parameters to default values in-place.
+
+        Note: The thetas are set to zero to do layer extension.
+        If you wish to re-init the parameters, please use `init_parameters` instead.
+        """
+        if self.seed is not None:
+            torch.manual_seed(self.seed)
+            np.random.seed(self.seed)
+            random.seed(self.seed)
+
+        self.theta.data.zero_()
+        if self.ansatz == "real":
+            self.c_dtype = torch.bfloat16
+
+        if self.ba_trainable:
+            self.base_weight.data.fill_(0.5)
+        else:
+            self.base_weight.data.zero_()
+
+        self.preacts_weight.data.fill_(1)
+        self.preacts_bias.data.zero_()
+
+        self.postact_weights.data.fill_(1)
+        self.postact_bias.data.zero_()
+
+        self.mask.data.fill_(1)
+
+        if self.is_batchnorm:
+            self.bn.reset_parameters()
+
+        self._x0 = None
 
     @torch.no_grad()
     def forward_no_sum(self, x: torch.Tensor):
@@ -385,6 +508,41 @@ class QKANLayer(nn.Module):
                 group=self.group,
                 preacts_trainable=self.preact_trainable,
                 fast_measure=self.fast_measure,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
+        elif self.solver == "flash":
+            if not _FLASH_AVAILABLE:
+                raise ImportError(
+                    "Triton is required for solver='flash'. "
+                    "Install with: pip install triton"
+                )
+            postacts = flash_exact_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
+        elif self.solver == "cutn":
+            postacts = cutn_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
                 dtype=self.c_dtype,
             ).to(self.p_dtype)
         else:
@@ -465,8 +623,8 @@ class QKAN(nn.Module):
             Group of neurons
         device : Literal["cpu", "cuda"]
             Device to use
-        solver : Literal["qml", "exact"]
-            Solver to use
+        solver : Union[str, Callable]
+            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable
         qml_device : str
             PennyLane device to use
         layers : QKANModuleList
@@ -507,7 +665,16 @@ class QKAN(nn.Module):
         is_batchnorm: bool = False,
         hidden: int = 0,
         device="cpu",
-        solver: Union[Literal["qml", "exact"], Callable] = "exact",
+        solver: Union[
+            Literal[
+                "qml",
+                "exact",
+                "flash",
+                "cutn",
+                "tn",
+            ],
+            Callable,
+        ] = "exact",
         qml_device: str = "default.qubit",
         ansatz: Union[str, Callable] = "pz_encoding",
         theta_size: Optional[list[int]] = None,
@@ -544,8 +711,8 @@ class QKAN(nn.Module):
                 Number of hidden units in map layer, default: 0
             device :
                 Device to use, default: "cpu"
-            solver : Union[Literal["qml", "exact"], Callable]
-                Solver to use, default: "exact"
+            solver : Union[str, Callable]
+                Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable, default: "exact"
             ansatz : Union[str, Callable]
                 Ansatz to use, "pz_encoding" ("pz"), "px_encoding" ("px"), "rpz_encoding" ("rpz", reduced pz encoding) or custom
             qml_device : str
@@ -586,7 +753,16 @@ class QKAN(nn.Module):
         self.reps = reps
         self.group = group
         self.device = device
-        self.solver: Union[Literal["qml", "exact"], Callable] = solver
+        self.solver: Union[
+            Literal[
+                "qml",
+                "exact",
+                "flash",
+                "cutn",
+                "tn",
+            ],
+            Callable,
+        ] = solver
         self.ansatz = ansatz
         self.qml_device = qml_device
         self.norm_out = norm_out
@@ -691,6 +867,7 @@ class QKAN(nn.Module):
             raise NotImplementedError()
 
         x = x.view(-1, T)
+        B_flat = x.shape[0]  # Flattened batch size (e.g., (B,C,T) -> (B*C,T))
         if self.input_id is not None:
             x = x[:, self.input_id.long()]
 
@@ -708,7 +885,8 @@ class QKAN(nn.Module):
         for layer in self.layers:
             if self.save_act and isinstance(layer, QKANLayer):
                 self.subnode_actscale.append(torch.std(x, dim=0).detach())
-                preacts = x[:, None, :].expand(B, layer.out_dim, layer.in_dim)
+                # Use the flattened batch size to match x after view(-1, T)
+                preacts = x[:, None, :].expand(B_flat, layer.out_dim, layer.in_dim)
                 postacts = layer.forward_no_sum(x)  # shape: (batch, out_dim, in_dim)
 
             x = layer(x)
@@ -781,6 +959,20 @@ class QKAN(nn.Module):
                 layer.weight.data.copy_(another_model.layers[count - 1].weight.data)  # type: ignore
                 layer.bias.data.copy_(another_model.layers[count - 1].bias.data)  # type: ignore
                 count += 2
+        return self
+
+    def initialize_parameters(self):
+        """Reinitialize parameters of all QKANLayer layers in-place."""
+        for layer in self.layers:
+            if isinstance(layer, QKANLayer):
+                layer.reset_parameters()
+        return self
+
+    def xavier_init(self):
+        """Apply Xavier normal initialization to all QKANLayer layers."""
+        for layer in self.layers:
+            if isinstance(layer, QKANLayer):
+                layer.xavier_init()
         return self
 
     def refine(self, new_reps: int) -> "QKAN":

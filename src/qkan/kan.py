@@ -352,7 +352,7 @@ class KANModuleList(torch.nn.ModuleList):
         super(KANModuleList, self).__init__()
 
     # make type hint for getitem method
-    def __getitem__(self, idx) -> Union[KANLinear, "KANModuleList"]:
+    def __getitem__(self, idx) -> Union[KANLinear, "KANModuleList"]:  # type: ignore
         return super(KANModuleList, self).__getitem__(idx)
 
 
