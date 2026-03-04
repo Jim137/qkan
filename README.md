@@ -124,7 +124,7 @@ You can find more examples in the [examples](https://jim137.github.io/qkan/examp
 - **Default: `pz`** — most reliable quality across tasks.
 - **`real`** can be faster/smaller, but may **hurt accuracy/convergence** on some workloads—only use if you validate it on your task.
 
-See #8 for more discussion on solver choices and tradeoffs.
+See [#8](https://github.com/Jim137/qkan/issues/8) for more discussion on solver choices and tradeoffs.
 
 ## Contributing
 
