@@ -79,7 +79,9 @@ def _pz_encoding_kernel(
     b_offs = pid_b * BLOCK_B + tl.arange(0, BLOCK_B)
     b_mask = b_offs < batch_size
 
-    x_vals = tl.load(x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0)
+    x_vals = tl.load(
+        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+    )
 
     INV_SQRT2: tl.constexpr = 0.7071067811865476
     r0 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
@@ -115,8 +117,12 @@ def _pz_encoding_kernel(
         # Rz(enc) — vectorized data trig
         enc = x_vals
         if PREACTS_TRAINABLE:
-            w = tl.load(pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r)
-            b = tl.load(pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r)
+            w = tl.load(
+                pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+            )
+            b = tl.load(
+                pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+            )
             enc = w * x_vals + b
 
         a = enc * 0.5
@@ -288,7 +294,9 @@ def _rpz_encoding_kernel(
     b_offs = pid_b * BLOCK_B + tl.arange(0, BLOCK_B)
     b_mask = b_offs < batch_size
 
-    x_vals = tl.load(x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0)
+    x_vals = tl.load(
+        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+    )
 
     INV_SQRT2: tl.constexpr = 0.7071067811865476
     r0 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
@@ -486,7 +494,9 @@ def _rpz_encoding_backward_kernel(
     b_mask = b_offs < batch_size
     b_range = tl.arange(0, BLOCK_B)
 
-    x_vals = tl.load(x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0)
+    x_vals = tl.load(
+        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+    )
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     pw_base = pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i
     pb_base = pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i
@@ -500,10 +510,26 @@ def _rpz_encoding_backward_kernel(
     r1 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
     i1 = tl.zeros([BLOCK_B], dtype=tl.float32)
 
-    tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-    tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-    tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-    tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+    tl.store(
+        states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
+        r0,
+        mask=b_mask,
+    )
+    tl.store(
+        states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
+        i0,
+        mask=b_mask,
+    )
+    tl.store(
+        states_base + 0 * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
+        r1,
+        mask=b_mask,
+    )
+    tl.store(
+        states_base + 0 * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
+        i1,
+        mask=b_mask,
+    )
 
     state_idx = 1
     for layer in range(reps):
@@ -517,10 +543,38 @@ def _rpz_encoding_backward_kernel(
         ni1 = s * i0 + c * i1
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            r0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            i0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            r1,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            i1,
+            mask=b_mask,
+        )
         state_idx += 1
 
         w = tl.load(pw_base + layer * stride_pw_r)
@@ -536,10 +590,38 @@ def _rpz_encoding_backward_kernel(
         ni1 = i1 * c + r1 * s
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            r0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            i0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            r1,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            i1,
+            mask=b_mask,
+        )
         state_idx += 1
 
     # Final Ry(theta[reps,0])
@@ -554,7 +636,11 @@ def _rpz_encoding_backward_kernel(
     r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
     # ── Phase 2: Measurement gradient ──
-    go = tl.load(grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i, mask=b_mask, other=0.0)
+    go = tl.load(
+        grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i,
+        mask=b_mask,
+        other=0.0,
+    )
 
     if FAST_MEASURE:
         alpha_norm = tl.sqrt(r0 * r0 + i0 * i0)
@@ -577,10 +663,26 @@ def _rpz_encoding_backward_kernel(
 
     # Backward through final Ry(theta[reps,0])
     state_idx -= 1
-    sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-    si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
-    sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
-    si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+    sr0 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
+    si0 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
+    sr1 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
+    si1 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
 
     t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p)
     a = t0 * 0.5
@@ -588,10 +690,15 @@ def _rpz_encoding_backward_kernel(
     s = tl.sin(a)
 
     grad_t0_vec = 0.5 * (
-        ar0 * (-s * sr0 - c * sr1) + ai0 * (-s * si0 - c * si1)
-        + ar1 * (c * sr0 - s * sr1) + ai1 * (c * si0 - s * si1)
+        ar0 * (-s * sr0 - c * sr1)
+        + ai0 * (-s * si0 - c * si1)
+        + ar1 * (c * sr0 - s * sr1)
+        + ai1 * (c * si0 - s * si1)
     )
-    tl.atomic_add(gt_base + reps * stride_gt_r + 0 * stride_gt_p, tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)))
+    tl.atomic_add(
+        gt_base + reps * stride_gt_r + 0 * stride_gt_p,
+        tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)),
+    )
 
     nar0 = c * ar0 + s * ar1
     nai0 = c * ai0 + s * ai1
@@ -602,10 +709,38 @@ def _rpz_encoding_backward_kernel(
     for layer in range(reps - 1, -1, -1):
         # Backward through Rz(enc)
         state_idx -= 1
-        sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-        si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
-        sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
-        si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+        sr0 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        si0 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        sr1 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        si1 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
 
         w = tl.load(pw_base + layer * stride_pw_r)
         b = tl.load(pb_base + layer * stride_pb_r)
@@ -621,11 +756,17 @@ def _rpz_encoding_backward_kernel(
         )
 
         tl.atomic_add(
-            grad_pw_ptr + idx_o * stride_gpw_o + idx_i * stride_gpw_i + layer * stride_gpw_r,
+            grad_pw_ptr
+            + idx_o * stride_gpw_o
+            + idx_i * stride_gpw_i
+            + layer * stride_gpw_r,
             tl.sum(tl.where(b_mask, grad_enc * x_vals, 0.0)),
         )
         tl.atomic_add(
-            grad_pb_ptr + idx_o * stride_gpb_o + idx_i * stride_gpb_i + layer * stride_gpb_r,
+            grad_pb_ptr
+            + idx_o * stride_gpb_o
+            + idx_i * stride_gpb_i
+            + layer * stride_gpb_r,
             tl.sum(tl.where(b_mask, grad_enc, 0.0)),
         )
         grad_x_local += grad_enc * w
@@ -638,10 +779,38 @@ def _rpz_encoding_backward_kernel(
 
         # Backward through Ry(theta[l,0])
         state_idx -= 1
-        sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-        si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
-        sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
-        si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+        sr0 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        si0 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        sr1 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        si1 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
 
         t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
         a = t0 * 0.5
@@ -649,10 +818,15 @@ def _rpz_encoding_backward_kernel(
         s = tl.sin(a)
 
         grad_t0_vec = 0.5 * (
-            ar0 * (-s * sr0 - c * sr1) + ai0 * (-s * si0 - c * si1)
-            + ar1 * (c * sr0 - s * sr1) + ai1 * (c * si0 - s * si1)
+            ar0 * (-s * sr0 - c * sr1)
+            + ai0 * (-s * si0 - c * si1)
+            + ar1 * (c * sr0 - s * sr1)
+            + ai1 * (c * si0 - s * si1)
         )
-        tl.atomic_add(gt_base + layer * stride_gt_r + 0 * stride_gt_p, tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)))
+        tl.atomic_add(
+            gt_base + layer * stride_gt_r + 0 * stride_gt_p,
+            tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)),
+        )
 
         nar0 = c * ar0 + s * ar1
         nai0 = c * ai0 + s * ai1
@@ -680,7 +854,9 @@ def triton_rpz_backward(x, theta, pw, pb, grad_output, fast_measure):
     n_states = 2 * reps + 2
     n_b_blocks = triton.cdiv(batch, BLOCK_B)
     n_programs = out_dim * in_dim * n_b_blocks
-    states = torch.empty(n_programs, n_states, BLOCK_B, 4, device=x.device, dtype=x.dtype)
+    states = torch.empty(
+        n_programs, n_states, BLOCK_B, 4, device=x.device, dtype=x.dtype
+    )
 
     grad_theta = torch.zeros_like(theta)
     grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=x.dtype)
@@ -747,7 +923,9 @@ def triton_rpz_backward(x, theta, pw, pb, grad_output, fast_measure):
 @triton.jit
 def _round_to_int(x):
     """Round scalar to nearest integer, returned as same dtype. bf16-safe."""
-    return tl.where(x >= 0, (x + 0.5).to(tl.int32), (x - 0.5).to(tl.int32)).to(tl.float32)
+    return tl.where(x >= 0, (x + 0.5).to(tl.int32), (x - 0.5).to(tl.int32)).to(
+        tl.float32
+    )
 
 
 @triton.jit
@@ -847,7 +1025,9 @@ def _real_encoding_kernel(
     b_mask = b_offs < batch_size
 
     # Load x values for the batch tile [BLOCK_B]
-    x_vals = tl.load(x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0)
+    x_vals = tl.load(
+        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+    )
 
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     INV_SQRT2: tl.constexpr = 0.7071067811865476
@@ -876,10 +1056,16 @@ def _real_encoding_kernel(
             enc = x_vals.to(tl.float32)
             if PREACTS_TRAINABLE:
                 w = tl.load(
-                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                    pw_ptr
+                    + idx_o * stride_pw_o
+                    + idx_i * stride_pw_i
+                    + layer * stride_pw_r
                 )
                 b = tl.load(
-                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                    pb_ptr
+                    + idx_o * stride_pb_o
+                    + idx_i * stride_pb_i
+                    + layer * stride_pb_r
                 )
                 enc = w.to(tl.float32) * x_vals.to(tl.float32) + b.to(tl.float32)
 
@@ -920,10 +1106,16 @@ def _real_encoding_kernel(
             enc = x_vals
             if PREACTS_TRAINABLE:
                 w = tl.load(
-                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                    pw_ptr
+                    + idx_o * stride_pw_o
+                    + idx_i * stride_pw_i
+                    + layer * stride_pw_r
                 )
                 b = tl.load(
-                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                    pb_ptr
+                    + idx_o * stride_pb_o
+                    + idx_i * stride_pb_i
+                    + layer * stride_pb_r
                 )
                 enc = w * x_vals + b
 
@@ -1025,7 +1217,9 @@ def _pz_encoding_backward_kernel(
     b_mask = b_offs < batch_size
     b_range = tl.arange(0, BLOCK_B)
 
-    x_vals = tl.load(x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0)
+    x_vals = tl.load(
+        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+    )
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     program_idx = pid_oi * tl.cdiv(batch_size, BLOCK_B) + pid_b
     states_base = states_ptr + program_idx * stride_s_n
@@ -1037,10 +1231,26 @@ def _pz_encoding_backward_kernel(
     r1 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
     i1 = tl.zeros([BLOCK_B], dtype=tl.float32)
 
-    tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-    tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-    tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-    tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+    tl.store(
+        states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
+        r0,
+        mask=b_mask,
+    )
+    tl.store(
+        states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
+        i0,
+        mask=b_mask,
+    )
+    tl.store(
+        states_base + 0 * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
+        r1,
+        mask=b_mask,
+    )
+    tl.store(
+        states_base + 0 * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
+        i1,
+        mask=b_mask,
+    )
 
     state_idx = 1
     for layer in range(reps):
@@ -1049,14 +1259,44 @@ def _pz_encoding_backward_kernel(
         a = t0 * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
-        nr0 = r0 * c + i0 * s;  ni0 = i0 * c - r0 * s
-        nr1 = r1 * c - i1 * s;  ni1 = i1 * c + r1 * s
+        nr0 = r0 * c + i0 * s
+        ni0 = i0 * c - r0 * s
+        nr1 = r1 * c - i1 * s
+        ni1 = i1 * c + r1 * s
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            r0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            i0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            r1,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            i1,
+            mask=b_mask,
+        )
         state_idx += 1
 
         # Ry(t1) — scalar trig
@@ -1064,34 +1304,98 @@ def _pz_encoding_backward_kernel(
         a = t1 * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
-        nr0 = c * r0 - s * r1;  ni0 = c * i0 - s * i1
-        nr1 = s * r0 + c * r1;  ni1 = s * i0 + c * i1
+        nr0 = c * r0 - s * r1
+        ni0 = c * i0 - s * i1
+        nr1 = s * r0 + c * r1
+        ni1 = s * i0 + c * i1
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            r0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            i0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            r1,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            i1,
+            mask=b_mask,
+        )
         state_idx += 1
 
         # Rz(enc) — vectorized data trig
         enc = x_vals
         if PREACTS_TRAINABLE:
-            w = tl.load(pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r)
-            b = tl.load(pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r)
+            w = tl.load(
+                pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+            )
+            b = tl.load(
+                pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+            )
             enc = w * x_vals + b
 
         a = enc * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
-        nr0 = r0 * c + i0 * s;  ni0 = i0 * c - r0 * s
-        nr1 = r1 * c - i1 * s;  ni1 = i1 * c + r1 * s
+        nr0 = r0 * c + i0 * s
+        ni0 = i0 * c - r0 * s
+        nr1 = r1 * c - i1 * s
+        ni1 = i1 * c + r1 * s
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-        tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            r0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            i0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            r1,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            i1,
+            mask=b_mask,
+        )
         state_idx += 1
 
     # Final Rz(t0)
@@ -1099,14 +1403,32 @@ def _pz_encoding_backward_kernel(
     a = t0 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
-    nr0 = r0 * c + i0 * s;  ni0 = i0 * c - r0 * s
-    nr1 = r1 * c - i1 * s;  ni1 = i1 * c + r1 * s
+    nr0 = r0 * c + i0 * s
+    ni0 = i0 * c - r0 * s
+    nr1 = r1 * c - i1 * s
+    ni1 = i1 * c + r1 * s
     r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-    tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-    tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-    tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-    tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+    tl.store(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
+        r0,
+        mask=b_mask,
+    )
+    tl.store(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
+        i0,
+        mask=b_mask,
+    )
+    tl.store(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
+        r1,
+        mask=b_mask,
+    )
+    tl.store(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
+        i1,
+        mask=b_mask,
+    )
     state_idx += 1
 
     # Final Ry(t1)
@@ -1114,23 +1436,33 @@ def _pz_encoding_backward_kernel(
     a = t1 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
-    nr0 = c * r0 - s * r1;  ni0 = c * i0 - s * i1
-    nr1 = s * r0 + c * r1;  ni1 = s * i0 + c * i1
+    nr0 = c * r0 - s * r1
+    ni0 = c * i0 - s * i1
+    nr1 = s * r0 + c * r1
+    ni1 = s * i0 + c * i1
     r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
     # ── Phase 2: Measurement gradient ──
-    go = tl.load(grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i, mask=b_mask, other=0.0)
+    go = tl.load(
+        grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i,
+        mask=b_mask,
+        other=0.0,
+    )
 
     if FAST_MEASURE:
         alpha_norm = tl.sqrt(r0 * r0 + i0 * i0)
         beta_norm = tl.sqrt(r1 * r1 + i1 * i1)
         inv_alpha = tl.where(alpha_norm > 1e-30, 1.0 / alpha_norm, 0.0)
         inv_beta = tl.where(beta_norm > 1e-30, 1.0 / beta_norm, 0.0)
-        ar0 = go * r0 * inv_alpha;  ai0 = go * i0 * inv_alpha
-        ar1 = -go * r1 * inv_beta;  ai1 = -go * i1 * inv_beta
+        ar0 = go * r0 * inv_alpha
+        ai0 = go * i0 * inv_alpha
+        ar1 = -go * r1 * inv_beta
+        ai1 = -go * i1 * inv_beta
     else:
-        ar0 = 2.0 * go * r0;  ai0 = 2.0 * go * i0
-        ar1 = -2.0 * go * r1;  ai1 = -2.0 * go * i1
+        ar0 = 2.0 * go * r0
+        ai0 = 2.0 * go * i0
+        ar1 = -2.0 * go * r1
+        ai1 = -2.0 * go * i1
 
     # ── Phase 3: Backward sweep ──
     grad_x_local = tl.zeros([BLOCK_B], dtype=tl.float32)
@@ -1138,10 +1470,26 @@ def _pz_encoding_backward_kernel(
 
     # Backward through final Ry(t1_final)
     state_idx -= 1
-    sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-    si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
-    sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
-    si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+    sr0 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
+    si0 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
+    sr1 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
+    si1 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
 
     t1 = tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p)
     a = t1 * 0.5
@@ -1149,21 +1497,44 @@ def _pz_encoding_backward_kernel(
     s = tl.sin(a)
 
     grad_t1_vec = 0.5 * (
-        ar0 * (-s * sr0 - c * sr1) + ai0 * (-s * si0 - c * si1)
-        + ar1 * (c * sr0 - s * sr1) + ai1 * (c * si0 - s * si1)
+        ar0 * (-s * sr0 - c * sr1)
+        + ai0 * (-s * si0 - c * si1)
+        + ar1 * (c * sr0 - s * sr1)
+        + ai1 * (c * si0 - s * si1)
     )
-    tl.atomic_add(gt_base + reps * stride_gt_r + 1 * stride_gt_p, tl.sum(tl.where(b_mask, grad_t1_vec, 0.0)))
+    tl.atomic_add(
+        gt_base + reps * stride_gt_r + 1 * stride_gt_p,
+        tl.sum(tl.where(b_mask, grad_t1_vec, 0.0)),
+    )
 
-    nar0 = c * ar0 + s * ar1;  nai0 = c * ai0 + s * ai1
-    nar1 = -s * ar0 + c * ar1;  nai1 = -s * ai0 + c * ai1
+    nar0 = c * ar0 + s * ar1
+    nai0 = c * ai0 + s * ai1
+    nar1 = -s * ar0 + c * ar1
+    nai1 = -s * ai0 + c * ai1
     ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
     # Backward through final Rz(t0_final)
     state_idx -= 1
-    sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-    si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
-    sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
-    si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+    sr0 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
+    si0 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
+    sr1 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
+    si1 = tl.load(
+        states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
+        mask=b_mask,
+        other=0.0,
+    )
 
     t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p)
     a = t0 * 0.5
@@ -1174,24 +1545,61 @@ def _pz_encoding_backward_kernel(
         -s * (ar0 * sr0 + ai0 * si0 + ar1 * sr1 + ai1 * si1)
         + c * (ar0 * si0 - ai0 * sr0 - ar1 * si1 + ai1 * sr1)
     )
-    tl.atomic_add(gt_base + reps * stride_gt_r + 0 * stride_gt_p, tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)))
+    tl.atomic_add(
+        gt_base + reps * stride_gt_r + 0 * stride_gt_p,
+        tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)),
+    )
 
-    nar0 = c * ar0 - s * ai0;  nai0 = s * ar0 + c * ai0
-    nar1 = c * ar1 + s * ai1;  nai1 = -s * ar1 + c * ai1
+    nar0 = c * ar0 - s * ai0
+    nai0 = s * ar0 + c * ai0
+    nar1 = c * ar1 + s * ai1
+    nai1 = -s * ar1 + c * ai1
     ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
     for layer in range(reps - 1, -1, -1):
         # Backward through Rz(enc)
         state_idx -= 1
-        sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-        si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
-        sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
-        si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+        sr0 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        si0 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        sr1 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        si1 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
 
         enc = x_vals
         if PREACTS_TRAINABLE:
-            w = tl.load(pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r)
-            b = tl.load(pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r)
+            w = tl.load(
+                pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+            )
+            b = tl.load(
+                pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+            )
             enc = w * x_vals + b
 
         a = enc * 0.5
@@ -1205,27 +1613,63 @@ def _pz_encoding_backward_kernel(
 
         if PREACTS_TRAINABLE:
             tl.atomic_add(
-                grad_pw_ptr + idx_o * stride_gpw_o + idx_i * stride_gpw_i + layer * stride_gpw_r,
+                grad_pw_ptr
+                + idx_o * stride_gpw_o
+                + idx_i * stride_gpw_i
+                + layer * stride_gpw_r,
                 tl.sum(tl.where(b_mask, grad_enc * x_vals, 0.0)),
             )
             tl.atomic_add(
-                grad_pb_ptr + idx_o * stride_gpb_o + idx_i * stride_gpb_i + layer * stride_gpb_r,
+                grad_pb_ptr
+                + idx_o * stride_gpb_o
+                + idx_i * stride_gpb_i
+                + layer * stride_gpb_r,
                 tl.sum(tl.where(b_mask, grad_enc, 0.0)),
             )
             grad_x_local += grad_enc * w
         else:
             grad_x_local += grad_enc
 
-        nar0 = c * ar0 - s * ai0;  nai0 = s * ar0 + c * ai0
-        nar1 = c * ar1 + s * ai1;  nai1 = -s * ar1 + c * ai1
+        nar0 = c * ar0 - s * ai0
+        nai0 = s * ar0 + c * ai0
+        nar1 = c * ar1 + s * ai1
+        nai1 = -s * ar1 + c * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
         # Backward through Ry(t1)
         state_idx -= 1
-        sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-        si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
-        sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
-        si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+        sr0 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        si0 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        sr1 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        si1 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
 
         t1 = tl.load(theta_base + layer * stride_t_r + 1 * stride_t_p)
         a = t1 * 0.5
@@ -1233,21 +1677,56 @@ def _pz_encoding_backward_kernel(
         s = tl.sin(a)
 
         grad_t1_vec = 0.5 * (
-            ar0 * (-s * sr0 - c * sr1) + ai0 * (-s * si0 - c * si1)
-            + ar1 * (c * sr0 - s * sr1) + ai1 * (c * si0 - s * si1)
+            ar0 * (-s * sr0 - c * sr1)
+            + ai0 * (-s * si0 - c * si1)
+            + ar1 * (c * sr0 - s * sr1)
+            + ai1 * (c * si0 - s * si1)
         )
-        tl.atomic_add(gt_base + layer * stride_gt_r + 1 * stride_gt_p, tl.sum(tl.where(b_mask, grad_t1_vec, 0.0)))
+        tl.atomic_add(
+            gt_base + layer * stride_gt_r + 1 * stride_gt_p,
+            tl.sum(tl.where(b_mask, grad_t1_vec, 0.0)),
+        )
 
-        nar0 = c * ar0 + s * ar1;  nai0 = c * ai0 + s * ai1
-        nar1 = -s * ar0 + c * ar1;  nai1 = -s * ai0 + c * ai1
+        nar0 = c * ar0 + s * ar1
+        nai0 = c * ai0 + s * ai1
+        nar1 = -s * ar0 + c * ar1
+        nai1 = -s * ai0 + c * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
         # Backward through Rz(t0)
         state_idx -= 1
-        sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-        si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
-        sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
-        si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+        sr0 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        si0 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        sr1 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
+        si1 = tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        )
 
         t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
         a = t0 * 0.5
@@ -1258,10 +1737,15 @@ def _pz_encoding_backward_kernel(
             -s * (ar0 * sr0 + ai0 * si0 + ar1 * sr1 + ai1 * si1)
             + c * (ar0 * si0 - ai0 * sr0 - ar1 * si1 + ai1 * sr1)
         )
-        tl.atomic_add(gt_base + layer * stride_gt_r + 0 * stride_gt_p, tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)))
+        tl.atomic_add(
+            gt_base + layer * stride_gt_r + 0 * stride_gt_p,
+            tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)),
+        )
 
-        nar0 = c * ar0 - s * ai0;  nai0 = s * ar0 + c * ai0
-        nar1 = c * ar1 + s * ai1;  nai1 = -s * ar1 + c * ai1
+        nar0 = c * ar0 - s * ai0
+        nai0 = s * ar0 + c * ai0
+        nar1 = c * ar1 + s * ai1
+        nai1 = -s * ar1 + c * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
     gx_offs = grad_x_ptr + b_offs * stride_gx_b + idx_i * stride_gx_i
@@ -1282,7 +1766,9 @@ def triton_pz_backward(x, theta, pw, pb, grad_output, preacts_trainable, fast_me
     n_states = 3 * reps + 3  # H state + 3 per layer + after final Rz
     n_b_blocks = triton.cdiv(batch, BLOCK_B)
     n_programs = out_dim * in_dim * n_b_blocks
-    states = torch.empty(n_programs, n_states, BLOCK_B, 4, device=x.device, dtype=x.dtype)
+    states = torch.empty(
+        n_programs, n_states, BLOCK_B, 4, device=x.device, dtype=x.dtype
+    )
 
     grad_theta = torch.zeros_like(theta)
     grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=x.dtype)
@@ -1391,7 +1877,7 @@ def triton_real_forward(
 
     output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
 
-    compute_bf16 = (c_dtype == torch.bfloat16)
+    compute_bf16 = c_dtype == torch.bfloat16
     BLOCK_B = 32 if compute_bf16 else 1
     grid = (out_dim * in_dim, triton.cdiv(batch, BLOCK_B))
 
@@ -1515,7 +2001,9 @@ def _real_encoding_backward_kernel(
     b_offs = pid_b * BLOCK_B + tl.arange(0, BLOCK_B)
     b_mask = b_offs < batch_size
 
-    x_vals = tl.load(x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0)
+    x_vals = tl.load(
+        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+    )
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     # states_base indexes into (n_programs, n_states, BLOCK_B, n_components)
     program_idx = pid_oi * tl.cdiv(batch_size, BLOCK_B) + pid_b
@@ -1530,15 +2018,37 @@ def _real_encoding_backward_kernel(
         r0 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
         r1 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
 
-        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, r1, mask=b_mask)
+        tl.store(
+            states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
+            r0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
+            r1,
+            mask=b_mask,
+        )
 
         state_idx = 1
         for layer in range(reps):
             r0, r1 = r1, r0  # X gate
 
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, r1, mask=b_mask)
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                r0,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                r1,
+                mask=b_mask,
+            )
             state_idx += 1
 
             # Theta: scalar load + scalar trig, broadcast to batch tile
@@ -1550,24 +2060,58 @@ def _real_encoding_backward_kernel(
             nr1 = s * r0 + c * r1
             r0, r1 = nr0, nr1
 
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, r1, mask=b_mask)
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                r0,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                r1,
+                mask=b_mask,
+            )
             state_idx += 1
 
             r1 = -r1  # Z gate
 
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, r1, mask=b_mask)
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                r0,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                r1,
+                mask=b_mask,
+            )
             state_idx += 1
 
             # Data encoding: vectorized over batch tile
             enc = x_vals.to(tl.float32)
             if PREACTS_TRAINABLE:
                 w = tl.load(
-                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                    pw_ptr
+                    + idx_o * stride_pw_o
+                    + idx_i * stride_pw_i
+                    + layer * stride_pw_r
                 )
                 b = tl.load(
-                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                    pb_ptr
+                    + idx_o * stride_pb_o
+                    + idx_i * stride_pb_i
+                    + layer * stride_pb_r
                 )
                 enc = w.to(tl.float32) * x_vals.to(tl.float32) + b.to(tl.float32)
 
@@ -1580,8 +2124,12 @@ def _real_encoding_backward_kernel(
 
         # Phase 2: Measurement gradient (vectorized over batch)
         go = tl.load(
-            grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i,
-            mask=b_mask, other=0.0,
+            grad_out_ptr
+            + b_offs * stride_go_b
+            + idx_o * stride_go_o
+            + idx_i * stride_go_i,
+            mask=b_mask,
+            other=0.0,
         )
 
         if FAST_MEASURE:
@@ -1602,16 +2150,36 @@ def _real_encoding_backward_kernel(
         for layer in range(reps - 1, -1, -1):
             # Backward through Ry(enc)
             state_idx -= 1
-            sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-            sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
+            sr0 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
+            sr1 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
 
             enc = x_vals.to(tl.float32)
             if PREACTS_TRAINABLE:
                 w = tl.load(
-                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                    pw_ptr
+                    + idx_o * stride_pw_o
+                    + idx_i * stride_pw_i
+                    + layer * stride_pw_r
                 )
                 b = tl.load(
-                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                    pb_ptr
+                    + idx_o * stride_pb_o
+                    + idx_i * stride_pb_i
+                    + layer * stride_pb_r
                 )
                 enc = w.to(tl.float32) * x_vals.to(tl.float32) + b.to(tl.float32)
 
@@ -1620,10 +2188,7 @@ def _real_encoding_backward_kernel(
             s = tl.sin(a)
 
             # grad_enc is [BLOCK_B] vector
-            grad_enc = 0.5 * (
-                ar0 * (-s * sr0 - c * sr1)
-                + ar1 * (c * sr0 - s * sr1)
-            )
+            grad_enc = 0.5 * (ar0 * (-s * sr0 - c * sr1) + ar1 * (c * sr0 - s * sr1))
 
             if PREACTS_TRAINABLE:
                 # Accumulate locally over batch tile, single atomic_add
@@ -1654,8 +2219,22 @@ def _real_encoding_backward_kernel(
 
             # Backward through Ry(theta[l,0])
             state_idx -= 2
-            sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-            sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
+            sr0 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
+            sr1 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
 
             # Theta: scalar trig, vectorized grad accumulation
             t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
@@ -1664,12 +2243,11 @@ def _real_encoding_backward_kernel(
             s = tl.sin(a)
 
             # grad_t0 per batch element, sum locally before atomic_add
-            grad_t0_vec = 0.5 * (
-                ar0 * (-s * sr0 - c * sr1)
-                + ar1 * (c * sr0 - s * sr1)
+            grad_t0_vec = 0.5 * (ar0 * (-s * sr0 - c * sr1) + ar1 * (c * sr0 - s * sr1))
+            tl.atomic_add(
+                gt_base + layer * stride_gt_r + 0 * stride_gt_p,
+                tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)),
             )
-            tl.atomic_add(gt_base + layer * stride_gt_r + 0 * stride_gt_p,
-                          tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)))
 
             nar0 = c * ar0 + s * ar1
             nar1 = -s * ar0 + c * ar1
@@ -1690,19 +2268,63 @@ def _real_encoding_backward_kernel(
         r1 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
         i1 = tl.zeros([BLOCK_B], dtype=tl.float32)
 
-        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-        tl.store(states_base + 0 * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+        tl.store(
+            states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
+            r0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
+            i0,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base + 0 * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
+            r1,
+            mask=b_mask,
+        )
+        tl.store(
+            states_base + 0 * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
+            i1,
+            mask=b_mask,
+        )
 
         state_idx = 1
         for layer in range(reps):
             r0, i0, r1, i1 = r1, i1, r0, i0  # X gate
 
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                r0,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                i0,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 2 * stride_s_c,
+                r1,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 3 * stride_s_c,
+                i1,
+                mask=b_mask,
+            )
             state_idx += 1
 
             t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
@@ -1715,28 +2337,90 @@ def _real_encoding_backward_kernel(
             ni1 = s * i0 + c * i1
             r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                r0,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                i0,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 2 * stride_s_c,
+                r1,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 3 * stride_s_c,
+                i1,
+                mask=b_mask,
+            )
             state_idx += 1
 
             r1 = -r1  # Z gate
             i1 = -i1
 
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, r0, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, i0, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, r1, mask=b_mask)
-            tl.store(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, i1, mask=b_mask)
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                r0,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                i0,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 2 * stride_s_c,
+                r1,
+                mask=b_mask,
+            )
+            tl.store(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 3 * stride_s_c,
+                i1,
+                mask=b_mask,
+            )
             state_idx += 1
 
             enc = x_vals
             if PREACTS_TRAINABLE:
                 w = tl.load(
-                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                    pw_ptr
+                    + idx_o * stride_pw_o
+                    + idx_i * stride_pw_i
+                    + layer * stride_pw_r
                 )
                 b = tl.load(
-                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                    pb_ptr
+                    + idx_o * stride_pb_o
+                    + idx_i * stride_pb_i
+                    + layer * stride_pb_r
                 )
                 enc = w * x_vals + b
 
@@ -1751,8 +2435,12 @@ def _real_encoding_backward_kernel(
 
         # Phase 2: Measurement gradient
         go = tl.load(
-            grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i,
-            mask=b_mask, other=0.0,
+            grad_out_ptr
+            + b_offs * stride_go_b
+            + idx_o * stride_go_o
+            + idx_i * stride_go_i,
+            mask=b_mask,
+            other=0.0,
         )
 
         if FAST_MEASURE:
@@ -1777,18 +2465,52 @@ def _real_encoding_backward_kernel(
         for layer in range(reps - 1, -1, -1):
             # Backward through Ry(enc)
             state_idx -= 1
-            sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-            si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
-            sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
-            si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+            sr0 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
+            si0 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
+            sr1 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 2 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
+            si1 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 3 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
 
             enc = x_vals
             if PREACTS_TRAINABLE:
                 w = tl.load(
-                    pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
+                    pw_ptr
+                    + idx_o * stride_pw_o
+                    + idx_i * stride_pw_i
+                    + layer * stride_pw_r
                 )
                 b = tl.load(
-                    pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
+                    pb_ptr
+                    + idx_o * stride_pb_o
+                    + idx_i * stride_pb_i
+                    + layer * stride_pb_r
                 )
                 enc = w * x_vals + b
 
@@ -1834,10 +2556,38 @@ def _real_encoding_backward_kernel(
 
             # Backward through Ry(theta[l,0])
             state_idx -= 2
-            sr0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c, mask=b_mask, other=0.0)
-            si0 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c, mask=b_mask, other=0.0)
-            sr1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c, mask=b_mask, other=0.0)
-            si1 = tl.load(states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c, mask=b_mask, other=0.0)
+            sr0 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
+            si0 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
+            sr1 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 2 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
+            si1 = tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 3 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            )
 
             t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
             a = t0 * 0.5
@@ -1850,8 +2600,10 @@ def _real_encoding_backward_kernel(
                 + ar1 * (c * sr0 - s * sr1)
                 + ai1 * (c * si0 - s * si1)
             )
-            tl.atomic_add(gt_base + layer * stride_gt_r + 0 * stride_gt_p,
-                          tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)))
+            tl.atomic_add(
+                gt_base + layer * stride_gt_r + 0 * stride_gt_p,
+                tl.sum(tl.where(b_mask, grad_t0_vec, 0.0)),
+            )
 
             nar0 = c * ar0 + s * ar1
             nai0 = c * ai0 + s * ai1
@@ -1867,7 +2619,13 @@ def _real_encoding_backward_kernel(
 
 
 def triton_real_backward(
-    x, theta, pw, pb, grad_output, preacts_trainable, fast_measure,
+    x,
+    theta,
+    pw,
+    pb,
+    grad_output,
+    preacts_trainable,
+    fast_measure,
     c_dtype: torch.dtype = torch.bfloat16,
 ):
     """Launch real ansatz backward kernel. Returns (grad_x, grad_theta, grad_pw, grad_pb)."""
@@ -1881,7 +2639,7 @@ def triton_real_backward(
     pb = pb.to(c_dtype).contiguous()
     grad_output = grad_output.contiguous()
 
-    compute_bf16 = (c_dtype == torch.bfloat16)
+    compute_bf16 = c_dtype == torch.bfloat16
     BLOCK_B = 32 if compute_bf16 else 1
 
     n_states = 3 * reps + 1  # H state + 3 per layer (after X, Ry_theta, Z)
@@ -1890,7 +2648,14 @@ def triton_real_backward(
     # Real-only bf16 path stores 2 components (r0, r1); full path stores 4
     n_components = 2 if compute_bf16 else 4
     # States: (n_programs, n_states, BLOCK_B, n_components)
-    states = torch.empty(n_programs, n_states, BLOCK_B, n_components, device=x.device, dtype=torch.float32)
+    states = torch.empty(
+        n_programs,
+        n_states,
+        BLOCK_B,
+        n_components,
+        device=x.device,
+        dtype=torch.float32,
+    )
 
     # Gradient accumulation tensors use float32 for efficient atomic operations
     grad_theta = torch.zeros(theta.shape, device=x.device, dtype=torch.float32)

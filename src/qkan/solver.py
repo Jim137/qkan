@@ -773,7 +773,12 @@ class _FlashFunction(torch.autograd.Function):
             return triton_rpz_forward(x, theta, preacts_w, preacts_b, fast_measure)
         elif ansatz == "real":
             return triton_real_forward(
-                x, theta, preacts_w, preacts_b, preacts_trainable, fast_measure,
+                x,
+                theta,
+                preacts_w,
+                preacts_b,
+                preacts_trainable,
+                fast_measure,
                 c_dtype=c_dtype,
             )
         else:
