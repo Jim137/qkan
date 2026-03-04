@@ -112,6 +112,20 @@ qkan.plot(from_acts=True, metric=None)
 
 You can find more examples in the [examples](https://jim137.github.io/qkan/examples) for different tasks, such as function fitting, classification, and generative modeling.
 
+## Solver Guiding
+
+| Case                                                                      | Device       | Recommended solver  | Why                                                             | Notes                                                                            |
+| ------------------------------------------------------------------------- | ------------ | ------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Small models, CPU runs, debugging, or you want a trusted baseline         | CPU (or GPU) | `exact` *(default)* | Simple + “reference” behavior                                   | First run may include one-time init overhead—do a warmup step before timing.     |
+| Most training workloads (medium → large models) / inference               | GPU          | `flash`             | Best overall speed / memory tradeoff in these benchmarks        | Good first choice for practical GPU training.                                    |
+| Extremely large / memory-bound runs (near OOM, very large layers/batches) | GPU          | `cutn`              | Best scaling and peak-memory reduction in the extreme benchmark | Can be slower than `flash` on mid-size problems; use when size/memory dominates. |
+
+**Ansatz choice (`pz` vs `real`)**
+- **Default: `pz`** — most reliable quality across tasks.
+- **`real`** can be faster/smaller, but may **hurt accuracy/convergence** on some workloads—only use if you validate it on your task.
+
+See #8 for more discussion on solver choices and tradeoffs.
+
 ## Contributing
 
 We are very welcome to all kinds of contributions, including but not limited to bug reports, documentation improvements, and code contributions.
