@@ -141,6 +141,7 @@ class QKANLayer(nn.Module):
         c_dtype=torch.complex64,
         p_dtype=torch.float32,
         seed=None,
+        solver_kwargs: Optional[dict] = None,
     ):
         super(QKANLayer, self).__init__()
 
@@ -182,6 +183,7 @@ class QKANLayer(nn.Module):
         self.seed = seed
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
+        self.solver_kwargs = solver_kwargs or {}
 
         self.preact_trainable = preact_trainable
         self.preact_init = preact_init
@@ -439,6 +441,7 @@ class QKANLayer(nn.Module):
                 fast_measure=self.fast_measure,
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
+                **self.solver_kwargs,
             ).to(self.p_dtype)
         elif self.solver == "cudaq":
             if not _CUDAQ_AVAILABLE:
@@ -459,6 +462,7 @@ class QKANLayer(nn.Module):
                 fast_measure=self.fast_measure,
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
+                **self.solver_kwargs,
             ).to(self.p_dtype)
         elif callable(self.solver):
             postacts = self.solver(
@@ -747,6 +751,7 @@ class QKAN(nn.Module):
         c_dtype=torch.complex64,
         p_dtype=torch.float32,
         seed=None,
+        solver_kwargs: Optional[dict] = None,
         **kwargs,
     ):
         """
@@ -839,6 +844,7 @@ class QKAN(nn.Module):
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
         self.seed = seed
+        self.solver_kwargs = solver_kwargs or {}
 
         self.layers = QKANModuleList()
         for l in range(self.depth):
@@ -864,6 +870,7 @@ class QKAN(nn.Module):
                     c_dtype=c_dtype,
                     p_dtype=p_dtype,
                     seed=seed,
+                    solver_kwargs=self.solver_kwargs,
                 )
             )
 

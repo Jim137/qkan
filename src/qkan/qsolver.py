@@ -149,6 +149,60 @@ def _build_qiskit_real_circuit(
 
 
 # ---------------------------------------------------------------------------
+# Parallel multi-qubit packing (Qiskit)
+# ---------------------------------------------------------------------------
+
+
+def _build_qiskit_parallel_circuit(
+    single_circuits: list["QuantumCircuit"],
+) -> "QuantumCircuit":
+    """
+    Pack N independent single-qubit circuits into one N-qubit circuit.
+
+    Each single-qubit circuit is applied to a separate qubit, enabling
+    parallel execution on a multi-qubit QPU.
+    """
+    n = len(single_circuits)
+    qc = QuantumCircuit(n)
+    for qubit_idx, sc in enumerate(single_circuits):
+        for instruction in sc.data:
+            gate = instruction.operation
+            params = gate.params
+            name = gate.name
+            if name == "h":
+                qc.h(qubit_idx)
+            elif name == "x":
+                qc.x(qubit_idx)
+            elif name == "z":
+                qc.z(qubit_idx)
+            elif name == "rx":
+                qc.rx(params[0], qubit_idx)
+            elif name == "ry":
+                qc.ry(params[0], qubit_idx)
+            elif name == "rz":
+                qc.rz(params[0], qubit_idx)
+            else:
+                raise ValueError(f"Unsupported gate '{name}' in parallel packing")
+    return qc
+
+
+def _make_parallel_observables(n_qubits: int) -> list["SparsePauliOp"]:
+    """
+    Create Z observables for each qubit in an N-qubit circuit.
+
+    Returns a list of N SparsePauliOp, each measuring Z on one qubit.
+    Qiskit uses little-endian ordering: qubit 0 is the rightmost character.
+    E.g. for 3 qubits: [IIZ, IZI, ZII] for qubits 0, 1, 2 respectively.
+    """
+    observables = []
+    for k in range(n_qubits):
+        # Qiskit little-endian: qubit k is at string position (n-1-k) from the left
+        pauli_str = "I" * (n_qubits - 1 - k) + "Z" + "I" * k
+        observables.append(SparsePauliOp.from_list([(pauli_str, 1.0)]))
+    return observables
+
+
+# ---------------------------------------------------------------------------
 # Qiskit solver
 # ---------------------------------------------------------------------------
 
@@ -231,6 +285,171 @@ class _QiskitParamShift(torch.autograd.Function):
         return None, grad_theta, grad_pw, grad_pb, None, None
 
 
+def _probe_max_pubs(est, probe_pubs, max_pubs):
+    """
+    Binary-search for the largest PUB batch the QPU accepts.
+
+    Submits `probe_pubs[:max_pubs]` synchronously. On memory error (6073),
+    halves and retries until a working size is found. Returns (result, max_pubs)
+    where result is the successful job result for the probe batch.
+    """
+    while max_pubs >= 1:
+        batch = probe_pubs[:max_pubs]
+        try:
+            job = est.run(batch)
+            result = job.result()
+            return result, max_pubs
+        except Exception as e:
+            err_str = str(e)
+            if "6073" in err_str or "memory" in err_str.lower():
+                old_max = max_pubs
+                max_pubs = max(1, max_pubs // 2)
+                if max_pubs == old_max:
+                    raise  # can't go smaller than 1
+                print(
+                    f"  [qsolver] Job memory limit hit at {old_max} PUBs/job, "
+                    f"trying {max_pubs}"
+                )
+            else:
+                raise
+    raise RuntimeError("Could not find a working PUB batch size")
+
+
+def _submit_and_collect(est, all_pubs, all_chunk_sizes, max_pubs):
+    """
+    Submit PUBs with the largest batch size the QPU can handle.
+
+    1. Probes with max_pubs (all PUBs if 0) synchronously to find the
+       largest accepted batch size via binary search on memory errors.
+    2. Submits all remaining batches asynchronously for max throughput.
+    3. Collects results in order.
+
+    Returns (expvals, actual_max_pubs) so callers can cache the working size.
+    """
+    n_total = len(all_pubs)
+    if max_pubs <= 0:
+        max_pubs = n_total
+    expvals = [None] * n_total
+
+    # Step 1: Probe with first batch to discover working max_pubs
+    first_batch_size = min(max_pubs, n_total)
+    first_batch = all_pubs[:first_batch_size]
+    probe_result, max_pubs = _probe_max_pubs(est, first_batch, first_batch_size)
+
+    # Collect probe results (first max_pubs PUBs)
+    probed_count = min(max_pubs, n_total)
+    for i in range(probed_count):
+        evs = probe_result[i].data.evs
+        expvals[i] = [float(v) for v in evs]
+
+    # Step 2: Submit remaining batches asynchronously
+    remaining_start = probed_count
+    if remaining_start < n_total:
+        jobs = []
+        job_ranges = []
+        for batch_start in range(remaining_start, n_total, max_pubs):
+            batch_end = min(batch_start + max_pubs, n_total)
+            job_pubs = all_pubs[batch_start:batch_end]
+            jobs.append(est.run(job_pubs))
+            job_ranges.append((batch_start, batch_end))
+
+        n_jobs = len(jobs)
+        print(f"  [qsolver] Submitting {n_jobs} async job(s), {max_pubs} PUBs/job")
+
+        # Collect all async results
+        for job, (batch_start, batch_end) in zip(jobs, job_ranges):
+            result = job.result()
+            for i, global_idx in enumerate(range(batch_start, batch_end)):
+                evs = result[i].data.evs
+                expvals[global_idx] = [float(v) for v in evs]
+
+    # Flatten
+    flat = []
+    for ev_list in expvals:
+        flat.extend(ev_list)
+    return flat, max_pubs
+
+
+# Module-level cache for the discovered max PUBs per backend
+_MAX_PUBS_CACHE: dict = {}
+
+
+def _qiskit_run_parallel(
+    circuits,
+    n_qubits,
+    estimator,
+    backend,
+    optimization_level,
+    shots,
+    max_pubs_per_job=0,
+):
+    """
+    Pack single-qubit circuits into multi-qubit batches and submit async.
+
+    Groups `circuits` into chunks of `n_qubits`, packs each chunk into one
+    multi-qubit circuit. Jobs are submitted asynchronously with automatic
+    PUB batch sizing:
+
+    - If `max_pubs_per_job` > 0, uses that as the initial batch size.
+    - If `max_pubs_per_job` == 0 (default), starts with all PUBs in one job.
+    - On memory error (6073), automatically halves and retries.
+    - The discovered working batch size is cached per backend.
+    """
+    total = len(circuits)
+
+    # Build all PUBs first
+    all_pubs = []
+    all_chunk_sizes = []
+
+    if estimator is not None:
+        for start in range(0, total, n_qubits):
+            batch_circuits = circuits[start : start + n_qubits]
+            chunk_size = len(batch_circuits)
+            all_chunk_sizes.append(chunk_size)
+            packed_qc = _build_qiskit_parallel_circuit(batch_circuits)
+            chunk_obs = _make_parallel_observables(chunk_size)
+            all_pubs.append((packed_qc, chunk_obs))
+
+        initial_max = max_pubs_per_job if max_pubs_per_job > 0 else len(all_pubs)
+        expvals, _ = _submit_and_collect(
+            estimator, all_pubs, all_chunk_sizes, initial_max
+        )
+        return expvals
+
+    elif backend is not None:
+        pm = generate_preset_pass_manager(
+            backend=backend, optimization_level=optimization_level
+        )
+        rt_estimator = Estimator(mode=backend)
+        if shots is not None:
+            rt_estimator.options.default_shots = shots
+
+        for start in range(0, total, n_qubits):
+            batch_circuits = circuits[start : start + n_qubits]
+            chunk_size = len(batch_circuits)
+            all_chunk_sizes.append(chunk_size)
+            packed_qc = _build_qiskit_parallel_circuit(batch_circuits)
+            isa_qc = pm.run(packed_qc)
+            chunk_obs = _make_parallel_observables(chunk_size)
+            isa_obs = [obs.apply_layout(isa_qc.layout) for obs in chunk_obs]
+            all_pubs.append((isa_qc, isa_obs))
+
+        # Use cached max or start with all PUBs
+        cache_key = getattr(backend, "name", str(backend))
+        initial_max = (
+            max_pubs_per_job
+            if max_pubs_per_job > 0
+            else _MAX_PUBS_CACHE.get(cache_key, len(all_pubs))
+        )
+        expvals, actual_max = _submit_and_collect(
+            rt_estimator, all_pubs, all_chunk_sizes, initial_max
+        )
+        _MAX_PUBS_CACHE[cache_key] = actual_max
+        return expvals
+
+    return []
+
+
 def _qiskit_evaluate(
     x: torch.Tensor,
     theta: torch.Tensor,
@@ -252,6 +471,7 @@ def _qiskit_evaluate(
     estimator = config.get("estimator", None)
     shots = config["shots"]
     optimization_level = config.get("optimization_level", 1)
+    parallel_qubits = config.get("parallel_qubits", None)
 
     # Broadcast theta/preacts to (out_dim, in_dim, ...)
     if len(theta.shape) != 4:
@@ -297,7 +517,7 @@ def _qiskit_evaluate(
                     qc = _build_qiskit_pz_circuit(float(x_np[b, i]), t, reps, enc_vals)
                 elif ansatz in ("rpz_encoding", "rpz"):
                     t = theta_np[o, i].reshape(-1).tolist()
-                    enc_vals = encoded_x_np[b, o, i].tolist()
+                    enc_vals = encoded_x_np[b, o, i].tolist()  # type: ignore
                     qc = _build_qiskit_rpz_circuit(enc_vals, t, reps)
                 elif ansatz == "real":
                     t = theta_np[o, i].reshape(-1).tolist()
@@ -315,13 +535,24 @@ def _qiskit_evaluate(
                 observables.append(pauli_z)
 
     # Execute via the appropriate Estimator
-    if estimator is not None:
-        # User-provided estimator (StatevectorEstimator, Runtime EstimatorV2, etc.)
+    max_pubs = config.get("max_pubs_per_job", 0)
+    if parallel_qubits and parallel_qubits > 1:
+        # Pack independent 1-qubit circuits onto multi-qubit QPU
+        expvals = _qiskit_run_parallel(
+            circuits,
+            parallel_qubits,
+            estimator,
+            backend,
+            optimization_level,
+            shots,
+            max_pubs_per_job=max_pubs,
+        )
+    elif estimator is not None:
         pubs = list(zip(circuits, observables))
         job = estimator.run(pubs)
         result = job.result()
+        expvals = [float(r.data.evs) for r in result]
     elif backend is not None:
-        # IBM Runtime backend: pass manager + EstimatorV2
         pm = generate_preset_pass_manager(
             backend=backend, optimization_level=optimization_level
         )
@@ -335,13 +566,9 @@ def _qiskit_evaluate(
         pubs = list(zip(isa_circuits, isa_observables))
         job = rt_estimator.run(pubs)
         result = job.result()
+        expvals = [float(r.data.evs) for r in result]
     else:
         raise ValueError("No estimator or backend provided.")
-
-    # Extract expectation values
-    expvals = []
-    for pub_result in result:
-        expvals.append(float(pub_result.data.evs))
 
     output = torch.tensor(expvals, dtype=x.dtype, device=x.device)
     return output.reshape(batch, out_dim, in_dim)
@@ -402,6 +629,7 @@ def qiskit_solver(
     out_dim = kwargs.get("out_dim", x.shape[1])
     shots = kwargs.get("shots", None)
     optimization_level = kwargs.get("optimization_level", 1)
+    parallel_qubits = kwargs.get("parallel_qubits", None)
 
     backend = kwargs.get("backend", None)
     estimator = kwargs.get("estimator", None)
@@ -418,6 +646,12 @@ def qiskit_solver(
                 "(for StatevectorEstimator), qiskit-aer, or qiskit-ibm-runtime."
             )
 
+    # Auto-detect QPU size from backend if parallel_qubits="auto"
+    if parallel_qubits == "auto" and backend is not None:
+        parallel_qubits = backend.num_qubits
+
+    max_pubs_per_job = kwargs.get("max_pubs_per_job", 0)
+
     config = {
         "ansatz": ansatz,
         "preacts_trainable": preacts_trainable,
@@ -426,6 +660,8 @@ def qiskit_solver(
         "estimator": estimator,
         "shots": shots,
         "optimization_level": optimization_level,
+        "parallel_qubits": parallel_qubits,
+        "max_pubs_per_job": max_pubs_per_job,
     }
 
     needs_grad = theta.requires_grad or x.requires_grad
@@ -555,6 +791,150 @@ def _get_cudaq_kernel(ansatz: str, reps: int, preacts_trainable: bool):
     return _CUDAQ_KERNEL_CACHE[key]
 
 
+def _build_cudaq_parallel_pz_kernel(n_qubits: int, reps: int):
+    """Build a CUDA-Q kernel that runs N independent pz circuits in parallel."""
+
+    @cudaq.kernel
+    def kernel(x_vals: list[float], all_thetas: list[float]):
+        qubits = cudaq.qvector(n_qubits)
+        params_per = 2 * (reps + 1)
+        for q_idx in range(n_qubits):
+            h(qubits[q_idx])
+            offset = q_idx * params_per
+            for l in range(reps):
+                rz(all_thetas[offset + 2 * l], qubits[q_idx])
+                ry(all_thetas[offset + 2 * l + 1], qubits[q_idx])
+                rz(x_vals[q_idx], qubits[q_idx])
+            rz(all_thetas[offset + 2 * reps], qubits[q_idx])
+            ry(all_thetas[offset + 2 * reps + 1], qubits[q_idx])
+
+    return kernel
+
+
+def _build_cudaq_parallel_real_kernel(n_qubits: int, reps: int):
+    """Build a CUDA-Q kernel that runs N independent real circuits in parallel."""
+
+    @cudaq.kernel
+    def kernel(x_vals: list[float], all_thetas: list[float]):
+        qubits = cudaq.qvector(n_qubits)
+        for q_idx in range(n_qubits):
+            h(qubits[q_idx])
+            offset = q_idx * reps
+            for l in range(reps):
+                x(qubits[q_idx])
+                ry(all_thetas[offset + l], qubits[q_idx])
+                z(qubits[q_idx])
+                ry(x_vals[q_idx], qubits[q_idx])
+
+    return kernel
+
+
+def _build_cudaq_parallel_rpz_kernel(n_qubits: int, reps: int):
+    """Build a CUDA-Q kernel that runs N independent rpz circuits in parallel."""
+
+    @cudaq.kernel
+    def kernel(encoded_xs: list[float], all_thetas: list[float]):
+        qubits = cudaq.qvector(n_qubits)
+        t_per = reps + 1
+        for q_idx in range(n_qubits):
+            h(qubits[q_idx])
+            t_off = q_idx * t_per
+            x_off = q_idx * reps
+            for l in range(reps):
+                ry(all_thetas[t_off + l], qubits[q_idx])
+                rz(encoded_xs[x_off + l], qubits[q_idx])
+            ry(all_thetas[t_off + reps], qubits[q_idx])
+
+    return kernel
+
+
+def _cudaq_run_parallel(
+    all_args, ansatz, reps, preacts_trainable, n_qubits, shots_count
+):
+    """
+    Pack independent single-qubit circuits onto an N-qubit QPU.
+
+    Runs ceil(total / n_qubits) multi-qubit jobs instead of `total` single-qubit jobs.
+    """
+    total = len(all_args)
+    expvals = []
+
+    for start in range(0, total, n_qubits):
+        chunk = all_args[start : start + n_qubits]
+        chunk_size = len(chunk)
+
+        # Flatten args into parallel kernel format
+        if ansatz in ("pz_encoding", "pz") and not preacts_trainable:
+            x_vals = [a[0] for a in chunk]
+            all_thetas = []
+            for a in chunk:
+                all_thetas.extend(a[1])
+            # Pad if chunk < n_qubits
+            actual_n = chunk_size
+            if actual_n < n_qubits:
+                x_vals.extend([0.0] * (n_qubits - actual_n))
+                pad_thetas = [0.0] * (2 * (reps + 1))
+                for _ in range(n_qubits - actual_n):
+                    all_thetas.extend(pad_thetas)
+                actual_n = n_qubits
+
+            par_kernel = _build_cudaq_parallel_pz_kernel(actual_n, reps)
+            args = (x_vals, all_thetas)
+
+        elif ansatz == "real" and not preacts_trainable:
+            x_vals = [a[0] for a in chunk]
+            all_thetas = []
+            for a in chunk:
+                all_thetas.extend(a[1])
+            actual_n = chunk_size
+            if actual_n < n_qubits:
+                x_vals.extend([0.0] * (n_qubits - actual_n))
+                for _ in range(n_qubits - actual_n):
+                    all_thetas.extend([0.0] * reps)
+                actual_n = n_qubits
+
+            par_kernel = _build_cudaq_parallel_real_kernel(actual_n, reps)
+            args = (x_vals, all_thetas)
+
+        elif ansatz in ("rpz_encoding", "rpz") or preacts_trainable:
+            encoded_xs = []
+            all_thetas = []
+            for a in chunk:
+                enc, t = a
+                if isinstance(enc, list):
+                    encoded_xs.extend(enc)
+                else:
+                    encoded_xs.extend([enc] * reps)
+                all_thetas.extend(t)
+            actual_n = chunk_size
+            if actual_n < n_qubits:
+                for _ in range(n_qubits - actual_n):
+                    encoded_xs.extend([0.0] * reps)
+                    all_thetas.extend([0.0] * (reps + 1))
+                actual_n = n_qubits
+
+            par_kernel = _build_cudaq_parallel_rpz_kernel(actual_n, reps)
+            args = (encoded_xs, all_thetas)
+        else:
+            raise NotImplementedError(f"Parallel not supported for ansatz '{ansatz}'")
+
+        # Single observe call with Z0 + Z1 + ... + Z_{N-1} Hamiltonian,
+        # then extract per-qubit <Z_k> from the result
+        spin_sum = cudaq.spin.z(0)
+        for q_idx in range(1, actual_n):
+            spin_sum += cudaq.spin.z(q_idx)
+
+        if shots_count is not None:
+            result = cudaq.observe(par_kernel, spin_sum, *args, shots_count=shots_count)
+        else:
+            result = cudaq.observe(par_kernel, spin_sum, *args)
+
+        for q_idx in range(chunk_size):
+            expvals.append(result.expectation(cudaq.spin.z(q_idx)))
+
+    return expvals
+
+
 def _cudaq_evaluate(
     x: torch.Tensor,
     theta: torch.Tensor,
@@ -574,6 +954,7 @@ def _cudaq_evaluate(
     out_dim = config["out_dim"]
     shots_count = config["shots"]
     target = config.get("target", None)
+    parallel_qubits = config.get("parallel_qubits", None)
 
     # Broadcasting (same as other solvers)
     if len(theta.shape) != 4:
@@ -602,10 +983,8 @@ def _cudaq_evaluate(
     theta_np = theta.detach().cpu()
     encoded_x_np = encoded_x.detach().cpu() if encoded_x is not None else None
 
-    kernel = _get_cudaq_kernel(ansatz, reps, preacts_trainable)
-    spin_z = cudaq.spin.z(0)
-
-    expvals = []
+    # Collect all circuit args first
+    all_args = []
     for b in range(batch):
         for o in range(out_dim):
             for i in range(in_dim):
@@ -613,29 +992,38 @@ def _cudaq_evaluate(
 
                 if ansatz in ("pz_encoding", "pz"):
                     if preacts_trainable:
-                        enc_vals = encoded_x_np[b, o, i].tolist()
-                        args = (enc_vals, t)
+                        all_args.append((encoded_x_np[b, o, i].tolist(), t))
                     else:
-                        args = (float(x_np[b, i]), t)
+                        all_args.append((float(x_np[b, i]), t))
                 elif ansatz in ("rpz_encoding", "rpz"):
-                    enc_vals = encoded_x_np[b, o, i].tolist()
-                    args = (enc_vals, t)
+                    all_args.append((encoded_x_np[b, o, i].tolist(), t))
                 elif ansatz == "real":
                     if preacts_trainable:
-                        enc_vals = encoded_x_np[b, o, i].tolist()
-                        args = (enc_vals, t)
+                        all_args.append((encoded_x_np[b, o, i].tolist(), t))
                     else:
-                        args = (float(x_np[b, i]), t)
+                        all_args.append((float(x_np[b, i]), t))
                 else:
                     raise NotImplementedError
 
-                if shots_count is not None:
-                    result = cudaq.observe(
-                        kernel, spin_z, *args, shots_count=shots_count
-                    )
-                else:
-                    result = cudaq.observe(kernel, spin_z, *args)
-                expvals.append(result.expectation())
+    if parallel_qubits and parallel_qubits > 1:
+        expvals = _cudaq_run_parallel(
+            all_args,
+            ansatz,
+            reps,
+            preacts_trainable,
+            parallel_qubits,
+            shots_count,
+        )
+    else:
+        kernel = _get_cudaq_kernel(ansatz, reps, preacts_trainable)
+        spin_z = cudaq.spin.z(0)
+        expvals = []
+        for args in all_args:
+            if shots_count is not None:
+                result = cudaq.observe(kernel, spin_z, *args, shots_count=shots_count)
+            else:
+                result = cudaq.observe(kernel, spin_z, *args)
+            expvals.append(result.expectation())
 
     output = torch.tensor(expvals, dtype=x.dtype, device=x.device)
     return output.reshape(batch, out_dim, in_dim)
@@ -772,6 +1160,7 @@ def cudaq_solver(
     shots = kwargs.get("shots", None)
     target = kwargs.get("target", None)
     machine = kwargs.get("machine", None)
+    parallel_qubits = kwargs.get("parallel_qubits", None)
 
     if target is not None:
         target_kwargs = {}
@@ -785,6 +1174,7 @@ def cudaq_solver(
         "out_dim": out_dim,
         "shots": shots,
         "target": target,
+        "parallel_qubits": parallel_qubits,
     }
 
     needs_grad = theta.requires_grad or x.requires_grad
