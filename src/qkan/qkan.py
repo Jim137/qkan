@@ -38,7 +38,9 @@ from tqdm import tqdm  # type: ignore
 
 from .info import get_dist_info, print0, print_version
 from .solver import (
+    _CUTILE_AVAILABLE,
     _FLASH_AVAILABLE,
+    cutile_flash_exact_solver,
     cutn_solver,
     flash_exact_solver,
     qml_solver,
@@ -396,6 +398,26 @@ class QKANLayer(nn.Module):
             ).to(self.p_dtype)
         elif self.solver == "cutn" or self.solver == "tn":
             postacts = cutn_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
+        elif self.solver == "cutile":
+            if not _CUTILE_AVAILABLE:
+                raise ImportError(
+                    "cuda.tile is required for solver='cutile'. "
+                    "Install with: pip install cuda-tile"
+                )
+            postacts = cutile_flash_exact_solver(
                 x,
                 self.theta,
                 self.preacts_weight,

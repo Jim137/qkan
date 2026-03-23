@@ -30,6 +30,10 @@ gpu = [
     "cuquantum",
 ]
 
+cutile = [
+    "cuda-tile",
+]
+
 qml = [
     "pennylane>=0.37",
 ]
@@ -55,7 +59,7 @@ doc = [
     "torchvision",
 ]
 
-all = ["qkan[gpu,qml,dev,doc]"]
+all = ["qkan[gpu,cutile,qml,dev,doc]"]
 
 [project.urls]
 Homepage = "https://github.com/Jim137/qkan"
