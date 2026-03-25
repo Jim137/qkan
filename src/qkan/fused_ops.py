@@ -23,6 +23,8 @@ import torch
 import triton  # type: ignore
 import triton.language as tl  # type: ignore
 
+from qkan._kernel_utils import _select_block_b
+
 
 @triton.jit
 def _pz_encoding_kernel(
@@ -196,8 +198,9 @@ def triton_pz_forward(
 
     output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=x.dtype)
 
-    BLOCK_B = 32
-    grid = (out_dim * in_dim, triton.cdiv(batch, BLOCK_B))
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch)
+    grid = (n_oi, triton.cdiv(batch, BLOCK_B))
 
     if preacts_trainable:
         preacts_w = preacts_w.contiguous()
@@ -384,8 +387,9 @@ def triton_rpz_forward(
     preacts_b = preacts_b.contiguous()
 
     output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=x.dtype)
-    BLOCK_B = 32
-    grid = (out_dim * in_dim, triton.cdiv(batch, BLOCK_B))
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch)
+    grid = (n_oi, triton.cdiv(batch, BLOCK_B))
 
     _rpz_encoding_kernel[grid](
         x,
@@ -850,10 +854,11 @@ def triton_rpz_backward(x, theta, pw, pb, grad_output, fast_measure):
     pb = pb.contiguous()
     grad_output = grad_output.contiguous()
 
-    BLOCK_B = 32
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch)
     n_states = 2 * reps + 2
     n_b_blocks = triton.cdiv(batch, BLOCK_B)
-    n_programs = out_dim * in_dim * n_b_blocks
+    n_programs = n_oi * n_b_blocks
     states = torch.empty(
         n_programs, n_states, BLOCK_B, 4, device=x.device, dtype=x.dtype
     )
@@ -1762,10 +1767,11 @@ def triton_pz_backward(x, theta, pw, pb, grad_output, preacts_trainable, fast_me
     theta = theta.contiguous()
     grad_output = grad_output.contiguous()
 
-    BLOCK_B = 32
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch)
     n_states = 3 * reps + 3  # H state + 3 per layer + after final Rz
     n_b_blocks = triton.cdiv(batch, BLOCK_B)
-    n_programs = out_dim * in_dim * n_b_blocks
+    n_programs = n_oi * n_b_blocks
     states = torch.empty(
         n_programs, n_states, BLOCK_B, 4, device=x.device, dtype=x.dtype
     )
@@ -1878,8 +1884,9 @@ def triton_real_forward(
     output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
 
     compute_bf16 = c_dtype == torch.bfloat16
-    BLOCK_B = 32 if compute_bf16 else 1
-    grid = (out_dim * in_dim, triton.cdiv(batch, BLOCK_B))
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch, 32 if compute_bf16 else 1)
+    grid = (n_oi, triton.cdiv(batch, BLOCK_B))
 
     if preacts_trainable:
         pw_strides = (preacts_w.stride(0), preacts_w.stride(1), preacts_w.stride(2))
@@ -2640,11 +2647,12 @@ def triton_real_backward(
     grad_output = grad_output.contiguous()
 
     compute_bf16 = c_dtype == torch.bfloat16
-    BLOCK_B = 32 if compute_bf16 else 1
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch, 32 if compute_bf16 else 1)
 
     n_states = 3 * reps + 1  # H state + 3 per layer (after X, Ry_theta, Z)
     n_b_blocks = triton.cdiv(batch, BLOCK_B)
-    n_programs = out_dim * in_dim * n_b_blocks
+    n_programs = n_oi * n_b_blocks
     # Real-only bf16 path stores 2 components (r0, r1); full path stores 4
     n_components = 2 if compute_bf16 else 4
     # States: (n_programs, n_states, BLOCK_B, n_components)

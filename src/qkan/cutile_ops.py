@@ -27,6 +27,8 @@ import math
 import cuda.tile as ct  # type: ignore
 import torch
 
+from qkan._kernel_utils import _select_block_b
+
 ConstInt = ct.Constant[int]
 ConstBool = ct.Constant[bool]
 
@@ -173,8 +175,9 @@ def cutile_pz_forward(
 
     output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=x.dtype)
 
-    BLOCK_B = 32
-    grid = (out_dim * in_dim, math.ceil(batch / BLOCK_B), 1)
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch)
+    grid = (n_oi, math.ceil(batch / BLOCK_B), 1)
 
     if preacts_trainable:
         preacts_w = preacts_w.contiguous()
@@ -319,8 +322,9 @@ def cutile_rpz_forward(
 
     output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=x.dtype)
 
-    BLOCK_B = 32
-    grid = (out_dim * in_dim, math.ceil(batch / BLOCK_B), 1)
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch)
+    grid = (n_oi, math.ceil(batch / BLOCK_B), 1)
 
     ct.launch(
         torch.cuda.current_stream(),
@@ -418,7 +422,7 @@ def _ct_real_encoding_kernel_bf16(
     else:
         result = r0 * r0 - r1 * r1
 
-    ct.scatter(out, (b_offs, idx_o, idx_i), result, mask=b_mask)
+    ct.scatter(out, (b_offs, idx_o, idx_i), ct.astype(result, ct.bfloat16), mask=b_mask)
 
 
 @ct.kernel
@@ -535,8 +539,9 @@ def cutile_real_forward(
     output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
 
     compute_bf16 = c_dtype == torch.bfloat16
-    BLOCK_B = 32 if compute_bf16 else 1
-    grid = (out_dim * in_dim, math.ceil(batch / BLOCK_B), 1)
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch, 32 if compute_bf16 else 1)
+    grid = (n_oi, math.ceil(batch / BLOCK_B), 1)
 
     kernel = (
         _ct_real_encoding_kernel_bf16 if compute_bf16 else _ct_real_encoding_kernel_f32
@@ -568,7 +573,7 @@ def cutile_real_forward(
 # ── pz_encoding backward kernel ───────────────────────────────────────────
 
 
-@ct.kernel
+@ct.kernel(occupancy=4)
 def _ct_pz_encoding_backward_kernel(
     x,  # [Batch, In_Dim]
     theta,  # [Out_Dim, In_Dim, Reps+1, 2]
@@ -576,6 +581,7 @@ def _ct_pz_encoding_backward_kernel(
     pb,  # [Out_Dim, In_Dim, Reps]
     grad_out,  # [Batch, Out_Dim, In_Dim]
     states,  # [N_Programs, N_States, BLOCK_B, 4]
+    trig_cache,  # [N_Programs, 2*Reps+2, 2] — cached cos/sin for theta gates
     grad_theta,  # [Out_Dim, In_Dim, Reps+1, 2]
     grad_x,  # [Batch, In_Dim]
     grad_pw,  # [Out_Dim, In_Dim, Reps]
@@ -602,58 +608,69 @@ def _ct_pz_encoding_backward_kernel(
 
     x_vals = ct.gather(x, (b_offs, idx_i), mask=b_mask, padding_value=0.0)
 
-    program_idx = pid_oi * n_b_blocks + pid_b
+    pi = pid_oi * n_b_blocks + pid_b
 
-    # ── Phase 1: Forward recompute, saving states ──
+    def _save4(sidx, v0, v1, v2, v3):
+        ct.scatter(states, (pi, sidx, b_range, 0), v0, mask=b_mask)
+        ct.scatter(states, (pi, sidx, b_range, 1), v1, mask=b_mask)
+        ct.scatter(states, (pi, sidx, b_range, 2), v2, mask=b_mask)
+        ct.scatter(states, (pi, sidx, b_range, 3), v3, mask=b_mask)
+
+    def _load4(sidx):
+        return (
+            ct.gather(states, (pi, sidx, b_range, 0), mask=b_mask, padding_value=0.0),
+            ct.gather(states, (pi, sidx, b_range, 1), mask=b_mask, padding_value=0.0),
+            ct.gather(states, (pi, sidx, b_range, 2), mask=b_mask, padding_value=0.0),
+            ct.gather(states, (pi, sidx, b_range, 3), mask=b_mask, padding_value=0.0),
+        )
+
+    # ── Phase 1: Forward recompute, saving states + trig cache ──
     INV_SQRT2 = 0.7071067811865476
     r0 = ct.full((BLOCK_B,), INV_SQRT2, dtype=ct.float32)
     i0 = ct.zeros((BLOCK_B,), dtype=ct.float32)
     r1 = ct.full((BLOCK_B,), INV_SQRT2, dtype=ct.float32)
     i1 = ct.zeros((BLOCK_B,), dtype=ct.float32)
 
-    # Save H state
-    ct.scatter(states, (program_idx, 0, b_range, 0), r0, mask=b_mask)
-    ct.scatter(states, (program_idx, 0, b_range, 1), i0, mask=b_mask)
-    ct.scatter(states, (program_idx, 0, b_range, 2), r1, mask=b_mask)
-    ct.scatter(states, (program_idx, 0, b_range, 3), i1, mask=b_mask)
+    _save4(0, r0, i0, r1, i1)
 
     state_idx = 1
+    trig_idx = 0
     for layer in range(reps):
-        # Rz(t0)
+        # Rz(t0) — cache trig
         t0 = ct.gather(theta, (idx_o, idx_i, layer, 0))
         a = t0 * 0.5
         c = ct.cos(a)
         s = ct.sin(a)
+        ct.scatter(trig_cache, (pi, trig_idx, 0), c)
+        ct.scatter(trig_cache, (pi, trig_idx, 1), s)
+        trig_idx = trig_idx + 1
         nr0 = r0 * c + i0 * s
         ni0 = i0 * c - r0 * s
         nr1 = r1 * c - i1 * s
         ni1 = i1 * c + r1 * s
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-        ct.scatter(states, (program_idx, state_idx, b_range, 0), r0, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 1), i0, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 2), r1, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 3), i1, mask=b_mask)
+        _save4(state_idx, r0, i0, r1, i1)
         state_idx = state_idx + 1
 
-        # Ry(t1)
+        # Ry(t1) — cache trig
         t1 = ct.gather(theta, (idx_o, idx_i, layer, 1))
         a = t1 * 0.5
         c = ct.cos(a)
         s = ct.sin(a)
+        ct.scatter(trig_cache, (pi, trig_idx, 0), c)
+        ct.scatter(trig_cache, (pi, trig_idx, 1), s)
+        trig_idx = trig_idx + 1
         nr0 = c * r0 - s * r1
         ni0 = c * i0 - s * i1
         nr1 = s * r0 + c * r1
         ni1 = s * i0 + c * i1
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-        ct.scatter(states, (program_idx, state_idx, b_range, 0), r0, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 1), i0, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 2), r1, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 3), i1, mask=b_mask)
+        _save4(state_idx, r0, i0, r1, i1)
         state_idx = state_idx + 1
 
-        # Rz(enc)
+        # Rz(enc) — NOT cached (depends on x_vals per batch element)
         enc = x_vals
         if PREACTS_TRAINABLE:
             w = ct.gather(pw, (idx_o, idx_i, layer))
@@ -669,34 +686,34 @@ def _ct_pz_encoding_backward_kernel(
         ni1 = i1 * c + r1 * s
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-        ct.scatter(states, (program_idx, state_idx, b_range, 0), r0, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 1), i0, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 2), r1, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 3), i1, mask=b_mask)
+        _save4(state_idx, r0, i0, r1, i1)
         state_idx = state_idx + 1
 
-    # Final Rz(t0)
+    # Final Rz(t0) — cache trig
     t0 = ct.gather(theta, (idx_o, idx_i, reps, 0))
     a = t0 * 0.5
     c = ct.cos(a)
     s = ct.sin(a)
+    ct.scatter(trig_cache, (pi, trig_idx, 0), c)
+    ct.scatter(trig_cache, (pi, trig_idx, 1), s)
+    trig_idx = trig_idx + 1
     nr0 = r0 * c + i0 * s
     ni0 = i0 * c - r0 * s
     nr1 = r1 * c - i1 * s
     ni1 = i1 * c + r1 * s
     r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-    ct.scatter(states, (program_idx, state_idx, b_range, 0), r0, mask=b_mask)
-    ct.scatter(states, (program_idx, state_idx, b_range, 1), i0, mask=b_mask)
-    ct.scatter(states, (program_idx, state_idx, b_range, 2), r1, mask=b_mask)
-    ct.scatter(states, (program_idx, state_idx, b_range, 3), i1, mask=b_mask)
+    _save4(state_idx, r0, i0, r1, i1)
     state_idx = state_idx + 1
 
-    # Final Ry(t1)
+    # Final Ry(t1) — cache trig
     t1 = ct.gather(theta, (idx_o, idx_i, reps, 1))
     a = t1 * 0.5
     c = ct.cos(a)
     s = ct.sin(a)
+    ct.scatter(trig_cache, (pi, trig_idx, 0), c)
+    ct.scatter(trig_cache, (pi, trig_idx, 1), s)
+    trig_idx = trig_idx + 1
     nr0 = c * r0 - s * r1
     ni0 = c * i0 - s * i1
     nr1 = s * r0 + c * r1
@@ -721,28 +738,16 @@ def _ct_pz_encoding_backward_kernel(
         ar1 = -2.0 * go * r1
         ai1 = -2.0 * go * i1
 
-    # ── Phase 3: Backward sweep ──
+    # ── Phase 3: Backward sweep (using cached trig for theta gates) ──
     grad_x_local = ct.zeros((BLOCK_B,), dtype=ct.float32)
 
-    # Backward through final Ry(t1_final)
+    # Backward through final Ry(t1_final) — load cached trig
+    trig_idx = trig_idx - 1
     state_idx = state_idx - 1
-    sr0 = ct.gather(
-        states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
-    )
-    si0 = ct.gather(
-        states, (program_idx, state_idx, b_range, 1), mask=b_mask, padding_value=0.0
-    )
-    sr1 = ct.gather(
-        states, (program_idx, state_idx, b_range, 2), mask=b_mask, padding_value=0.0
-    )
-    si1 = ct.gather(
-        states, (program_idx, state_idx, b_range, 3), mask=b_mask, padding_value=0.0
-    )
+    sr0, si0, sr1, si1 = _load4(state_idx)
 
-    t1 = ct.gather(theta, (idx_o, idx_i, reps, 1))
-    a = t1 * 0.5
-    c = ct.cos(a)
-    s = ct.sin(a)
+    c = ct.gather(trig_cache, (pi, trig_idx, 0))
+    s = ct.gather(trig_cache, (pi, trig_idx, 1))
 
     grad_t1_vec = 0.5 * (
         ar0 * (-s * sr0 - c * sr1)
@@ -754,6 +759,7 @@ def _ct_pz_encoding_backward_kernel(
         grad_theta,
         (idx_o, idx_i, reps, 1),
         ct.sum(ct.where(b_mask, grad_t1_vec, 0.0)),
+        memory_order=ct.MemoryOrder.RELAXED,
     )
 
     nar0 = c * ar0 + s * ar1
@@ -762,25 +768,13 @@ def _ct_pz_encoding_backward_kernel(
     nai1 = -s * ai0 + c * ai1
     ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-    # Backward through final Rz(t0_final)
+    # Backward through final Rz(t0_final) — load cached trig
+    trig_idx = trig_idx - 1
     state_idx = state_idx - 1
-    sr0 = ct.gather(
-        states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
-    )
-    si0 = ct.gather(
-        states, (program_idx, state_idx, b_range, 1), mask=b_mask, padding_value=0.0
-    )
-    sr1 = ct.gather(
-        states, (program_idx, state_idx, b_range, 2), mask=b_mask, padding_value=0.0
-    )
-    si1 = ct.gather(
-        states, (program_idx, state_idx, b_range, 3), mask=b_mask, padding_value=0.0
-    )
+    sr0, si0, sr1, si1 = _load4(state_idx)
 
-    t0 = ct.gather(theta, (idx_o, idx_i, reps, 0))
-    a = t0 * 0.5
-    c = ct.cos(a)
-    s = ct.sin(a)
+    c = ct.gather(trig_cache, (pi, trig_idx, 0))
+    s = ct.gather(trig_cache, (pi, trig_idx, 1))
 
     grad_t0_vec = 0.5 * (
         -s * (ar0 * sr0 + ai0 * si0 + ar1 * sr1 + ai1 * si1)
@@ -790,6 +784,7 @@ def _ct_pz_encoding_backward_kernel(
         grad_theta,
         (idx_o, idx_i, reps, 0),
         ct.sum(ct.where(b_mask, grad_t0_vec, 0.0)),
+        memory_order=ct.MemoryOrder.RELAXED,
     )
 
     nar0 = c * ar0 - s * ai0
@@ -798,21 +793,11 @@ def _ct_pz_encoding_backward_kernel(
     nai1 = -s * ar1 + c * ai1
     ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-    for layer in range(reps - 1, -1, -1):
-        # Backward through Rz(enc)
+    for _ri in range(reps):
+        layer = reps - 1 - _ri
+        # Backward through Rz(enc) — must recompute (depends on x_vals)
         state_idx = state_idx - 1
-        sr0 = ct.gather(
-            states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
-        )
-        si0 = ct.gather(
-            states, (program_idx, state_idx, b_range, 1), mask=b_mask, padding_value=0.0
-        )
-        sr1 = ct.gather(
-            states, (program_idx, state_idx, b_range, 2), mask=b_mask, padding_value=0.0
-        )
-        si1 = ct.gather(
-            states, (program_idx, state_idx, b_range, 3), mask=b_mask, padding_value=0.0
-        )
+        sr0, si0, sr1, si1 = _load4(state_idx)
 
         enc = x_vals
         if PREACTS_TRAINABLE:
@@ -820,13 +805,13 @@ def _ct_pz_encoding_backward_kernel(
             b = ct.gather(pb, (idx_o, idx_i, layer))
             enc = w * x_vals + b
 
-        a = enc * 0.5
-        c = ct.cos(a)
-        s = ct.sin(a)
+        ae = enc * 0.5
+        ce = ct.cos(ae)
+        se = ct.sin(ae)
 
         grad_enc = 0.5 * (
-            -s * (ar0 * sr0 + ai0 * si0 + ar1 * sr1 + ai1 * si1)
-            + c * (ar0 * si0 - ai0 * sr0 - ar1 * si1 + ai1 * sr1)
+            -se * (ar0 * sr0 + ai0 * si0 + ar1 * sr1 + ai1 * si1)
+            + ce * (ar0 * si0 - ai0 * sr0 - ar1 * si1 + ai1 * sr1)
         )
 
         if PREACTS_TRAINABLE:
@@ -834,97 +819,82 @@ def _ct_pz_encoding_backward_kernel(
                 grad_pw,
                 (idx_o, idx_i, layer),
                 ct.sum(ct.where(b_mask, grad_enc * x_vals, 0.0)),
+                memory_order=ct.MemoryOrder.RELAXED,
             )
             ct.atomic_add(
                 grad_pb,
                 (idx_o, idx_i, layer),
                 ct.sum(ct.where(b_mask, grad_enc, 0.0)),
+                memory_order=ct.MemoryOrder.RELAXED,
             )
             grad_x_local = grad_x_local + grad_enc * w
         else:
             grad_x_local = grad_x_local + grad_enc
 
-        nar0 = c * ar0 - s * ai0
-        nai0 = s * ar0 + c * ai0
-        nar1 = c * ar1 + s * ai1
-        nai1 = -s * ar1 + c * ai1
+        nar0 = ce * ar0 - se * ai0
+        nai0 = se * ar0 + ce * ai0
+        nar1 = ce * ar1 + se * ai1
+        nai1 = -se * ar1 + ce * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-        # Backward through Ry(t1)
+        # Backward through Ry(t1) — load cached trig
+        trig_idx = trig_idx - 1
         state_idx = state_idx - 1
-        sr0 = ct.gather(
-            states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
-        )
-        si0 = ct.gather(
-            states, (program_idx, state_idx, b_range, 1), mask=b_mask, padding_value=0.0
-        )
-        sr1 = ct.gather(
-            states, (program_idx, state_idx, b_range, 2), mask=b_mask, padding_value=0.0
-        )
-        si1 = ct.gather(
-            states, (program_idx, state_idx, b_range, 3), mask=b_mask, padding_value=0.0
-        )
+        sr0, si0, sr1, si1 = _load4(state_idx)
 
-        t1 = ct.gather(theta, (idx_o, idx_i, layer, 1))
-        a = t1 * 0.5
-        c = ct.cos(a)
-        s = ct.sin(a)
+        ct1 = ct.gather(trig_cache, (pi, trig_idx, 0))
+        st1 = ct.gather(trig_cache, (pi, trig_idx, 1))
 
         grad_t1_vec = 0.5 * (
-            ar0 * (-s * sr0 - c * sr1)
-            + ai0 * (-s * si0 - c * si1)
-            + ar1 * (c * sr0 - s * sr1)
-            + ai1 * (c * si0 - s * si1)
+            ar0 * (-st1 * sr0 - ct1 * sr1)
+            + ai0 * (-st1 * si0 - ct1 * si1)
+            + ar1 * (ct1 * sr0 - st1 * sr1)
+            + ai1 * (ct1 * si0 - st1 * si1)
         )
         ct.atomic_add(
             grad_theta,
             (idx_o, idx_i, layer, 1),
             ct.sum(ct.where(b_mask, grad_t1_vec, 0.0)),
+            memory_order=ct.MemoryOrder.RELAXED,
         )
 
-        nar0 = c * ar0 + s * ar1
-        nai0 = c * ai0 + s * ai1
-        nar1 = -s * ar0 + c * ar1
-        nai1 = -s * ai0 + c * ai1
+        nar0 = ct1 * ar0 + st1 * ar1
+        nai0 = ct1 * ai0 + st1 * ai1
+        nar1 = -st1 * ar0 + ct1 * ar1
+        nai1 = -st1 * ai0 + ct1 * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-        # Backward through Rz(t0)
+        # Backward through Rz(t0) — load cached trig
+        trig_idx = trig_idx - 1
         state_idx = state_idx - 1
-        sr0 = ct.gather(
-            states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
-        )
-        si0 = ct.gather(
-            states, (program_idx, state_idx, b_range, 1), mask=b_mask, padding_value=0.0
-        )
-        sr1 = ct.gather(
-            states, (program_idx, state_idx, b_range, 2), mask=b_mask, padding_value=0.0
-        )
-        si1 = ct.gather(
-            states, (program_idx, state_idx, b_range, 3), mask=b_mask, padding_value=0.0
-        )
+        sr0, si0, sr1, si1 = _load4(state_idx)
 
-        t0 = ct.gather(theta, (idx_o, idx_i, layer, 0))
-        a = t0 * 0.5
-        c = ct.cos(a)
-        s = ct.sin(a)
+        ct0 = ct.gather(trig_cache, (pi, trig_idx, 0))
+        st0 = ct.gather(trig_cache, (pi, trig_idx, 1))
 
         grad_t0_vec = 0.5 * (
-            -s * (ar0 * sr0 + ai0 * si0 + ar1 * sr1 + ai1 * si1)
-            + c * (ar0 * si0 - ai0 * sr0 - ar1 * si1 + ai1 * sr1)
+            -st0 * (ar0 * sr0 + ai0 * si0 + ar1 * sr1 + ai1 * si1)
+            + ct0 * (ar0 * si0 - ai0 * sr0 - ar1 * si1 + ai1 * sr1)
         )
         ct.atomic_add(
             grad_theta,
             (idx_o, idx_i, layer, 0),
             ct.sum(ct.where(b_mask, grad_t0_vec, 0.0)),
+            memory_order=ct.MemoryOrder.RELAXED,
         )
 
-        nar0 = c * ar0 - s * ai0
-        nai0 = s * ar0 + c * ai0
-        nar1 = c * ar1 + s * ai1
-        nai1 = -s * ar1 + c * ai1
+        nar0 = ct0 * ar0 - st0 * ai0
+        nai0 = st0 * ar0 + ct0 * ai0
+        nar1 = ct0 * ar1 + st0 * ai1
+        nai1 = -st0 * ar1 + ct0 * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-    ct.atomic_add(grad_x, (b_offs, idx_i), grad_x_local, mask=b_mask)
+    ct.atomic_add(
+        grad_x,
+        (b_offs, idx_i),
+        ct.where(b_mask, grad_x_local, 0.0),
+        memory_order=ct.MemoryOrder.RELAXED,
+    )
 
 
 def cutile_pz_backward(
@@ -945,13 +915,17 @@ def cutile_pz_backward(
     theta = theta.contiguous()
     grad_output = grad_output.contiguous()
 
-    BLOCK_B = 32
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch)
     n_states = 3 * reps + 3
     n_b_blocks = math.ceil(batch / BLOCK_B)
-    n_programs = out_dim * in_dim * n_b_blocks
+    n_programs = n_oi * n_b_blocks
     states = torch.empty(
         n_programs, n_states, BLOCK_B, 4, device=x.device, dtype=x.dtype
     )
+    # Trig cache: 2 theta-gates per layer + 2 final = 2*reps+2 entries, each storing (cos, sin)
+    n_trig = 2 * reps + 2
+    trig_cache = torch.empty(n_programs, n_trig, 2, device=x.device, dtype=x.dtype)
 
     grad_theta = torch.zeros_like(theta)
     grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=x.dtype)
@@ -965,7 +939,7 @@ def cutile_pz_backward(
         grad_pw = torch.zeros(1, device=x.device)
         grad_pb = torch.zeros(1, device=x.device)
 
-    grid = (out_dim * in_dim, n_b_blocks, 1)
+    grid = (n_oi, n_b_blocks, 1)
     ct.launch(
         torch.cuda.current_stream(),
         grid,
@@ -977,6 +951,7 @@ def cutile_pz_backward(
             pb,
             grad_output,
             states,
+            trig_cache,
             grad_theta,
             grad_x,
             grad_pw,
@@ -1003,7 +978,7 @@ def cutile_pz_backward(
 # ── rpz_encoding backward kernel ──────────────────────────────────────────
 
 
-@ct.kernel
+@ct.kernel(occupancy=4)
 def _ct_rpz_encoding_backward_kernel(
     x,  # [Batch, In_Dim]
     theta,  # [Out_Dim, In_Dim, Reps+1, 1]
@@ -1011,6 +986,7 @@ def _ct_rpz_encoding_backward_kernel(
     pb,  # [Out_Dim, In_Dim, Reps]
     grad_out,  # [Batch, Out_Dim, In_Dim]
     states,  # [N_Programs, N_States, BLOCK_B, 4]
+    trig_cache,  # [N_Programs, Reps+1, 2] — cached cos/sin for Ry(theta) gates
     grad_theta,  # [Out_Dim, In_Dim, Reps+1, 1]
     grad_x,  # [Batch, In_Dim]
     grad_pw,  # [Out_Dim, In_Dim, Reps]
@@ -1036,40 +1012,52 @@ def _ct_rpz_encoding_backward_kernel(
 
     x_vals = ct.gather(x, (b_offs, idx_i), mask=b_mask, padding_value=0.0)
 
-    program_idx = pid_oi * n_b_blocks + pid_b
+    pi = pid_oi * n_b_blocks + pid_b
 
-    # ── Phase 1: Forward recompute, saving states ──
+    def _save4(sidx, v0, v1, v2, v3):
+        ct.scatter(states, (pi, sidx, b_range, 0), v0, mask=b_mask)
+        ct.scatter(states, (pi, sidx, b_range, 1), v1, mask=b_mask)
+        ct.scatter(states, (pi, sidx, b_range, 2), v2, mask=b_mask)
+        ct.scatter(states, (pi, sidx, b_range, 3), v3, mask=b_mask)
+
+    def _load4(sidx):
+        return (
+            ct.gather(states, (pi, sidx, b_range, 0), mask=b_mask, padding_value=0.0),
+            ct.gather(states, (pi, sidx, b_range, 1), mask=b_mask, padding_value=0.0),
+            ct.gather(states, (pi, sidx, b_range, 2), mask=b_mask, padding_value=0.0),
+            ct.gather(states, (pi, sidx, b_range, 3), mask=b_mask, padding_value=0.0),
+        )
+
+    # ── Phase 1: Forward recompute, saving states + trig cache ──
     INV_SQRT2 = 0.7071067811865476
     r0 = ct.full((BLOCK_B,), INV_SQRT2, dtype=ct.float32)
     i0 = ct.zeros((BLOCK_B,), dtype=ct.float32)
     r1 = ct.full((BLOCK_B,), INV_SQRT2, dtype=ct.float32)
     i1 = ct.zeros((BLOCK_B,), dtype=ct.float32)
 
-    ct.scatter(states, (program_idx, 0, b_range, 0), r0, mask=b_mask)
-    ct.scatter(states, (program_idx, 0, b_range, 1), i0, mask=b_mask)
-    ct.scatter(states, (program_idx, 0, b_range, 2), r1, mask=b_mask)
-    ct.scatter(states, (program_idx, 0, b_range, 3), i1, mask=b_mask)
+    _save4(0, r0, i0, r1, i1)
 
     state_idx = 1
+    trig_idx = 0
     for layer in range(reps):
-        # Ry(theta)
+        # Ry(theta) — cache trig
         t0 = ct.gather(theta, (idx_o, idx_i, layer, 0))
         a = t0 * 0.5
         c = ct.cos(a)
         s = ct.sin(a)
+        ct.scatter(trig_cache, (pi, trig_idx, 0), c)
+        ct.scatter(trig_cache, (pi, trig_idx, 1), s)
+        trig_idx = trig_idx + 1
         nr0 = c * r0 - s * r1
         ni0 = c * i0 - s * i1
         nr1 = s * r0 + c * r1
         ni1 = s * i0 + c * i1
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-        ct.scatter(states, (program_idx, state_idx, b_range, 0), r0, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 1), i0, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 2), r1, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 3), i1, mask=b_mask)
+        _save4(state_idx, r0, i0, r1, i1)
         state_idx = state_idx + 1
 
-        # Rz(w*x+b)
+        # Rz(w*x+b) — NOT cached (depends on x_vals per batch element)
         w = ct.gather(pw, (idx_o, idx_i, layer))
         b = ct.gather(pb, (idx_o, idx_i, layer))
         enc = w * x_vals + b
@@ -1083,17 +1071,17 @@ def _ct_rpz_encoding_backward_kernel(
         ni1 = i1 * c + r1 * s
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
-        ct.scatter(states, (program_idx, state_idx, b_range, 0), r0, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 1), i0, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 2), r1, mask=b_mask)
-        ct.scatter(states, (program_idx, state_idx, b_range, 3), i1, mask=b_mask)
+        _save4(state_idx, r0, i0, r1, i1)
         state_idx = state_idx + 1
 
-    # Final Ry(theta[reps,0])
+    # Final Ry(theta[reps,0]) — cache trig
     t0 = ct.gather(theta, (idx_o, idx_i, reps, 0))
     a = t0 * 0.5
     c = ct.cos(a)
     s = ct.sin(a)
+    ct.scatter(trig_cache, (pi, trig_idx, 0), c)
+    ct.scatter(trig_cache, (pi, trig_idx, 1), s)
+    trig_idx = trig_idx + 1
     nr0 = c * r0 - s * r1
     ni0 = c * i0 - s * i1
     nr1 = s * r0 + c * r1
@@ -1118,28 +1106,16 @@ def _ct_rpz_encoding_backward_kernel(
         ar1 = -2.0 * go * r1
         ai1 = -2.0 * go * i1
 
-    # ── Phase 3: Backward sweep ──
+    # ── Phase 3: Backward sweep (using cached trig for theta gates) ──
     grad_x_local = ct.zeros((BLOCK_B,), dtype=ct.float32)
 
-    # Backward through final Ry(theta[reps,0])
+    # Backward through final Ry(theta[reps,0]) — load cached trig
+    trig_idx = trig_idx - 1
     state_idx = state_idx - 1
-    sr0 = ct.gather(
-        states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
-    )
-    si0 = ct.gather(
-        states, (program_idx, state_idx, b_range, 1), mask=b_mask, padding_value=0.0
-    )
-    sr1 = ct.gather(
-        states, (program_idx, state_idx, b_range, 2), mask=b_mask, padding_value=0.0
-    )
-    si1 = ct.gather(
-        states, (program_idx, state_idx, b_range, 3), mask=b_mask, padding_value=0.0
-    )
+    sr0, si0, sr1, si1 = _load4(state_idx)
 
-    t0 = ct.gather(theta, (idx_o, idx_i, reps, 0))
-    a = t0 * 0.5
-    c = ct.cos(a)
-    s = ct.sin(a)
+    c = ct.gather(trig_cache, (pi, trig_idx, 0))
+    s = ct.gather(trig_cache, (pi, trig_idx, 1))
 
     grad_t0_vec = 0.5 * (
         ar0 * (-s * sr0 - c * sr1)
@@ -1151,6 +1127,7 @@ def _ct_rpz_encoding_backward_kernel(
         grad_theta,
         (idx_o, idx_i, reps, 0),
         ct.sum(ct.where(b_mask, grad_t0_vec, 0.0)),
+        memory_order=ct.MemoryOrder.RELAXED,
     )
 
     nar0 = c * ar0 + s * ar1
@@ -1159,92 +1136,78 @@ def _ct_rpz_encoding_backward_kernel(
     nai1 = -s * ai0 + c * ai1
     ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-    for layer in range(reps - 1, -1, -1):
-        # Backward through Rz(enc)
+    for _ri in range(reps):
+        layer = reps - 1 - _ri
+        # Backward through Rz(enc) — must recompute (depends on x_vals)
         state_idx = state_idx - 1
-        sr0 = ct.gather(
-            states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
-        )
-        si0 = ct.gather(
-            states, (program_idx, state_idx, b_range, 1), mask=b_mask, padding_value=0.0
-        )
-        sr1 = ct.gather(
-            states, (program_idx, state_idx, b_range, 2), mask=b_mask, padding_value=0.0
-        )
-        si1 = ct.gather(
-            states, (program_idx, state_idx, b_range, 3), mask=b_mask, padding_value=0.0
-        )
+        sr0, si0, sr1, si1 = _load4(state_idx)
 
         w = ct.gather(pw, (idx_o, idx_i, layer))
         b = ct.gather(pb, (idx_o, idx_i, layer))
         enc = w * x_vals + b
 
-        a = enc * 0.5
-        c = ct.cos(a)
-        s = ct.sin(a)
+        ae = enc * 0.5
+        ce = ct.cos(ae)
+        se = ct.sin(ae)
 
         grad_enc = 0.5 * (
-            -s * (ar0 * sr0 + ai0 * si0 + ar1 * sr1 + ai1 * si1)
-            + c * (ar0 * si0 - ai0 * sr0 - ar1 * si1 + ai1 * sr1)
+            -se * (ar0 * sr0 + ai0 * si0 + ar1 * sr1 + ai1 * si1)
+            + ce * (ar0 * si0 - ai0 * sr0 - ar1 * si1 + ai1 * sr1)
         )
 
         ct.atomic_add(
             grad_pw,
             (idx_o, idx_i, layer),
             ct.sum(ct.where(b_mask, grad_enc * x_vals, 0.0)),
+            memory_order=ct.MemoryOrder.RELAXED,
         )
         ct.atomic_add(
             grad_pb,
             (idx_o, idx_i, layer),
             ct.sum(ct.where(b_mask, grad_enc, 0.0)),
+            memory_order=ct.MemoryOrder.RELAXED,
         )
         grad_x_local = grad_x_local + grad_enc * w
 
-        nar0 = c * ar0 - s * ai0
-        nai0 = s * ar0 + c * ai0
-        nar1 = c * ar1 + s * ai1
-        nai1 = -s * ar1 + c * ai1
+        nar0 = ce * ar0 - se * ai0
+        nai0 = se * ar0 + ce * ai0
+        nar1 = ce * ar1 + se * ai1
+        nai1 = -se * ar1 + ce * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-        # Backward through Ry(theta[l,0])
+        # Backward through Ry(theta[l,0]) — load cached trig
+        trig_idx = trig_idx - 1
         state_idx = state_idx - 1
-        sr0 = ct.gather(
-            states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
-        )
-        si0 = ct.gather(
-            states, (program_idx, state_idx, b_range, 1), mask=b_mask, padding_value=0.0
-        )
-        sr1 = ct.gather(
-            states, (program_idx, state_idx, b_range, 2), mask=b_mask, padding_value=0.0
-        )
-        si1 = ct.gather(
-            states, (program_idx, state_idx, b_range, 3), mask=b_mask, padding_value=0.0
-        )
+        sr0, si0, sr1, si1 = _load4(state_idx)
 
-        t0 = ct.gather(theta, (idx_o, idx_i, layer, 0))
-        a = t0 * 0.5
-        c = ct.cos(a)
-        s = ct.sin(a)
+        ct0 = ct.gather(trig_cache, (pi, trig_idx, 0))
+        st0 = ct.gather(trig_cache, (pi, trig_idx, 1))
 
         grad_t0_vec = 0.5 * (
-            ar0 * (-s * sr0 - c * sr1)
-            + ai0 * (-s * si0 - c * si1)
-            + ar1 * (c * sr0 - s * sr1)
-            + ai1 * (c * si0 - s * si1)
+            ar0 * (-st0 * sr0 - ct0 * sr1)
+            + ai0 * (-st0 * si0 - ct0 * si1)
+            + ar1 * (ct0 * sr0 - st0 * sr1)
+            + ai1 * (ct0 * si0 - st0 * si1)
         )
         ct.atomic_add(
             grad_theta,
             (idx_o, idx_i, layer, 0),
             ct.sum(ct.where(b_mask, grad_t0_vec, 0.0)),
+            memory_order=ct.MemoryOrder.RELAXED,
         )
 
-        nar0 = c * ar0 + s * ar1
-        nai0 = c * ai0 + s * ai1
-        nar1 = -s * ar0 + c * ar1
-        nai1 = -s * ai0 + c * ai1
+        nar0 = ct0 * ar0 + st0 * ar1
+        nai0 = ct0 * ai0 + st0 * ai1
+        nar1 = -st0 * ar0 + ct0 * ar1
+        nai1 = -st0 * ai0 + ct0 * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-    ct.atomic_add(grad_x, (b_offs, idx_i), grad_x_local, mask=b_mask)
+    ct.atomic_add(
+        grad_x,
+        (b_offs, idx_i),
+        ct.where(b_mask, grad_x_local, 0.0),
+        memory_order=ct.MemoryOrder.RELAXED,
+    )
 
 
 def cutile_rpz_backward(
@@ -1266,20 +1229,24 @@ def cutile_rpz_backward(
     pb = pb.contiguous()
     grad_output = grad_output.contiguous()
 
-    BLOCK_B = 32
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch)
     n_states = 2 * reps + 2
     n_b_blocks = math.ceil(batch / BLOCK_B)
-    n_programs = out_dim * in_dim * n_b_blocks
+    n_programs = n_oi * n_b_blocks
     states = torch.empty(
         n_programs, n_states, BLOCK_B, 4, device=x.device, dtype=x.dtype
     )
+    # Trig cache: reps Ry(theta) per layer + 1 final = reps+1 entries
+    n_trig = reps + 1
+    trig_cache = torch.empty(n_programs, n_trig, 2, device=x.device, dtype=x.dtype)
 
     grad_theta = torch.zeros_like(theta)
     grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=x.dtype)
     grad_pw = torch.zeros_like(pw)
     grad_pb = torch.zeros_like(pb)
 
-    grid = (out_dim * in_dim, n_b_blocks, 1)
+    grid = (n_oi, n_b_blocks, 1)
     ct.launch(
         torch.cuda.current_stream(),
         grid,
@@ -1291,6 +1258,7 @@ def cutile_rpz_backward(
             pb,
             grad_output,
             states,
+            trig_cache,
             grad_theta,
             grad_x,
             grad_pw,
@@ -1311,7 +1279,7 @@ def cutile_rpz_backward(
 # ── real ansatz backward kernel ────────────────────────────────────────────
 
 
-@ct.kernel
+@ct.kernel(occupancy=4)
 def _ct_real_encoding_backward_kernel_bf16(
     x,  # [Batch, In_Dim]
     theta,  # [Out_Dim, In_Dim, Reps, 1]
@@ -1319,6 +1287,7 @@ def _ct_real_encoding_backward_kernel_bf16(
     pb,  # [Out_Dim, In_Dim, Reps]
     grad_out,  # [Batch, Out_Dim, In_Dim]
     states,  # [N_Programs, N_States, BLOCK_B, 2]
+    trig_cache,  # [N_Programs, Reps, 2] — cached cos/sin for Ry(theta) gates
     grad_theta,  # [Out_Dim, In_Dim, Reps, 1] (float32)
     grad_x,  # [Batch, In_Dim] (float32)
     grad_pw,  # [Out_Dim, In_Dim, Reps] (float32)
@@ -1344,10 +1313,11 @@ def _ct_real_encoding_backward_kernel_bf16(
     b_range = ct.arange(BLOCK_B, dtype=ct.int32)
 
     x_vals = ct.gather(x, (b_offs, idx_i), mask=b_mask, padding_value=0.0)
+    x_vals_f32 = ct.astype(x_vals, ct.float32)
 
     program_idx = pid_oi * n_b_blocks + pid_b
 
-    # ── Phase 1: Forward recompute ──
+    # ── Phase 1: Forward recompute + trig cache ──
     INV_SQRT2 = 0.7071067811865476
     r0 = ct.full((BLOCK_B,), INV_SQRT2, dtype=ct.float32)
     r1 = ct.full((BLOCK_B,), INV_SQRT2, dtype=ct.float32)
@@ -1356,6 +1326,7 @@ def _ct_real_encoding_backward_kernel_bf16(
     ct.scatter(states, (program_idx, 0, b_range, 1), r1, mask=b_mask)
 
     state_idx = 1
+    trig_idx = 0
     for layer in range(reps):
         r0, r1 = r1, r0  # X gate
 
@@ -1363,11 +1334,14 @@ def _ct_real_encoding_backward_kernel_bf16(
         ct.scatter(states, (program_idx, state_idx, b_range, 1), r1, mask=b_mask)
         state_idx = state_idx + 1
 
-        # Ry(theta)
+        # Ry(theta) — cache trig
         t0 = ct.gather(theta, (idx_o, idx_i, layer, 0))
         a = ct.astype(t0, ct.float32) * 0.5
         c = ct.cos(a)
         s = ct.sin(a)
+        ct.scatter(trig_cache, (program_idx, trig_idx, 0), c)
+        ct.scatter(trig_cache, (program_idx, trig_idx, 1), s)
+        trig_idx = trig_idx + 1
         nr0 = c * r0 - s * r1
         nr1 = s * r0 + c * r1
         r0, r1 = nr0, nr1
@@ -1382,14 +1356,12 @@ def _ct_real_encoding_backward_kernel_bf16(
         ct.scatter(states, (program_idx, state_idx, b_range, 1), r1, mask=b_mask)
         state_idx = state_idx + 1
 
-        # Ry(enc)
-        enc = ct.astype(x_vals, ct.float32)
+        # Ry(enc) — NOT cached (depends on x_vals per batch element)
+        enc = x_vals_f32
         if PREACTS_TRAINABLE:
             w = ct.gather(pw, (idx_o, idx_i, layer))
             b = ct.gather(pb, (idx_o, idx_i, layer))
-            enc = ct.astype(w, ct.float32) * ct.astype(x_vals, ct.float32) + ct.astype(
-                b, ct.float32
-            )
+            enc = ct.astype(w, ct.float32) * x_vals_f32 + ct.astype(b, ct.float32)
 
         a = enc * 0.5
         c = ct.cos(a)
@@ -1408,11 +1380,12 @@ def _ct_real_encoding_backward_kernel_bf16(
         ar0 = 2.0 * go * r0
         ar1 = -2.0 * go * r1
 
-    # ── Phase 3: Backward sweep ──
+    # ── Phase 3: Backward sweep (using cached trig for theta gates) ──
     grad_x_local = ct.zeros((BLOCK_B,), dtype=ct.float32)
 
-    for layer in range(reps - 1, -1, -1):
-        # Backward through Ry(enc)
+    for _ri in range(reps):
+        layer = reps - 1 - _ri
+        # Backward through Ry(enc) — must recompute (depends on x_vals)
         state_idx = state_idx - 1
         sr0 = ct.gather(
             states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
@@ -1421,43 +1394,45 @@ def _ct_real_encoding_backward_kernel_bf16(
             states, (program_idx, state_idx, b_range, 1), mask=b_mask, padding_value=0.0
         )
 
-        enc = ct.astype(x_vals, ct.float32)
+        enc = x_vals_f32
         if PREACTS_TRAINABLE:
             w = ct.gather(pw, (idx_o, idx_i, layer))
             b = ct.gather(pb, (idx_o, idx_i, layer))
-            enc = ct.astype(w, ct.float32) * ct.astype(x_vals, ct.float32) + ct.astype(
-                b, ct.float32
-            )
+            w_f32 = ct.astype(w, ct.float32)
+            enc = w_f32 * x_vals_f32 + ct.astype(b, ct.float32)
 
-        a = enc * 0.5
-        c = ct.cos(a)
-        s = ct.sin(a)
+        ae = enc * 0.5
+        ce = ct.cos(ae)
+        se = ct.sin(ae)
 
-        grad_enc = 0.5 * (ar0 * (-s * sr0 - c * sr1) + ar1 * (c * sr0 - s * sr1))
+        grad_enc = 0.5 * (ar0 * (-se * sr0 - ce * sr1) + ar1 * (ce * sr0 - se * sr1))
 
         if PREACTS_TRAINABLE:
             ct.atomic_add(
                 grad_pw,
                 (idx_o, idx_i, layer),
-                ct.sum(ct.where(b_mask, grad_enc * ct.astype(x_vals, ct.float32), 0.0)),
+                ct.sum(ct.where(b_mask, grad_enc * x_vals_f32, 0.0)),
+                memory_order=ct.MemoryOrder.RELAXED,
             )
             ct.atomic_add(
                 grad_pb,
                 (idx_o, idx_i, layer),
                 ct.sum(ct.where(b_mask, grad_enc, 0.0)),
+                memory_order=ct.MemoryOrder.RELAXED,
             )
-            grad_x_local = grad_x_local + grad_enc * ct.astype(w, ct.float32)
+            grad_x_local = grad_x_local + grad_enc * w_f32
         else:
             grad_x_local = grad_x_local + grad_enc
 
-        nar0 = c * ar0 + s * ar1
-        nar1 = -s * ar0 + c * ar1
+        nar0 = ce * ar0 + se * ar1
+        nar1 = -se * ar0 + ce * ar1
         ar0, ar1 = nar0, nar1
 
         # Backward through Z gate
         ar1 = -ar1
 
-        # Backward through Ry(theta)
+        # Backward through Ry(theta) — load cached trig
+        trig_idx = trig_idx - 1
         state_idx = state_idx - 2
         sr0 = ct.gather(
             states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
@@ -1466,29 +1441,35 @@ def _ct_real_encoding_backward_kernel_bf16(
             states, (program_idx, state_idx, b_range, 1), mask=b_mask, padding_value=0.0
         )
 
-        t0 = ct.gather(theta, (idx_o, idx_i, layer, 0))
-        a = ct.astype(t0, ct.float32) * 0.5
-        c = ct.cos(a)
-        s = ct.sin(a)
+        ct0 = ct.gather(trig_cache, (program_idx, trig_idx, 0))
+        st0 = ct.gather(trig_cache, (program_idx, trig_idx, 1))
 
-        grad_t0_vec = 0.5 * (ar0 * (-s * sr0 - c * sr1) + ar1 * (c * sr0 - s * sr1))
+        grad_t0_vec = 0.5 * (
+            ar0 * (-st0 * sr0 - ct0 * sr1) + ar1 * (ct0 * sr0 - st0 * sr1)
+        )
         ct.atomic_add(
             grad_theta,
             (idx_o, idx_i, layer, 0),
             ct.sum(ct.where(b_mask, grad_t0_vec, 0.0)),
+            memory_order=ct.MemoryOrder.RELAXED,
         )
 
-        nar0 = c * ar0 + s * ar1
-        nar1 = -s * ar0 + c * ar1
+        nar0 = ct0 * ar0 + st0 * ar1
+        nar1 = -st0 * ar0 + ct0 * ar1
         ar0, ar1 = nar0, nar1
 
         # Backward through X gate
         ar0, ar1 = ar1, ar0
 
-    ct.atomic_add(grad_x, (b_offs, idx_i), grad_x_local, mask=b_mask)
+    ct.atomic_add(
+        grad_x,
+        (b_offs, idx_i),
+        ct.where(b_mask, grad_x_local, 0.0),
+        memory_order=ct.MemoryOrder.RELAXED,
+    )
 
 
-@ct.kernel
+@ct.kernel(occupancy=4)
 def _ct_real_encoding_backward_kernel_f32(
     x,  # [Batch, In_Dim]
     theta,  # [Out_Dim, In_Dim, Reps, 1]
@@ -1496,6 +1477,7 @@ def _ct_real_encoding_backward_kernel_f32(
     pb,  # [Out_Dim, In_Dim, Reps]
     grad_out,  # [Batch, Out_Dim, In_Dim]
     states,  # [N_Programs, N_States, BLOCK_B, 4]
+    trig_cache,  # [N_Programs, Reps, 2] — cached cos/sin for Ry(theta) gates
     grad_theta,  # [Out_Dim, In_Dim, Reps, 1] (float32)
     grad_x,  # [Batch, In_Dim] (float32)
     grad_pw,  # [Out_Dim, In_Dim, Reps] (float32)
@@ -1524,7 +1506,7 @@ def _ct_real_encoding_backward_kernel_f32(
 
     program_idx = pid_oi * n_b_blocks + pid_b
 
-    # ── Phase 1: Forward recompute ──
+    # ── Phase 1: Forward recompute + trig cache ──
     INV_SQRT2 = 0.7071067811865476
     r0 = ct.full((BLOCK_B,), INV_SQRT2, dtype=ct.float32)
     i0 = ct.zeros((BLOCK_B,), dtype=ct.float32)
@@ -1537,6 +1519,7 @@ def _ct_real_encoding_backward_kernel_f32(
     ct.scatter(states, (program_idx, 0, b_range, 3), i1, mask=b_mask)
 
     state_idx = 1
+    trig_idx = 0
     for layer in range(reps):
         r0, i0, r1, i1 = r1, i1, r0, i0  # X gate
 
@@ -1546,11 +1529,14 @@ def _ct_real_encoding_backward_kernel_f32(
         ct.scatter(states, (program_idx, state_idx, b_range, 3), i1, mask=b_mask)
         state_idx = state_idx + 1
 
-        # Ry(theta)
+        # Ry(theta) — cache trig
         t0 = ct.gather(theta, (idx_o, idx_i, layer, 0))
         a = t0 * 0.5
         c = ct.cos(a)
         s = ct.sin(a)
+        ct.scatter(trig_cache, (program_idx, trig_idx, 0), c)
+        ct.scatter(trig_cache, (program_idx, trig_idx, 1), s)
+        trig_idx = trig_idx + 1
         nr0 = c * r0 - s * r1
         ni0 = c * i0 - s * i1
         nr1 = s * r0 + c * r1
@@ -1572,7 +1558,7 @@ def _ct_real_encoding_backward_kernel_f32(
         ct.scatter(states, (program_idx, state_idx, b_range, 3), i1, mask=b_mask)
         state_idx = state_idx + 1
 
-        # Ry(enc)
+        # Ry(enc) — NOT cached (depends on x_vals per batch element)
         enc = x_vals
         if PREACTS_TRAINABLE:
             w = ct.gather(pw, (idx_o, idx_i, layer))
@@ -1606,11 +1592,12 @@ def _ct_real_encoding_backward_kernel_f32(
         ar1 = -2.0 * go * r1
         ai1 = -2.0 * go * i1
 
-    # ── Phase 3: Backward sweep ──
+    # ── Phase 3: Backward sweep (using cached trig for theta gates) ──
     grad_x_local = ct.zeros((BLOCK_B,), dtype=ct.float32)
 
-    for layer in range(reps - 1, -1, -1):
-        # Backward through Ry(enc)
+    for _ri in range(reps):
+        layer = reps - 1 - _ri
+        # Backward through Ry(enc) — must recompute (depends on x_vals)
         state_idx = state_idx - 1
         sr0 = ct.gather(
             states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
@@ -1631,15 +1618,15 @@ def _ct_real_encoding_backward_kernel_f32(
             b = ct.gather(pb, (idx_o, idx_i, layer))
             enc = w * x_vals + b
 
-        a = enc * 0.5
-        c = ct.cos(a)
-        s = ct.sin(a)
+        ae = enc * 0.5
+        ce = ct.cos(ae)
+        se = ct.sin(ae)
 
         grad_enc = 0.5 * (
-            ar0 * (-s * sr0 - c * sr1)
-            + ai0 * (-s * si0 - c * si1)
-            + ar1 * (c * sr0 - s * sr1)
-            + ai1 * (c * si0 - s * si1)
+            ar0 * (-se * sr0 - ce * sr1)
+            + ai0 * (-se * si0 - ce * si1)
+            + ar1 * (ce * sr0 - se * sr1)
+            + ai1 * (ce * si0 - se * si1)
         )
 
         if PREACTS_TRAINABLE:
@@ -1647,27 +1634,30 @@ def _ct_real_encoding_backward_kernel_f32(
                 grad_pw,
                 (idx_o, idx_i, layer),
                 ct.sum(ct.where(b_mask, grad_enc * x_vals, 0.0)),
+                memory_order=ct.MemoryOrder.RELAXED,
             )
             ct.atomic_add(
                 grad_pb,
                 (idx_o, idx_i, layer),
                 ct.sum(ct.where(b_mask, grad_enc, 0.0)),
+                memory_order=ct.MemoryOrder.RELAXED,
             )
             grad_x_local = grad_x_local + grad_enc * w
         else:
             grad_x_local = grad_x_local + grad_enc
 
-        nar0 = c * ar0 + s * ar1
-        nai0 = c * ai0 + s * ai1
-        nar1 = -s * ar0 + c * ar1
-        nai1 = -s * ai0 + c * ai1
+        nar0 = ce * ar0 + se * ar1
+        nai0 = ce * ai0 + se * ai1
+        nar1 = -se * ar0 + ce * ar1
+        nai1 = -se * ai0 + ce * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
         # Backward through Z gate
         ar1 = -ar1
         ai1 = -ai1
 
-        # Backward through Ry(theta)
+        # Backward through Ry(theta) — load cached trig
+        trig_idx = trig_idx - 1
         state_idx = state_idx - 2
         sr0 = ct.gather(
             states, (program_idx, state_idx, b_range, 0), mask=b_mask, padding_value=0.0
@@ -1682,33 +1672,37 @@ def _ct_real_encoding_backward_kernel_f32(
             states, (program_idx, state_idx, b_range, 3), mask=b_mask, padding_value=0.0
         )
 
-        t0 = ct.gather(theta, (idx_o, idx_i, layer, 0))
-        a = t0 * 0.5
-        c = ct.cos(a)
-        s = ct.sin(a)
+        ct0 = ct.gather(trig_cache, (program_idx, trig_idx, 0))
+        st0 = ct.gather(trig_cache, (program_idx, trig_idx, 1))
 
         grad_t0_vec = 0.5 * (
-            ar0 * (-s * sr0 - c * sr1)
-            + ai0 * (-s * si0 - c * si1)
-            + ar1 * (c * sr0 - s * sr1)
-            + ai1 * (c * si0 - s * si1)
+            ar0 * (-st0 * sr0 - ct0 * sr1)
+            + ai0 * (-st0 * si0 - ct0 * si1)
+            + ar1 * (ct0 * sr0 - st0 * sr1)
+            + ai1 * (ct0 * si0 - st0 * si1)
         )
         ct.atomic_add(
             grad_theta,
             (idx_o, idx_i, layer, 0),
             ct.sum(ct.where(b_mask, grad_t0_vec, 0.0)),
+            memory_order=ct.MemoryOrder.RELAXED,
         )
 
-        nar0 = c * ar0 + s * ar1
-        nai0 = c * ai0 + s * ai1
-        nar1 = -s * ar0 + c * ar1
-        nai1 = -s * ai0 + c * ai1
+        nar0 = ct0 * ar0 + st0 * ar1
+        nai0 = ct0 * ai0 + st0 * ai1
+        nar1 = -st0 * ar0 + ct0 * ar1
+        nai1 = -st0 * ai0 + ct0 * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
         # Backward through X gate
         ar0, ai0, ar1, ai1 = ar1, ai1, ar0, ai0
 
-    ct.atomic_add(grad_x, (b_offs, idx_i), grad_x_local, mask=b_mask)
+    ct.atomic_add(
+        grad_x,
+        (b_offs, idx_i),
+        ct.where(b_mask, grad_x_local, 0.0),
+        memory_order=ct.MemoryOrder.RELAXED,
+    )
 
 
 def cutile_real_backward(
@@ -1733,11 +1727,12 @@ def cutile_real_backward(
     grad_output = grad_output.contiguous()
 
     compute_bf16 = c_dtype == torch.bfloat16
-    BLOCK_B = 32 if compute_bf16 else 1
+    n_oi = out_dim * in_dim
+    BLOCK_B = _select_block_b(n_oi, batch, 32 if compute_bf16 else 1)
 
     n_states = 3 * reps + 1
     n_b_blocks = math.ceil(batch / BLOCK_B)
-    n_programs = out_dim * in_dim * n_b_blocks
+    n_programs = n_oi * n_b_blocks
     n_components = 2 if compute_bf16 else 4
     states = torch.empty(
         n_programs,
@@ -1747,6 +1742,8 @@ def cutile_real_backward(
         device=x.device,
         dtype=torch.float32,
     )
+    # Trig cache: reps Ry(theta) gates, each storing (cos, sin)
+    trig_cache = torch.empty(n_programs, reps, 2, device=x.device, dtype=torch.float32)
 
     grad_theta = torch.zeros(theta.shape, device=x.device, dtype=torch.float32)
     grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=torch.float32)
@@ -1758,7 +1755,7 @@ def cutile_real_backward(
         grad_pw = torch.zeros(1, device=x.device, dtype=torch.float32)
         grad_pb = torch.zeros(1, device=x.device, dtype=torch.float32)
 
-    grid = (out_dim * in_dim, n_b_blocks, 1)
+    grid = (n_oi, n_b_blocks, 1)
     kernel = (
         _ct_real_encoding_backward_kernel_bf16
         if compute_bf16
@@ -1776,6 +1773,7 @@ def cutile_real_backward(
             pb,
             grad_output,
             states,
+            trig_cache,
             grad_theta,
             grad_x,
             grad_pw,
