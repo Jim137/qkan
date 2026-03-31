@@ -25,13 +25,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gpu = [
-    "triton",
-    "cuquantum",
+flash = [
+    "triton>=3.0",
 ]
 
 cutile = [
     "cuda-tile",
+]
+
+cutn = [
+    "cuquantum",
 ]
 
 qml = [
@@ -59,7 +62,11 @@ doc = [
     "torchvision",
 ]
 
-all = ["qkan[gpu,cutile,qml,dev,doc]"]
+gpu = [
+    "qkan[flash,cutile,cutn]",
+]
+
+all = ["qkan[gpu,qml,dev,doc]"]
 
 [project.urls]
 Homepage = "https://github.com/Jim137/qkan"
