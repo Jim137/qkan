@@ -852,7 +852,7 @@ class _FlashFunction(torch.autograd.Function):
         else:
             raise ValueError(f"Unsupported ansatz for flash backward: {ansatz}")
 
-        if ctx.c_dtype == torch.bfloat16:
+        if ctx.c_dtype in (torch.bfloat16, torch.float8_e4m3fn):
             grad_x, grad_theta, grad_pw, grad_pb = _cast_grads_to_dtype(
                 grad_x, grad_theta, grad_pw, grad_pb, x.dtype
             )
@@ -1109,7 +1109,7 @@ class _CuTileFlashFunction(torch.autograd.Function):
         else:
             raise ValueError(f"Unsupported ansatz for cutile backward: {ansatz}")
 
-        if ctx.c_dtype == torch.bfloat16:
+        if ctx.c_dtype in (torch.bfloat16, torch.float8_e4m3fn):
             grad_x, grad_theta, grad_pw, grad_pb = _cast_grads_to_dtype(
                 grad_x, grad_theta, grad_pw, grad_pb, x.dtype
             )

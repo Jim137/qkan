@@ -194,18 +194,19 @@ def triton_pz_forward(
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    x = x.to(c_dtype).contiguous()
-    theta = theta.to(c_dtype).contiguous()
+    io_dtype = torch.bfloat16 if c_dtype == torch.float8_e4m3fn else c_dtype
+    x = x.to(io_dtype).contiguous()
+    theta = theta.to(io_dtype).contiguous()
 
-    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
+    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=io_dtype)
 
     n_oi = out_dim * in_dim
     BLOCK_B = _select_block_b(n_oi, batch)
     grid = (n_oi, triton.cdiv(batch, BLOCK_B))
 
     if preacts_trainable:
-        preacts_w = preacts_w.to(c_dtype).contiguous()
-        preacts_b = preacts_b.to(c_dtype).contiguous()
+        preacts_w = preacts_w.to(io_dtype).contiguous()
+        preacts_b = preacts_b.to(io_dtype).contiguous()
         pw_strides = (preacts_w.stride(0), preacts_w.stride(1), preacts_w.stride(2))
         pb_strides = (preacts_b.stride(0), preacts_b.stride(1), preacts_b.stride(2))
     else:
@@ -381,12 +382,13 @@ def triton_rpz_forward(
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    x = x.to(c_dtype).contiguous()
-    theta = theta.to(c_dtype).contiguous()
-    preacts_w = preacts_w.to(c_dtype).contiguous()
-    preacts_b = preacts_b.to(c_dtype).contiguous()
+    io_dtype = torch.bfloat16 if c_dtype == torch.float8_e4m3fn else c_dtype
+    x = x.to(io_dtype).contiguous()
+    theta = theta.to(io_dtype).contiguous()
+    preacts_w = preacts_w.to(io_dtype).contiguous()
+    preacts_b = preacts_b.to(io_dtype).contiguous()
 
-    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
+    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=io_dtype)
     n_oi = out_dim * in_dim
     BLOCK_B = _select_block_b(n_oi, batch)
     grid = (n_oi, triton.cdiv(batch, BLOCK_B))
@@ -483,6 +485,7 @@ def _rpz_encoding_backward_kernel(
     stride_gpb_r,
     # Compile-time constants
     FAST_MEASURE: tl.constexpr,
+    FP8_PRESCALE: tl.constexpr = 1.0,
     BLOCK_B: tl.constexpr = 1,
 ):
     """Backward kernel for rpz_encoding ansatz with batch tiling."""
@@ -505,6 +508,7 @@ def _rpz_encoding_backward_kernel(
     pw_base = pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i
     pb_base = pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i
     program_idx = pid_oi * tl.cdiv(batch_size, BLOCK_B) + pid_b
+    FP8_INV = 1.0 / FP8_PRESCALE
     states_base = states_ptr + program_idx * stride_s_n
 
     # ── Phase 1: Forward recompute, saving states ──
@@ -516,22 +520,22 @@ def _rpz_encoding_backward_kernel(
 
     tl.store(
         states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
-        r0,
+        r0 * FP8_PRESCALE,
         mask=b_mask,
     )
     tl.store(
         states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
-        i0,
+        i0 * FP8_PRESCALE,
         mask=b_mask,
     )
     tl.store(
         states_base + 0 * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
-        r1,
+        r1 * FP8_PRESCALE,
         mask=b_mask,
     )
     tl.store(
         states_base + 0 * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
-        i1,
+        i1 * FP8_PRESCALE,
         mask=b_mask,
     )
 
@@ -667,28 +671,55 @@ def _rpz_encoding_backward_kernel(
 
     # Backward through final Ry(theta[reps,0])
     state_idx -= 1
-    sr0 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
-    si0 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
-    sr1 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
-    si1 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
+    sr0 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
+    si0 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
+    sr1 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
+    si1 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
 
-    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
+    t0 = (
+        tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
+        * FP8_INV
+    )
     a = t0 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -861,7 +892,13 @@ def triton_rpz_backward(
     n_states = 2 * reps + 2
     n_b_blocks = triton.cdiv(batch, BLOCK_B)
     n_programs = n_oi * n_b_blocks
-    states_dtype = torch.bfloat16 if c_dtype == torch.bfloat16 else torch.float32
+    compute_fp8 = c_dtype == torch.float8_e4m3fn
+    if compute_fp8:
+        states_dtype = torch.float8_e4m3fn
+    elif c_dtype == torch.bfloat16:
+        states_dtype = torch.bfloat16
+    else:
+        states_dtype = torch.float32
     states = torch.empty(
         n_programs, n_states, 4, BLOCK_B, device=x.device, dtype=states_dtype
     )
@@ -1210,6 +1247,7 @@ def _pz_encoding_backward_kernel(
     # Compile-time constants
     PREACTS_TRAINABLE: tl.constexpr,
     FAST_MEASURE: tl.constexpr,
+    FP8_PRESCALE: tl.constexpr = 1.0,
     BLOCK_B: tl.constexpr = 1,
 ):
     """Backward kernel for pz_encoding ansatz with batch tiling."""
@@ -1230,6 +1268,7 @@ def _pz_encoding_backward_kernel(
     ).to(tl.float32)
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     program_idx = pid_oi * tl.cdiv(batch_size, BLOCK_B) + pid_b
+    FP8_INV = 1.0 / FP8_PRESCALE
     states_base = states_ptr + program_idx * stride_s_n
 
     # ── Phase 1: Forward recompute, saving states ──
@@ -1241,22 +1280,22 @@ def _pz_encoding_backward_kernel(
 
     tl.store(
         states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
-        r0,
+        r0 * FP8_PRESCALE,
         mask=b_mask,
     )
     tl.store(
         states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
-        i0,
+        i0 * FP8_PRESCALE,
         mask=b_mask,
     )
     tl.store(
         states_base + 0 * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
-        r1,
+        r1 * FP8_PRESCALE,
         mask=b_mask,
     )
     tl.store(
         states_base + 0 * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
-        i1,
+        i1 * FP8_PRESCALE,
         mask=b_mask,
     )
 
@@ -1419,22 +1458,22 @@ def _pz_encoding_backward_kernel(
 
     tl.store(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
-        r0,
+        r0 * FP8_PRESCALE,
         mask=b_mask,
     )
     tl.store(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
-        i0,
+        i0 * FP8_PRESCALE,
         mask=b_mask,
     )
     tl.store(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
-        r1,
+        r1 * FP8_PRESCALE,
         mask=b_mask,
     )
     tl.store(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
-        i1,
+        i1 * FP8_PRESCALE,
         mask=b_mask,
     )
     state_idx += 1
@@ -1478,28 +1517,55 @@ def _pz_encoding_backward_kernel(
 
     # Backward through final Ry(t1_final)
     state_idx -= 1
-    sr0 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
-    si0 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
-    sr1 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
-    si1 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
+    sr0 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
+    si0 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
+    sr1 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
+    si1 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
 
-    t1 = tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p).to(tl.float32)
+    t1 = (
+        tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p).to(tl.float32)
+        * FP8_INV
+    )
     a = t1 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -1523,28 +1589,55 @@ def _pz_encoding_backward_kernel(
 
     # Backward through final Rz(t0_final)
     state_idx -= 1
-    sr0 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
-    si0 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
-    sr1 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
-    si1 = tl.load(
-        states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
-        mask=b_mask,
-        other=0.0,
-    ).to(tl.float32)
+    sr0 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 0 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
+    si0 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 1 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
+    sr1 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 2 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
+    si1 = (
+        tl.load(
+            states_base
+            + state_idx * stride_s_s
+            + b_range * stride_s_b
+            + 3 * stride_s_c,
+            mask=b_mask,
+            other=0.0,
+        ).to(tl.float32)
+        * FP8_INV
+    )
 
-    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
+    t0 = (
+        tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
+        * FP8_INV
+    )
     a = t0 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -1775,8 +1868,9 @@ def triton_pz_backward(
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    x = x.to(c_dtype).contiguous()
-    theta = theta.to(c_dtype).contiguous()
+    io_dtype = torch.bfloat16 if c_dtype == torch.float8_e4m3fn else c_dtype
+    x = x.to(io_dtype).contiguous()
+    theta = theta.to(io_dtype).contiguous()
     grad_output = grad_output.contiguous()
 
     n_oi = out_dim * in_dim
@@ -1784,7 +1878,14 @@ def triton_pz_backward(
     n_states = 3 * reps + 3  # H state + 3 per layer + after final Rz
     n_b_blocks = triton.cdiv(batch, BLOCK_B)
     n_programs = n_oi * n_b_blocks
-    states_dtype = torch.bfloat16 if c_dtype == torch.bfloat16 else torch.float32
+    compute_fp8 = c_dtype == torch.float8_e4m3fn
+    io_dtype = torch.bfloat16 if compute_fp8 else c_dtype
+    if compute_fp8:
+        states_dtype = torch.float8_e4m3fn
+    elif c_dtype == torch.bfloat16:
+        states_dtype = torch.bfloat16
+    else:
+        states_dtype = torch.float32
     states = torch.empty(
         n_programs, n_states, 4, BLOCK_B, device=x.device, dtype=states_dtype
     )
@@ -1793,8 +1894,8 @@ def triton_pz_backward(
     grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=torch.float32)
 
     if preacts_trainable:
-        pw = pw.to(c_dtype).contiguous()
-        pb = pb.to(c_dtype).contiguous()
+        pw = pw.to(io_dtype).contiguous()
+        pb = pb.to(io_dtype).contiguous()
         grad_pw = torch.zeros(pw.shape, device=x.device, dtype=torch.float32)
         grad_pb = torch.zeros(pb.shape, device=x.device, dtype=torch.float32)
         pw_strides = (pw.stride(0), pw.stride(1), pw.stride(2))
@@ -1850,6 +1951,7 @@ def triton_pz_backward(
         *gpb_strides,
         PREACTS_TRAINABLE=preacts_trainable,
         FAST_MEASURE=fast_measure,
+        FP8_PRESCALE=224.0 if compute_fp8 else 1.0,
         BLOCK_B=BLOCK_B,
     )
 
@@ -1889,12 +1991,13 @@ def triton_real_forward(
     out_dim = theta.shape[0]
     reps = theta.shape[2]  # No +1 for real ansatz
 
-    x = x.to(c_dtype).contiguous()
-    theta = theta.to(c_dtype).contiguous()
-    preacts_w = preacts_w.to(c_dtype).contiguous()
-    preacts_b = preacts_b.to(c_dtype).contiguous()
+    io_dtype = torch.bfloat16 if c_dtype == torch.float8_e4m3fn else c_dtype
+    x = x.to(io_dtype).contiguous()
+    theta = theta.to(io_dtype).contiguous()
+    preacts_w = preacts_w.to(io_dtype).contiguous()
+    preacts_b = preacts_b.to(io_dtype).contiguous()
 
-    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
+    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=io_dtype)
 
     compute_bf16 = c_dtype == torch.bfloat16
     n_oi = out_dim * in_dim
@@ -2000,6 +2103,7 @@ def _real_encoding_backward_kernel(
     PREACTS_TRAINABLE: tl.constexpr,
     FAST_MEASURE: tl.constexpr,
     COMPUTE_BF16: tl.constexpr = False,
+    FP8_PRESCALE: tl.constexpr = 1.0,
     BLOCK_B: tl.constexpr = 1,
 ):
     """Backward kernel for real ansatz with batch tiling.
@@ -2027,6 +2131,7 @@ def _real_encoding_backward_kernel(
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     # states_base indexes into (n_programs, n_states, BLOCK_B, n_components)
     program_idx = pid_oi * tl.cdiv(batch_size, BLOCK_B) + pid_b
+    FP8_INV = 1.0 / FP8_PRESCALE
     states_base = states_ptr + program_idx * stride_s_n
     b_range = tl.arange(0, BLOCK_B)
     INV_SQRT2: tl.constexpr = 0.7071067811865476
@@ -2040,12 +2145,12 @@ def _real_encoding_backward_kernel(
 
         tl.store(
             states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
-            r0,
+            r0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
             states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
-            r1,
+            r1 * FP8_PRESCALE,
             mask=b_mask,
         )
 
@@ -2170,21 +2275,27 @@ def _real_encoding_backward_kernel(
         for layer in range(reps - 1, -1, -1):
             # Backward through Ry(enc)
             state_idx -= 1
-            sr0 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 0 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            sr0 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 0 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
-            sr1 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 1 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            sr1 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 1 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
 
             enc = x_vals.to(tl.float32)
@@ -2239,21 +2350,27 @@ def _real_encoding_backward_kernel(
 
             # Backward through Ry(theta[l,0])
             state_idx -= 2
-            sr0 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 0 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            sr0 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 0 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
-            sr1 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 1 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            sr1 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 1 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
 
             # Theta: scalar trig, vectorized grad accumulation
@@ -2290,22 +2407,22 @@ def _real_encoding_backward_kernel(
 
         tl.store(
             states_base + 0 * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
-            r0,
+            r0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
             states_base + 0 * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
-            i0,
+            i0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
             states_base + 0 * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
-            r1,
+            r1 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
             states_base + 0 * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
-            i1,
+            i1 * FP8_PRESCALE,
             mask=b_mask,
         )
 
@@ -2485,37 +2602,49 @@ def _real_encoding_backward_kernel(
         for layer in range(reps - 1, -1, -1):
             # Backward through Ry(enc)
             state_idx -= 1
-            sr0 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 0 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            sr0 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 0 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
-            si0 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 1 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            si0 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 1 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
-            sr1 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 2 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            sr1 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 2 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
-            si1 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 3 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            si1 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 3 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
 
             enc = x_vals
@@ -2576,37 +2705,49 @@ def _real_encoding_backward_kernel(
 
             # Backward through Ry(theta[l,0])
             state_idx -= 2
-            sr0 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 0 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            sr0 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 0 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
-            si0 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 1 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            si0 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 1 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
-            sr1 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 2 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            sr1 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 2 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
-            si1 = tl.load(
-                states_base
-                + state_idx * stride_s_s
-                + b_range * stride_s_b
-                + 3 * stride_s_c,
-                mask=b_mask,
-                other=0.0,
+            si1 = (
+                tl.load(
+                    states_base
+                    + state_idx * stride_s_s
+                    + b_range * stride_s_b
+                    + 3 * stride_s_c,
+                    mask=b_mask,
+                    other=0.0,
+                ).to(tl.float32)
+                * FP8_INV
             )
 
             t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
@@ -2653,13 +2794,14 @@ def triton_real_backward(
     out_dim = theta.shape[0]
     reps = theta.shape[2]  # No +1 for real ansatz
 
-    x = x.to(c_dtype).contiguous()
-    theta = theta.to(c_dtype).contiguous()
-    pw = pw.to(c_dtype).contiguous()
-    pb = pb.to(c_dtype).contiguous()
+    compute_fp8 = c_dtype == torch.float8_e4m3fn
+    compute_bf16 = c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
+    io_dtype = torch.bfloat16 if compute_fp8 else c_dtype
+    x = x.to(io_dtype).contiguous()
+    theta = theta.to(io_dtype).contiguous()
+    pw = pw.to(io_dtype).contiguous()
+    pb = pb.to(io_dtype).contiguous()
     grad_output = grad_output.contiguous()
-
-    compute_bf16 = c_dtype == torch.bfloat16
     n_oi = out_dim * in_dim
     BLOCK_B = _select_block_b(n_oi, batch, 32 if compute_bf16 else 1)
 
@@ -2739,6 +2881,7 @@ def triton_real_backward(
         PREACTS_TRAINABLE=preacts_trainable,
         FAST_MEASURE=fast_measure,
         COMPUTE_BF16=compute_bf16,
+        FP8_PRESCALE=224.0 if compute_fp8 else 1.0,
         BLOCK_B=BLOCK_B,
     )
 

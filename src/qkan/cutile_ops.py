@@ -179,11 +179,12 @@ def cutile_pz_forward(
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    compute_bf16 = c_dtype == torch.bfloat16
-    x = x.to(c_dtype).contiguous()
-    theta = theta.to(c_dtype).contiguous()
+    compute_bf16 = c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
+    io_dtype = torch.bfloat16 if c_dtype == torch.float8_e4m3fn else c_dtype
+    x = x.to(io_dtype).contiguous()
+    theta = theta.to(io_dtype).contiguous()
 
-    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
+    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=io_dtype)
 
     n_oi = out_dim * in_dim
     BLOCK_B = _select_block_b(n_oi, batch)
@@ -336,13 +337,14 @@ def cutile_rpz_forward(
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    compute_bf16 = c_dtype == torch.bfloat16
-    x = x.to(c_dtype).contiguous()
-    theta = theta.to(c_dtype).contiguous()
-    preacts_w = preacts_w.to(c_dtype).contiguous()
-    preacts_b = preacts_b.to(c_dtype).contiguous()
+    compute_bf16 = c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
+    io_dtype = torch.bfloat16 if c_dtype == torch.float8_e4m3fn else c_dtype
+    x = x.to(io_dtype).contiguous()
+    theta = theta.to(io_dtype).contiguous()
+    preacts_w = preacts_w.to(io_dtype).contiguous()
+    preacts_b = preacts_b.to(io_dtype).contiguous()
 
-    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
+    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=io_dtype)
 
     n_oi = out_dim * in_dim
     BLOCK_B = _select_block_b(n_oi, batch)
@@ -554,14 +556,15 @@ def cutile_real_forward(
     out_dim = theta.shape[0]
     reps = theta.shape[2]
 
-    x = x.to(c_dtype).contiguous()
-    theta = theta.to(c_dtype).contiguous()
-    preacts_w = preacts_w.to(c_dtype).contiguous()
-    preacts_b = preacts_b.to(c_dtype).contiguous()
+    compute_bf16 = c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
+    io_dtype = torch.bfloat16 if c_dtype == torch.float8_e4m3fn else c_dtype
+    x = x.to(io_dtype).contiguous()
+    theta = theta.to(io_dtype).contiguous()
+    preacts_w = preacts_w.to(io_dtype).contiguous()
+    preacts_b = preacts_b.to(io_dtype).contiguous()
 
-    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
+    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=io_dtype)
 
-    compute_bf16 = c_dtype == torch.bfloat16
     n_oi = out_dim * in_dim
     BLOCK_B = _select_block_b(n_oi, batch, 32 if compute_bf16 else 1)
     grid = (n_oi, math.ceil(batch / BLOCK_B), 1)
@@ -617,6 +620,7 @@ def _ct_pz_encoding_backward_kernel(
     PREACTS_TRAINABLE: ConstBool,
     FAST_MEASURE: ConstBool,
     COMPUTE_BF16: ConstBool,
+    COMPUTE_FP8: ConstBool,
     BLOCK_B: ConstInt,
 ):
     """Backward kernel for pz_encoding ansatz."""
@@ -637,7 +641,33 @@ def _ct_pz_encoding_backward_kernel(
     pi = pid_oi * n_b_blocks + pid_b
 
     def _save4(sidx, v0, v1, v2, v3):
-        if COMPUTE_BF16:
+        if COMPUTE_FP8:
+            FP8_S = 224.0
+            ct.scatter(
+                states,
+                (pi, sidx, 0, b_range),
+                ct.astype(v0 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+            ct.scatter(
+                states,
+                (pi, sidx, 1, b_range),
+                ct.astype(v1 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+            ct.scatter(
+                states,
+                (pi, sidx, 2, b_range),
+                ct.astype(v2 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+            ct.scatter(
+                states,
+                (pi, sidx, 3, b_range),
+                ct.astype(v3 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+        elif COMPUTE_BF16:
             ct.scatter(
                 states, (pi, sidx, 0, b_range), ct.astype(v0, ct.bfloat16), mask=b_mask
             )
@@ -657,7 +687,39 @@ def _ct_pz_encoding_backward_kernel(
             ct.scatter(states, (pi, sidx, 3, b_range), v3, mask=b_mask)
 
     def _load4(sidx):
-        if COMPUTE_BF16:
+        if COMPUTE_FP8:
+            INV_S = 0.00446428571428  # 1/224
+            return (
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 0, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 1, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 2, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 3, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+            )
+        elif COMPUTE_BF16:
             return (
                 ct.astype(
                     ct.gather(
@@ -991,9 +1053,10 @@ def cutile_pz_backward(
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    compute_bf16 = c_dtype == torch.bfloat16
-    x = x.to(c_dtype).contiguous()
-    theta = theta.to(c_dtype).contiguous()
+    compute_bf16 = c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
+    io_dtype = torch.bfloat16 if c_dtype == torch.float8_e4m3fn else c_dtype
+    x = x.to(io_dtype).contiguous()
+    theta = theta.to(io_dtype).contiguous()
     grad_output = grad_output.contiguous()
 
     n_oi = out_dim * in_dim
@@ -1002,7 +1065,13 @@ def cutile_pz_backward(
     n_b_blocks = math.ceil(batch / BLOCK_B)
     n_programs = n_oi * n_b_blocks
     # BF16: store states in bf16 to halve memory traffic (dominant cost)
-    states_dtype = torch.bfloat16 if compute_bf16 else torch.float32
+    compute_fp8 = c_dtype == torch.float8_e4m3fn
+    if compute_fp8:
+        states_dtype = torch.float8_e4m3fn
+    elif compute_bf16:
+        states_dtype = torch.bfloat16
+    else:
+        states_dtype = torch.float32
     states = torch.empty(
         n_programs, n_states, 4, BLOCK_B, device=x.device, dtype=states_dtype
     )
@@ -1016,8 +1085,8 @@ def cutile_pz_backward(
     grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=torch.float32)
 
     if preacts_trainable:
-        pw = pw.to(c_dtype).contiguous()
-        pb = pb.to(c_dtype).contiguous()
+        pw = pw.to(io_dtype).contiguous()
+        pb = pb.to(io_dtype).contiguous()
         grad_pw = torch.zeros(pw.shape, device=x.device, dtype=torch.float32)
         grad_pb = torch.zeros(pb.shape, device=x.device, dtype=torch.float32)
     else:
@@ -1049,6 +1118,7 @@ def cutile_pz_backward(
             preacts_trainable,
             fast_measure,
             compute_bf16,
+            compute_fp8,
             BLOCK_B,
         ),
     )
@@ -1084,6 +1154,7 @@ def _ct_rpz_encoding_backward_kernel(
     n_b_blocks: ConstInt,
     FAST_MEASURE: ConstBool,
     COMPUTE_BF16: ConstBool,
+    COMPUTE_FP8: ConstBool,
     BLOCK_B: ConstInt,
 ):
     """Backward kernel for rpz_encoding ansatz."""
@@ -1104,7 +1175,33 @@ def _ct_rpz_encoding_backward_kernel(
     pi = pid_oi * n_b_blocks + pid_b
 
     def _save4(sidx, v0, v1, v2, v3):
-        if COMPUTE_BF16:
+        if COMPUTE_FP8:
+            FP8_S = 224.0
+            ct.scatter(
+                states,
+                (pi, sidx, 0, b_range),
+                ct.astype(v0 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+            ct.scatter(
+                states,
+                (pi, sidx, 1, b_range),
+                ct.astype(v1 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+            ct.scatter(
+                states,
+                (pi, sidx, 2, b_range),
+                ct.astype(v2 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+            ct.scatter(
+                states,
+                (pi, sidx, 3, b_range),
+                ct.astype(v3 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+        elif COMPUTE_BF16:
             ct.scatter(
                 states, (pi, sidx, 0, b_range), ct.astype(v0, ct.bfloat16), mask=b_mask
             )
@@ -1124,7 +1221,39 @@ def _ct_rpz_encoding_backward_kernel(
             ct.scatter(states, (pi, sidx, 3, b_range), v3, mask=b_mask)
 
     def _load4(sidx):
-        if COMPUTE_BF16:
+        if COMPUTE_FP8:
+            INV_S = 0.00446428571428  # 1/224
+            return (
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 0, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 1, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 2, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 3, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+            )
+        elif COMPUTE_BF16:
             return (
                 ct.astype(
                     ct.gather(
@@ -1366,11 +1495,12 @@ def cutile_rpz_backward(
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    compute_bf16 = c_dtype == torch.bfloat16
-    x = x.to(c_dtype).contiguous()
-    theta = theta.to(c_dtype).contiguous()
-    pw = pw.to(c_dtype).contiguous()
-    pb = pb.to(c_dtype).contiguous()
+    compute_bf16 = c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
+    io_dtype = torch.bfloat16 if c_dtype == torch.float8_e4m3fn else c_dtype
+    x = x.to(io_dtype).contiguous()
+    theta = theta.to(io_dtype).contiguous()
+    pw = pw.to(io_dtype).contiguous()
+    pb = pb.to(io_dtype).contiguous()
     grad_output = grad_output.contiguous()
 
     n_oi = out_dim * in_dim
@@ -1378,7 +1508,13 @@ def cutile_rpz_backward(
     n_states = 2 * reps + 2
     n_b_blocks = math.ceil(batch / BLOCK_B)
     n_programs = n_oi * n_b_blocks
-    states_dtype = torch.bfloat16 if compute_bf16 else torch.float32
+    compute_fp8 = c_dtype == torch.float8_e4m3fn
+    if compute_fp8:
+        states_dtype = torch.float8_e4m3fn
+    elif compute_bf16:
+        states_dtype = torch.bfloat16
+    else:
+        states_dtype = torch.float32
     states = torch.empty(
         n_programs, n_states, 4, BLOCK_B, device=x.device, dtype=states_dtype
     )
@@ -1417,6 +1553,7 @@ def cutile_rpz_backward(
             n_b_blocks,
             fast_measure,
             compute_bf16,
+            compute_fp8,
             BLOCK_B,
         ),
     )
@@ -1447,6 +1584,7 @@ def _ct_real_encoding_backward_kernel_bf16(
     n_b_blocks: ConstInt,
     PREACTS_TRAINABLE: ConstBool,
     FAST_MEASURE: ConstBool,
+    COMPUTE_FP8: ConstBool,
     BLOCK_B: ConstInt,
 ):
     """Backward kernel for real ansatz — real-only (bf16) path."""
@@ -1466,14 +1604,52 @@ def _ct_real_encoding_backward_kernel_bf16(
     pi = pid_oi * n_b_blocks + pid_b
 
     def _save2(sidx, v0, v1):
-        ct.scatter(states, (pi, sidx, 0, b_range), v0, mask=b_mask)
-        ct.scatter(states, (pi, sidx, 1, b_range), v1, mask=b_mask)
+        if COMPUTE_FP8:
+            FP8_S = 224.0
+            ct.scatter(
+                states,
+                (pi, sidx, 0, b_range),
+                ct.astype(v0 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+            ct.scatter(
+                states,
+                (pi, sidx, 1, b_range),
+                ct.astype(v1 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+        else:
+            ct.scatter(states, (pi, sidx, 0, b_range), v0, mask=b_mask)
+            ct.scatter(states, (pi, sidx, 1, b_range), v1, mask=b_mask)
 
     def _load2(sidx):
-        return (
-            ct.gather(states, (pi, sidx, 0, b_range), mask=b_mask, padding_value=0.0),
-            ct.gather(states, (pi, sidx, 1, b_range), mask=b_mask, padding_value=0.0),
-        )
+        if COMPUTE_FP8:
+            INV_S = 0.00446428571428  # 1/224
+            return (
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 0, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 1, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+            )
+        else:
+            return (
+                ct.gather(
+                    states, (pi, sidx, 0, b_range), mask=b_mask, padding_value=0.0
+                ),
+                ct.gather(
+                    states, (pi, sidx, 1, b_range), mask=b_mask, padding_value=0.0
+                ),
+            )
 
     # ── Phase 1: Forward recompute + trig cache ──
     INV_SQRT2 = 0.7071067811865476
@@ -1633,6 +1809,7 @@ def _ct_real_encoding_backward_kernel_f32(
     n_b_blocks: ConstInt,
     PREACTS_TRAINABLE: ConstBool,
     FAST_MEASURE: ConstBool,
+    COMPUTE_FP8: ConstBool,
     BLOCK_B: ConstInt,
 ):
     """Backward kernel for real ansatz — full complex path."""
@@ -1651,18 +1828,86 @@ def _ct_real_encoding_backward_kernel_f32(
     pi = pid_oi * n_b_blocks + pid_b
 
     def _save4(sidx, v0, v1, v2, v3):
-        ct.scatter(states, (pi, sidx, 0, b_range), v0, mask=b_mask)
-        ct.scatter(states, (pi, sidx, 1, b_range), v1, mask=b_mask)
-        ct.scatter(states, (pi, sidx, 2, b_range), v2, mask=b_mask)
-        ct.scatter(states, (pi, sidx, 3, b_range), v3, mask=b_mask)
+        if COMPUTE_FP8:
+            FP8_S = 224.0
+            ct.scatter(
+                states,
+                (pi, sidx, 0, b_range),
+                ct.astype(v0 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+            ct.scatter(
+                states,
+                (pi, sidx, 1, b_range),
+                ct.astype(v1 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+            ct.scatter(
+                states,
+                (pi, sidx, 2, b_range),
+                ct.astype(v2 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+            ct.scatter(
+                states,
+                (pi, sidx, 3, b_range),
+                ct.astype(v3 * FP8_S, ct.float8_e4m3fn),
+                mask=b_mask,
+            )
+        else:
+            ct.scatter(states, (pi, sidx, 0, b_range), v0, mask=b_mask)
+            ct.scatter(states, (pi, sidx, 1, b_range), v1, mask=b_mask)
+            ct.scatter(states, (pi, sidx, 2, b_range), v2, mask=b_mask)
+            ct.scatter(states, (pi, sidx, 3, b_range), v3, mask=b_mask)
 
     def _load4(sidx):
-        return (
-            ct.gather(states, (pi, sidx, 0, b_range), mask=b_mask, padding_value=0.0),
-            ct.gather(states, (pi, sidx, 1, b_range), mask=b_mask, padding_value=0.0),
-            ct.gather(states, (pi, sidx, 2, b_range), mask=b_mask, padding_value=0.0),
-            ct.gather(states, (pi, sidx, 3, b_range), mask=b_mask, padding_value=0.0),
-        )
+        if COMPUTE_FP8:
+            INV_S = 0.00446428571428  # 1/224
+            return (
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 0, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 1, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 2, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+                ct.astype(
+                    ct.gather(
+                        states, (pi, sidx, 3, b_range), mask=b_mask, padding_value=0.0
+                    ),
+                    ct.float32,
+                )
+                * INV_S,
+            )
+        else:
+            return (
+                ct.gather(
+                    states, (pi, sidx, 0, b_range), mask=b_mask, padding_value=0.0
+                ),
+                ct.gather(
+                    states, (pi, sidx, 1, b_range), mask=b_mask, padding_value=0.0
+                ),
+                ct.gather(
+                    states, (pi, sidx, 2, b_range), mask=b_mask, padding_value=0.0
+                ),
+                ct.gather(
+                    states, (pi, sidx, 3, b_range), mask=b_mask, padding_value=0.0
+                ),
+            )
 
     # ── Phase 1: Forward recompute + trig cache ──
     INV_SQRT2 = 0.7071067811865476
@@ -1844,27 +2089,33 @@ def cutile_real_backward(
     out_dim = theta.shape[0]
     reps = theta.shape[2]
 
-    x = x.to(c_dtype).contiguous()
-    theta = theta.to(c_dtype).contiguous()
-    pw = pw.to(c_dtype).contiguous()
-    pb = pb.to(c_dtype).contiguous()
+    compute_fp8 = c_dtype == torch.float8_e4m3fn
+    compute_bf16 = c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
+    io_dtype = torch.bfloat16 if compute_fp8 else c_dtype
+    x = x.to(io_dtype).contiguous()
+    theta = theta.to(io_dtype).contiguous()
+    pw = pw.to(io_dtype).contiguous()
+    pb = pb.to(io_dtype).contiguous()
     grad_output = grad_output.contiguous()
 
-    compute_bf16 = c_dtype == torch.bfloat16
     n_oi = out_dim * in_dim
-    BLOCK_B = _select_block_b(n_oi, batch, 32 if compute_bf16 else 1)
+    # cuTile real: always use BLOCK_B>=32 (coalesced layout makes larger blocks efficient)
+    BLOCK_B = _select_block_b(n_oi, batch)
 
     n_states = 3 * reps + 1
     n_b_blocks = math.ceil(batch / BLOCK_B)
     n_programs = n_oi * n_b_blocks
     n_components = 2 if compute_bf16 else 4
+    # cuTile: keep states in f32 for bf16 mode (ct.astype overhead > bandwidth savings
+    # for 2-component states). Only use fp8 for fp8 mode (prescale offsets the cost).
+    states_dtype = torch.float8_e4m3fn if compute_fp8 else torch.float32
     states = torch.empty(
         n_programs,
         n_states,
-        BLOCK_B,
         n_components,
+        BLOCK_B,
         device=x.device,
-        dtype=torch.float32,
+        dtype=states_dtype,
     )
     # Trig cache: reps Ry(theta) gates, each storing (cos, sin)
     trig_cache = torch.empty(n_programs, reps, 2, device=x.device, dtype=torch.float32)
@@ -1909,6 +2160,7 @@ def cutile_real_backward(
             n_b_blocks,
             preacts_trainable,
             fast_measure,
+            compute_fp8,
             BLOCK_B,
         ),
     )
