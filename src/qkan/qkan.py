@@ -37,14 +37,10 @@ import torch.nn.functional as F
 from tqdm import tqdm  # type: ignore
 
 from .info import get_dist_info, print0, print_version
-from .qsolver import (
-    _CUDAQ_AVAILABLE,
-    _QISKIT_AVAILABLE,
-    cudaq_solver,
-    qiskit_solver,
-)
 from .solver import (
+    _CUTILE_AVAILABLE,
     _FLASH_AVAILABLE,
+    cutile_flash_exact_solver,
     cutn_solver,
     flash_exact_solver,
     qml_solver,
@@ -69,8 +65,7 @@ class QKANLayer(nn.Module):
         device :
             Device to use
         solver : Union[str, Callable]
-            Solver to use, currently supports "qml", "exact", "flash", "cutn", "qiskit",
-                "cudaq", or custom callable
+            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable
         ansatz : Union[str, Callable]
             Ansatz to use, "pz_encoding", "px_encoding", "rpz_encoding" or custom
         qml_device : str
@@ -122,8 +117,6 @@ class QKANLayer(nn.Module):
                 "flash",
                 "cutn",
                 "tn",
-                "qiskit",
-                "cudaq",
             ],
             Callable,
         ] = "exact",
@@ -141,7 +134,6 @@ class QKANLayer(nn.Module):
         c_dtype=torch.complex64,
         p_dtype=torch.float32,
         seed=None,
-        solver_kwargs: Optional[dict] = None,
     ):
         super(QKANLayer, self).__init__()
 
@@ -168,8 +160,6 @@ class QKANLayer(nn.Module):
                 "flash",
                 "cutn",
                 "tn",
-                "qiskit",
-                "cudaq",
             ],
             Callable,
         ] = solver
@@ -183,7 +173,6 @@ class QKANLayer(nn.Module):
         self.seed = seed
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
-        self.solver_kwargs = solver_kwargs or {}
 
         self.preact_trainable = preact_trainable
         self.preact_init = preact_init
@@ -422,13 +411,13 @@ class QKANLayer(nn.Module):
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
             ).to(self.p_dtype)
-        elif self.solver == "qiskit":
-            if not _QISKIT_AVAILABLE:
+        elif self.solver == "cutile":
+            if not _CUTILE_AVAILABLE:
                 raise ImportError(
-                    "Qiskit is required for solver='qiskit'. "
-                    "Install with: pip install qiskit qiskit-ibm-runtime"
+                    "cuda.tile is required for solver='cutile'. "
+                    "Install with: pip install cuda-tile"
                 )
-            postacts = qiskit_solver(
+            postacts = cutile_flash_exact_solver(
                 x,
                 self.theta,
                 self.preacts_weight,
@@ -441,28 +430,6 @@ class QKANLayer(nn.Module):
                 fast_measure=self.fast_measure,
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
-                **self.solver_kwargs,
-            ).to(self.p_dtype)
-        elif self.solver == "cudaq":
-            if not _CUDAQ_AVAILABLE:
-                raise ImportError(
-                    "CUDA-Q is required for solver='cudaq'. "
-                    "Install from: https://nvidia.github.io/cuda-quantum/"
-                )
-            postacts = cudaq_solver(
-                x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
-                self.reps,
-                device=self.device,
-                ansatz=self.ansatz,
-                group=self.group,
-                preacts_trainable=self.preact_trainable,
-                fast_measure=self.fast_measure,
-                out_dim=self.out_dim,
-                dtype=self.c_dtype,
-                **self.solver_kwargs,
             ).to(self.p_dtype)
         elif callable(self.solver):
             postacts = self.solver(
@@ -473,11 +440,6 @@ class QKANLayer(nn.Module):
                 self.reps,
                 device=self.device,
                 ansatz=self.ansatz,
-                group=self.group,
-                preacts_trainable=self.preact_trainable,
-                fast_measure=self.fast_measure,
-                out_dim=self.out_dim,
-                dtype=self.c_dtype,
             )
         else:
             raise NotImplementedError()
@@ -684,8 +646,7 @@ class QKAN(nn.Module):
         device : Literal["cpu", "cuda"]
             Device to use
         solver : Union[str, Callable]
-            Solver to use, currently supports "qml", "exact", "flash", "cutn", "qiskit",
-                "cudaq" or custom callable
+            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable
         qml_device : str
             PennyLane device to use
         layers : QKANModuleList
@@ -751,7 +712,6 @@ class QKAN(nn.Module):
         c_dtype=torch.complex64,
         p_dtype=torch.float32,
         seed=None,
-        solver_kwargs: Optional[dict] = None,
         **kwargs,
     ):
         """
@@ -774,11 +734,9 @@ class QKAN(nn.Module):
             device :
                 Device to use, default: "cpu"
             solver : Union[str, Callable]
-                Solver to use, currently supports "qml", "exact", "flash", "cutn", "qiskit",
-                "cudaq", or custom callable, default: "exact"
+                Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable, default: "exact"
             ansatz : Union[str, Callable]
-                Ansatz to use, "pz_encoding" ("pz"), "px_encoding" ("px"), "rpz_encoding"
-                ("rpz", reduced pz encoding) or custom
+                Ansatz to use, "pz_encoding" ("pz"), "px_encoding" ("px"), "rpz_encoding" ("rpz", reduced pz encoding) or custom
             qml_device : str
                 PennyLane device to use, default: "default.qubit"
             ansatz : str | Callable
@@ -824,8 +782,6 @@ class QKAN(nn.Module):
                 "flash",
                 "cutn",
                 "tn",
-                "qiskit",
-                "cudaq",
             ],
             Callable,
         ] = solver
@@ -844,7 +800,6 @@ class QKAN(nn.Module):
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
         self.seed = seed
-        self.solver_kwargs = solver_kwargs or {}
 
         self.layers = QKANModuleList()
         for l in range(self.depth):
@@ -870,7 +825,6 @@ class QKAN(nn.Module):
                     c_dtype=c_dtype,
                     p_dtype=p_dtype,
                     seed=seed,
-                    solver_kwargs=self.solver_kwargs,
                 )
             )
 
