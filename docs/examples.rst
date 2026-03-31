@@ -9,5 +9,6 @@ Examples & Applications
     examples/layer_ext.ipynb
     examples/mnist.ipynb
     examples/hqkan_cifar100.ipynb
+    examples/ansatz_comparison.ipynb
     examples/gqkan_gpt.ipynb
     examples/qkan2kan.ipynb

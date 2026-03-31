@@ -34,11 +34,17 @@ Or install from source:
    cd qkan
    pip install -e .
 
-To use the GPU-optimized solvers (including `flash` and `cutn` solver), you can install with the `gpu` extra:
+To use the GPU-optimized solvers (including ``flash``, ``cutile`` and ``cutn`` solver), install with the ``gpu`` extra:
 
 .. code-block:: bash
 
    pip install qkan[gpu]
+
+For real quantum device solvers, install the corresponding backend:
+
+.. code-block:: bash
+
+   pip install pip install qkan[real-device]
 
 .. We recommend using a virtual environment to avoid conflicts with other packages:
 
@@ -115,6 +121,7 @@ If you find this project useful in your research, please consider citing the fol
    :caption: Contents:
 
    intro
+   solver_guide
    api
    examples
 

@@ -41,6 +41,19 @@ qml = [
     "pennylane>=0.37",
 ]
 
+qiskit = [
+    "qiskit>=2.0",
+    "qiskit-ibm-runtime>=0.30",
+]
+
+cudaq = [
+    "cuda-quantum",
+]
+
+real-device = [
+    "qkan[qiskit,cudaq]",
+]
+
 dev = [
     "mypy",
     "ruff",

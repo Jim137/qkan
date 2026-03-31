@@ -34,11 +34,11 @@ def torch_exact_solver(
         x : torch.Tensor
             shape: (batch_size, in_dim)
         theta : torch.Tensor
-            shape: (*group, reps, 2)
+            shape: (\\*group, reps, 2)
         preacts_weight : torch.Tensor
-            shape: (*group, reps)
+            shape: (\\*group, reps)
         preacts_bias : torch.Tensor
-            shape: (*group, reps)
+            shape: (\\*group, reps)
         reps : int
         ansatz : str
             options: ["pz_encoding", "px_encoding"], default: "pz_encoding"
@@ -86,7 +86,7 @@ def torch_exact_solver(
         Args
         ----
             theta : torch.Tensor
-                shape: (*group, reps, 2)
+                shape: (\\*group, reps, 2)
         """
         psi = StateVector(
             x.shape[0],
@@ -119,7 +119,7 @@ def torch_exact_solver(
         Args
         ----
             theta : torch.Tensor
-                shape: (*group, reps, 2)
+                shape: (\\*group, reps, 2)
         """
         psi = StateVector(
             x.shape[0],
@@ -144,7 +144,7 @@ def torch_exact_solver(
         Args
         ----
             theta: torch.Tensor
-                shape: (*group, reps, 1)
+                shape: (\\*group, reps, 1)
         """
         psi = StateVector(
             x.shape[0],
@@ -187,7 +187,7 @@ def torch_exact_solver(
         Args
         ----
             theta: torch.Tensor
-                shape: (*group, reps, 1)
+                shape: (\\*group, reps, 1)
         """
         psi = StateVector(
             x.shape[0],
@@ -219,7 +219,7 @@ def torch_exact_solver(
         Args
         ----
             theta: torch.Tensor
-                shape: (*group, reps, 2)
+                shape: (\\*group, reps, 2)
         """
         psi = StateVector(
             x.shape[0],

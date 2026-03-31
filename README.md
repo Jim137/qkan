@@ -122,17 +122,34 @@ You can find more examples in the [examples](https://jim137.github.io/qkan/examp
 
 ## Solver Guiding
 
-| Case                                                                      | Device       | Recommended solver  | Why                                                             | Notes                                                                            |
-| ------------------------------------------------------------------------- | ------------ | ------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Small models, CPU runs, debugging, or you want a trusted baseline         | CPU (or GPU) | `exact` *(default)* | Simple + “reference” behavior                                   | First run may include one-time init overhead—do a warmup step before timing.     |
-| Most training workloads (medium → large models) / inference               | GPU          | `flash`             | Best overall speed / memory tradeoff in these benchmarks        | Good first choice for practical GPU training.                                    |
-| Extremely large / memory-bound runs (near OOM, very large layers/batches) | GPU          | `cutn`              | Best scaling and peak-memory reduction in the extreme benchmark | Can be slower than `flash` on mid-size problems; use when size/memory dominates. |
+| Case                                                                      | Device       | Recommended solver    | Why                                                             | Notes                                                                            |
+| ------------------------------------------------------------------------- | ------------ | --------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Small models, CPU runs, debugging, or you want a trusted baseline         | CPU (or GPU) | `exact` *(default)*   | Simple + “reference” behavior                                   | First run may include one-time init overhead—do a warmup step before timing.     |
+| Most training workloads (medium → large models) / inference               | GPU          | `flash`               | Best overall speed / memory tradeoff in these benchmarks        | Good first choice for practical GPU training.                                    |
+| BF16/FP8 mixed-precision training for maximum throughput                  | GPU          | `cutile`              | cuTile fused kernels with BF16/FP8 + coalesced state layout     | Best with `real` ansatz.                       |
+| Extremely large / memory-bound runs (near OOM, very large layers/batches) | GPU (or CPU) | `cutn`                | Best scaling and peak-memory reduction in the extreme benchmark | Use when size/memory dominates. Or CPU case better than `exact`. |
 
 **Ansatz choice (`pz` vs `real`)**
 - **Default: `pz`** — most reliable quality across tasks.
 - **`real`** can be faster/smaller, but may **hurt accuracy/convergence** on some workloads—only use if you validate it on your task.
 
 See [#8](https://github.com/Jim137/qkan/issues/8) for more discussion on solver choices and tradeoffs.
+
+## Mixed Precision
+
+The `flash` and `cutile` solvers support BF16 and FP8 mixed-precision via the `c_dtype` parameter:
+
+```python
+qkan = QKAN([10, 10], solver="flash", c_dtype=torch.bfloat16, device="cuda")
+```
+
+- `c_dtype` controls the **compute dtype** for quantum simulation kernels (state vectors, trig ops).
+- `p_dtype` controls the **parameter storage dtype** (theta, preacts). Keep this at `float32`.
+- BF16 is the sweet spot: **2.3-2.5x faster training, 45% less peak memory**, with identical convergence.
+- FP8 (`torch.float8_e4m3fn`) provides additional memory savings for state checkpoints via prescaled storage.
+- All ansatzes (`pz`, `rpz`, `real`) are supported.
+
+See [#12](https://github.com/Jim137/qkan/issues/12) for full benchmarks (GPT-2 HQKANsformer, isolated kernel timings, and dtype performance matrix).
 
 ## Contributing
 

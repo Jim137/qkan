@@ -787,11 +787,11 @@ def cudaq_solver(
         x : torch.Tensor
             shape: (batch_size, in_dim)
         theta : torch.Tensor
-            shape: (*group, reps+1, n_params) or (*group, reps, 1) for real
+            shape: (\\*group, reps+1, n_params) or (\\*group, reps, 1) for real
         preacts_weight : torch.Tensor
-            shape: (*group, reps)
+            shape: (\\*group, reps)
         preacts_bias : torch.Tensor
-            shape: (*group, reps)
+            shape: (\\*group, reps)
         reps : int
         ansatz : str
             "pz_encoding", "pz", "rpz_encoding", "rpz", or "real"
