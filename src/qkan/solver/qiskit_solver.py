@@ -40,10 +40,41 @@ try:
 except ImportError:
     _QISKIT_RUNTIME_AVAILABLE = False
 
+try:
+    from qiskit.primitives import StatevectorEstimator  # type: ignore
+
+    _SV_ESTIMATOR_AVAILABLE = True
+except ImportError:
+    _SV_ESTIMATOR_AVAILABLE = False
+
+try:
+    from qiskit_aer import AerSimulator  # type: ignore
+
+    _AER_AVAILABLE = True
+except ImportError:
+    _AER_AVAILABLE = False
+
+
+from ._mitigation import _apply_mitigation
+
 
 # ---------------------------------------------------------------------------
 # Qiskit circuit builders
 # ---------------------------------------------------------------------------
+
+
+def _fold_qiskit_circuit(qc: "QuantumCircuit", scale_factor: int) -> "QuantumCircuit":
+    """Apply gate folding to a Qiskit circuit for ZNE.
+
+    Produces U . (U_dag . U)^((scale_factor-1)/2) which has the same unitary
+    as U but with scale_factor x the gate count (and thus noise).
+    """
+    if scale_factor <= 1:
+        return qc
+    folded = qc.copy()
+    for _ in range((scale_factor - 1) // 2):
+        folded = folded.compose(qc.inverse()).compose(qc)
+    return folded
 
 
 def _build_qiskit_pz_circuit(
@@ -344,6 +375,8 @@ def _qiskit_run_parallel(
     optimization_level,
     shots,
     max_pubs_per_job=0,
+    resilience_level=None,
+    twirling=None,
 ):
     """
     Pack single-qubit circuits into multi-qubit batches and submit async.
@@ -385,6 +418,17 @@ def _qiskit_run_parallel(
         rt_estimator = Estimator(mode=backend)
         if shots is not None:
             rt_estimator.options.default_shots = shots
+        if resilience_level is not None:
+            rt_estimator.options.resilience_level = resilience_level
+        if twirling is not None:
+            if twirling.get("enable_gates"):
+                rt_estimator.options.twirling.enable_gates = True
+            if twirling.get("enable_measure"):
+                rt_estimator.options.twirling.enable_measure = True
+            if twirling.get("num_randomizations") is not None:
+                rt_estimator.options.twirling.num_randomizations = twirling[
+                    "num_randomizations"
+                ]
 
         for start in range(0, total, n_qubits):
             batch_circuits = circuits[start : start + n_qubits]
@@ -498,39 +542,63 @@ def _qiskit_evaluate(
 
     # Execute via the appropriate Estimator
     max_pubs = config.get("max_pubs_per_job", 0)
-    if parallel_qubits and parallel_qubits > 1:
-        # Pack independent 1-qubit circuits onto multi-qubit QPU
-        expvals = _qiskit_run_parallel(
-            circuits,
-            parallel_qubits,
-            estimator,
-            backend,
-            optimization_level,
-            shots,
-            max_pubs_per_job=max_pubs,
+    mitigation = config.get("mitigation", {})
+
+    def _run_qiskit(scale_factor=1):
+        run_circuits = (
+            [_fold_qiskit_circuit(qc, scale_factor) for qc in circuits]
+            if scale_factor > 1
+            else circuits
         )
-    elif estimator is not None:
-        pubs = list(zip(circuits, observables))
-        job = estimator.run(pubs)
-        result = job.result()
-        expvals = [float(r.data.evs) for r in result]
-    elif backend is not None:
-        pm = generate_preset_pass_manager(
-            backend=backend, optimization_level=optimization_level
-        )
-        isa_circuits = pm.run(circuits)
-        isa_observables = [
-            obs.apply_layout(qc.layout) for obs, qc in zip(observables, isa_circuits)
-        ]
-        rt_estimator = Estimator(mode=backend)
-        if shots is not None:
-            rt_estimator.options.default_shots = shots
-        pubs = list(zip(isa_circuits, isa_observables))
-        job = rt_estimator.run(pubs)
-        result = job.result()
-        expvals = [float(r.data.evs) for r in result]
+        if parallel_qubits and parallel_qubits > 1:
+            return _qiskit_run_parallel(
+                run_circuits,
+                parallel_qubits,
+                estimator,
+                backend,
+                optimization_level,
+                shots,
+                max_pubs_per_job=max_pubs,
+                resilience_level=config.get("resilience_level"),
+                twirling=config.get("twirling"),
+            )
+        elif estimator is not None:
+            pubs = list(zip(run_circuits, observables))
+            job = estimator.run(pubs)
+            result = job.result()
+            return [float(r.data.evs) for r in result]
+        elif backend is not None:
+            pm = generate_preset_pass_manager(
+                backend=backend, optimization_level=optimization_level
+            )
+            isa_circuits = pm.run(run_circuits)
+            isa_observables = [
+                obs.apply_layout(qc.layout)
+                for obs, qc in zip(observables, isa_circuits)
+            ]
+            rt_estimator = Estimator(mode=backend)
+            if shots is not None:
+                rt_estimator.options.default_shots = shots
+            rl = config.get("resilience_level")
+            tw = config.get("twirling")
+            if rl is not None:
+                rt_estimator.options.resilience_level = rl
+            if tw is not None:
+                if tw.get("enable_gates"):
+                    rt_estimator.options.twirling.enable_gates = True
+                if tw.get("enable_measure"):
+                    rt_estimator.options.twirling.enable_measure = True
+            pubs = list(zip(isa_circuits, isa_observables))
+            job = rt_estimator.run(pubs)
+            result = job.result()
+            return [float(r.data.evs) for r in result]
+        else:
+            raise ValueError("No estimator or backend provided.")
+
+    if mitigation:
+        expvals = _apply_mitigation(_run_qiskit, mitigation)
     else:
-        raise ValueError("No estimator or backend provided.")
+        expvals = _run_qiskit(1)
 
     output = torch.tensor(expvals, dtype=x.dtype, device=x.device)
     return output.reshape(batch, out_dim, in_dim)
@@ -624,6 +692,9 @@ def qiskit_solver(
         "optimization_level": optimization_level,
         "parallel_qubits": parallel_qubits,
         "max_pubs_per_job": max_pubs_per_job,
+        "resilience_level": kwargs.get("resilience_level", None),
+        "twirling": kwargs.get("twirling", None),
+        "mitigation": kwargs.get("mitigation", {}),
     }
 
     needs_grad = theta.requires_grad or x.requires_grad

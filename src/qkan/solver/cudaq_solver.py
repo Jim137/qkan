@@ -29,6 +29,272 @@ except ImportError:
     _CUDAQ_AVAILABLE = False
 
 
+from ._mitigation import _apply_mitigation
+
+
+# ---------------------------------------------------------------------------
+# CUDA-Q gate-folded kernel builders (for ZNE)
+# ---------------------------------------------------------------------------
+
+
+def _build_cudaq_pz_folded_kernel(reps: int, scale_factor: int):
+    """Build a gate-folded pz_encoding kernel for ZNE: U . (U_dag . U)^n."""
+    n_folds = (scale_factor - 1) // 2
+
+    @cudaq.kernel
+    def kernel(x_val: float, thetas: list[float]):
+        q = cudaq.qubit()
+        h(q)
+        for l in range(reps):
+            rz(thetas[2 * l], q)
+            ry(thetas[2 * l + 1], q)
+            rz(x_val, q)
+        rz(thetas[2 * reps], q)
+        ry(thetas[2 * reps + 1], q)
+        for _f in range(n_folds):
+            ry(-thetas[2 * reps + 1], q)
+            rz(-thetas[2 * reps], q)
+            for l in range(reps - 1, -1, -1):
+                rz(-x_val, q)
+                ry(-thetas[2 * l + 1], q)
+                rz(-thetas[2 * l], q)
+            h(q)
+            h(q)
+            for l in range(reps):
+                rz(thetas[2 * l], q)
+                ry(thetas[2 * l + 1], q)
+                rz(x_val, q)
+            rz(thetas[2 * reps], q)
+            ry(thetas[2 * reps + 1], q)
+
+    return kernel
+
+
+def _build_cudaq_pz_preact_folded_kernel(reps: int, scale_factor: int):
+    """Build a gate-folded pz_encoding preact kernel for ZNE."""
+    n_folds = (scale_factor - 1) // 2
+
+    @cudaq.kernel
+    def kernel(encoded_x: list[float], thetas: list[float]):
+        q = cudaq.qubit()
+        h(q)
+        for l in range(reps):
+            rz(thetas[2 * l], q)
+            ry(thetas[2 * l + 1], q)
+            rz(encoded_x[l], q)
+        rz(thetas[2 * reps], q)
+        ry(thetas[2 * reps + 1], q)
+        for _f in range(n_folds):
+            ry(-thetas[2 * reps + 1], q)
+            rz(-thetas[2 * reps], q)
+            for l in range(reps - 1, -1, -1):
+                rz(-encoded_x[l], q)
+                ry(-thetas[2 * l + 1], q)
+                rz(-thetas[2 * l], q)
+            h(q)
+            h(q)
+            for l in range(reps):
+                rz(thetas[2 * l], q)
+                ry(thetas[2 * l + 1], q)
+                rz(encoded_x[l], q)
+            rz(thetas[2 * reps], q)
+            ry(thetas[2 * reps + 1], q)
+
+    return kernel
+
+
+def _build_cudaq_rpz_folded_kernel(reps: int, scale_factor: int):
+    """Build a gate-folded rpz_encoding kernel for ZNE."""
+    n_folds = (scale_factor - 1) // 2
+
+    @cudaq.kernel
+    def kernel(encoded_x: list[float], thetas: list[float]):
+        q = cudaq.qubit()
+        h(q)
+        for l in range(reps):
+            ry(thetas[l], q)
+            rz(encoded_x[l], q)
+        ry(thetas[reps], q)
+        for _f in range(n_folds):
+            ry(-thetas[reps], q)
+            for l in range(reps - 1, -1, -1):
+                rz(-encoded_x[l], q)
+                ry(-thetas[l], q)
+            h(q)
+            h(q)
+            for l in range(reps):
+                ry(thetas[l], q)
+                rz(encoded_x[l], q)
+            ry(thetas[reps], q)
+
+    return kernel
+
+
+def _build_cudaq_real_folded_kernel(reps: int, scale_factor: int):
+    """Build a gate-folded real ansatz kernel for ZNE."""
+    n_folds = (scale_factor - 1) // 2
+
+    @cudaq.kernel
+    def kernel(x_val: float, thetas: list[float]):
+        q = cudaq.qubit()
+        h(q)
+        for l in range(reps):
+            x(q)
+            ry(thetas[l], q)
+            z(q)
+            ry(x_val, q)
+        for _f in range(n_folds):
+            for l in range(reps - 1, -1, -1):
+                ry(-x_val, q)
+                z(q)
+                ry(-thetas[l], q)
+                x(q)
+            h(q)
+            h(q)
+            for l in range(reps):
+                x(q)
+                ry(thetas[l], q)
+                z(q)
+                ry(x_val, q)
+
+    return kernel
+
+
+def _build_cudaq_real_preact_folded_kernel(reps: int, scale_factor: int):
+    """Build a gate-folded real preact kernel for ZNE."""
+    n_folds = (scale_factor - 1) // 2
+
+    @cudaq.kernel
+    def kernel(encoded_x: list[float], thetas: list[float]):
+        q = cudaq.qubit()
+        h(q)
+        for l in range(reps):
+            x(q)
+            ry(thetas[l], q)
+            z(q)
+            ry(encoded_x[l], q)
+        for _f in range(n_folds):
+            for l in range(reps - 1, -1, -1):
+                ry(-encoded_x[l], q)
+                z(q)
+                ry(-thetas[l], q)
+                x(q)
+            h(q)
+            h(q)
+            for l in range(reps):
+                x(q)
+                ry(thetas[l], q)
+                z(q)
+                ry(encoded_x[l], q)
+
+    return kernel
+
+
+def _build_cudaq_parallel_pz_folded_kernel(
+    n_qubits: int, reps: int, scale_factor: int
+):
+    """Build a gate-folded parallel pz kernel for ZNE."""
+    n_folds = (scale_factor - 1) // 2
+
+    @cudaq.kernel
+    def kernel(x_vals: list[float], all_thetas: list[float]):
+        qubits = cudaq.qvector(n_qubits)
+        params_per = 2 * (reps + 1)
+        for q_idx in range(n_qubits):
+            offset = q_idx * params_per
+            h(qubits[q_idx])
+            for l in range(reps):
+                rz(all_thetas[offset + 2 * l], qubits[q_idx])
+                ry(all_thetas[offset + 2 * l + 1], qubits[q_idx])
+                rz(x_vals[q_idx], qubits[q_idx])
+            rz(all_thetas[offset + 2 * reps], qubits[q_idx])
+            ry(all_thetas[offset + 2 * reps + 1], qubits[q_idx])
+            for _f in range(n_folds):
+                ry(-all_thetas[offset + 2 * reps + 1], qubits[q_idx])
+                rz(-all_thetas[offset + 2 * reps], qubits[q_idx])
+                for l in range(reps - 1, -1, -1):
+                    rz(-x_vals[q_idx], qubits[q_idx])
+                    ry(-all_thetas[offset + 2 * l + 1], qubits[q_idx])
+                    rz(-all_thetas[offset + 2 * l], qubits[q_idx])
+                h(qubits[q_idx])
+                h(qubits[q_idx])
+                for l in range(reps):
+                    rz(all_thetas[offset + 2 * l], qubits[q_idx])
+                    ry(all_thetas[offset + 2 * l + 1], qubits[q_idx])
+                    rz(x_vals[q_idx], qubits[q_idx])
+                rz(all_thetas[offset + 2 * reps], qubits[q_idx])
+                ry(all_thetas[offset + 2 * reps + 1], qubits[q_idx])
+
+    return kernel
+
+
+def _build_cudaq_parallel_real_folded_kernel(
+    n_qubits: int, reps: int, scale_factor: int
+):
+    """Build a gate-folded parallel real kernel for ZNE."""
+    n_folds = (scale_factor - 1) // 2
+
+    @cudaq.kernel
+    def kernel(x_vals: list[float], all_thetas: list[float]):
+        qubits = cudaq.qvector(n_qubits)
+        for q_idx in range(n_qubits):
+            offset = q_idx * reps
+            h(qubits[q_idx])
+            for l in range(reps):
+                x(qubits[q_idx])
+                ry(all_thetas[offset + l], qubits[q_idx])
+                z(qubits[q_idx])
+                ry(x_vals[q_idx], qubits[q_idx])
+            for _f in range(n_folds):
+                for l in range(reps - 1, -1, -1):
+                    ry(-x_vals[q_idx], qubits[q_idx])
+                    z(qubits[q_idx])
+                    ry(-all_thetas[offset + l], qubits[q_idx])
+                    x(qubits[q_idx])
+                h(qubits[q_idx])
+                h(qubits[q_idx])
+                for l in range(reps):
+                    x(qubits[q_idx])
+                    ry(all_thetas[offset + l], qubits[q_idx])
+                    z(qubits[q_idx])
+                    ry(x_vals[q_idx], qubits[q_idx])
+
+    return kernel
+
+
+def _build_cudaq_parallel_rpz_folded_kernel(
+    n_qubits: int, reps: int, scale_factor: int
+):
+    """Build a gate-folded parallel rpz kernel for ZNE."""
+    n_folds = (scale_factor - 1) // 2
+
+    @cudaq.kernel
+    def kernel(encoded_xs: list[float], all_thetas: list[float]):
+        qubits = cudaq.qvector(n_qubits)
+        t_per = reps + 1
+        for q_idx in range(n_qubits):
+            t_off = q_idx * t_per
+            x_off = q_idx * reps
+            h(qubits[q_idx])
+            for l in range(reps):
+                ry(all_thetas[t_off + l], qubits[q_idx])
+                rz(encoded_xs[x_off + l], qubits[q_idx])
+            ry(all_thetas[t_off + reps], qubits[q_idx])
+            for _f in range(n_folds):
+                ry(-all_thetas[t_off + reps], qubits[q_idx])
+                for l in range(reps - 1, -1, -1):
+                    rz(-encoded_xs[x_off + l], qubits[q_idx])
+                    ry(-all_thetas[t_off + l], qubits[q_idx])
+                h(qubits[q_idx])
+                h(qubits[q_idx])
+                for l in range(reps):
+                    ry(all_thetas[t_off + l], qubits[q_idx])
+                    rz(encoded_xs[x_off + l], qubits[q_idx])
+                ry(all_thetas[t_off + reps], qubits[q_idx])
+
+    return kernel
+
+
 # ---------------------------------------------------------------------------
 # CUDA-Q solver
 # ---------------------------------------------------------------------------
@@ -115,26 +381,49 @@ def _build_cudaq_real_preact_kernel(reps: int):
     return kernel
 
 
-# Cache for compiled CUDA-Q kernels: {(ansatz, reps, preacts_trainable): kernel}
+# Cache: {(ansatz, reps, preacts_trainable, scale_factor): kernel}
 _CUDAQ_KERNEL_CACHE: dict = {}
 
 
-def _get_cudaq_kernel(ansatz: str, reps: int, preacts_trainable: bool):
-    """Get or build a cached CUDA-Q kernel."""
-    key = (ansatz, reps, preacts_trainable)
+def _get_cudaq_kernel(
+    ansatz: str, reps: int, preacts_trainable: bool, scale_factor: int = 1
+):
+    """Get or build a cached CUDA-Q kernel (optionally gate-folded for ZNE)."""
+    key = (ansatz, reps, preacts_trainable, scale_factor)
     if key not in _CUDAQ_KERNEL_CACHE:
+        sf = scale_factor
         if ansatz in ("pz_encoding", "pz"):
             if preacts_trainable:
-                _CUDAQ_KERNEL_CACHE[key] = _build_cudaq_pz_preact_kernel(reps)
+                _CUDAQ_KERNEL_CACHE[key] = (
+                    _build_cudaq_pz_preact_folded_kernel(reps, sf)
+                    if sf > 1
+                    else _build_cudaq_pz_preact_kernel(reps)
+                )
             else:
-                _CUDAQ_KERNEL_CACHE[key] = _build_cudaq_pz_kernel(reps)
+                _CUDAQ_KERNEL_CACHE[key] = (
+                    _build_cudaq_pz_folded_kernel(reps, sf)
+                    if sf > 1
+                    else _build_cudaq_pz_kernel(reps)
+                )
         elif ansatz in ("rpz_encoding", "rpz"):
-            _CUDAQ_KERNEL_CACHE[key] = _build_cudaq_rpz_kernel(reps)
+            _CUDAQ_KERNEL_CACHE[key] = (
+                _build_cudaq_rpz_folded_kernel(reps, sf)
+                if sf > 1
+                else _build_cudaq_rpz_kernel(reps)
+            )
         elif ansatz == "real":
             if preacts_trainable:
-                _CUDAQ_KERNEL_CACHE[key] = _build_cudaq_real_preact_kernel(reps)
+                _CUDAQ_KERNEL_CACHE[key] = (
+                    _build_cudaq_real_preact_folded_kernel(reps, sf)
+                    if sf > 1
+                    else _build_cudaq_real_preact_kernel(reps)
+                )
             else:
-                _CUDAQ_KERNEL_CACHE[key] = _build_cudaq_real_kernel(reps)
+                _CUDAQ_KERNEL_CACHE[key] = (
+                    _build_cudaq_real_folded_kernel(reps, sf)
+                    if sf > 1
+                    else _build_cudaq_real_kernel(reps)
+                )
         else:
             raise NotImplementedError(
                 f"Ansatz '{ansatz}' not supported by cudaq_solver"
@@ -200,7 +489,8 @@ def _build_cudaq_parallel_rpz_kernel(n_qubits: int, reps: int):
 
 
 def _cudaq_run_parallel(
-    all_args, ansatz, reps, preacts_trainable, n_qubits, shots_count
+    all_args, ansatz, reps, preacts_trainable, n_qubits, shots_count,
+    scale_factor=1,
 ):
     """
     Pack independent single-qubit circuits onto an N-qubit QPU.
@@ -229,7 +519,11 @@ def _cudaq_run_parallel(
                     all_thetas.extend(pad_thetas)
                 actual_n = n_qubits
 
-            par_kernel = _build_cudaq_parallel_pz_kernel(actual_n, reps)
+            par_kernel = (
+                _build_cudaq_parallel_pz_folded_kernel(actual_n, reps, scale_factor)
+                if scale_factor > 1
+                else _build_cudaq_parallel_pz_kernel(actual_n, reps)
+            )
             args = (x_vals, all_thetas)
 
         elif ansatz == "real" and not preacts_trainable:
@@ -244,7 +538,11 @@ def _cudaq_run_parallel(
                     all_thetas.extend([0.0] * reps)
                 actual_n = n_qubits
 
-            par_kernel = _build_cudaq_parallel_real_kernel(actual_n, reps)
+            par_kernel = (
+                _build_cudaq_parallel_real_folded_kernel(actual_n, reps, scale_factor)
+                if scale_factor > 1
+                else _build_cudaq_parallel_real_kernel(actual_n, reps)
+            )
             args = (x_vals, all_thetas)
 
         elif ansatz in ("rpz_encoding", "rpz") or preacts_trainable:
@@ -264,7 +562,11 @@ def _cudaq_run_parallel(
                     all_thetas.extend([0.0] * (reps + 1))
                 actual_n = n_qubits
 
-            par_kernel = _build_cudaq_parallel_rpz_kernel(actual_n, reps)
+            par_kernel = (
+                _build_cudaq_parallel_rpz_folded_kernel(actual_n, reps, scale_factor)
+                if scale_factor > 1
+                else _build_cudaq_parallel_rpz_kernel(actual_n, reps)
+            )
             args = (encoded_xs, all_thetas)
         else:
             raise NotImplementedError(f"Parallel not supported for ansatz '{ansatz}'")
@@ -356,25 +658,32 @@ def _cudaq_evaluate(
                 else:
                     raise NotImplementedError
 
-    if parallel_qubits and parallel_qubits > 1:
-        expvals = _cudaq_run_parallel(
-            all_args,
-            ansatz,
-            reps,
-            preacts_trainable,
-            parallel_qubits,
-            shots_count,
-        )
+    mitigation = config.get("mitigation", {})
+
+    def _run_cudaq(scale_factor=1):
+        if parallel_qubits and parallel_qubits > 1:
+            return _cudaq_run_parallel(
+                all_args, ansatz, reps, preacts_trainable,
+                parallel_qubits, shots_count, scale_factor=scale_factor,
+            )
+        else:
+            kernel = _get_cudaq_kernel(ansatz, reps, preacts_trainable, scale_factor)
+            spin_z = cudaq.spin.z(0)
+            ev = []
+            for args in all_args:
+                if shots_count is not None:
+                    result = cudaq.observe(
+                        kernel, spin_z, *args, shots_count=shots_count
+                    )
+                else:
+                    result = cudaq.observe(kernel, spin_z, *args)
+                ev.append(result.expectation())
+            return ev
+
+    if mitigation:
+        expvals = _apply_mitigation(_run_cudaq, mitigation)
     else:
-        kernel = _get_cudaq_kernel(ansatz, reps, preacts_trainable)
-        spin_z = cudaq.spin.z(0)
-        expvals = []
-        for args in all_args:
-            if shots_count is not None:
-                result = cudaq.observe(kernel, spin_z, *args, shots_count=shots_count)
-            else:
-                result = cudaq.observe(kernel, spin_z, *args)
-            expvals.append(result.expectation())
+        expvals = _run_cudaq(1)
 
     output = torch.tensor(expvals, dtype=x.dtype, device=x.device)
     return output.reshape(batch, out_dim, in_dim)
@@ -526,6 +835,7 @@ def cudaq_solver(
         "shots": shots,
         "target": target,
         "parallel_qubits": parallel_qubits,
+        "mitigation": kwargs.get("mitigation", {}),
     }
 
     needs_grad = theta.requires_grad or x.requires_grad
