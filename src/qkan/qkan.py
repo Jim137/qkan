@@ -96,9 +96,14 @@ class QKANLayer(nn.Module):
             Enable to use fast measurement in exact solver. Which would be quantum-inspired method.
             When False, the exact solver simulates the exact measurement process of quantum circuit.
         c_dtype : torch.dtype
-            Compute dtype for quantum simulation
+            Compute dtype for quantum simulation. Supported values:
+
+            - ``torch.complex64`` / ``torch.float32``: full-precision f32 (default)
+            - ``torch.bfloat16``: mixed-precision bf16 I/O, f32 compute, bf16 state checkpoints
+            - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints
         p_dtype : torch.dtype
-            Parameter dtype for quantum simulation
+            Parameter dtype (``torch.float32`` or ``torch.bfloat16``).
+            Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.
         _x0 : Optional[torch.Tensor]
             Leave for ResQKANLayer
     """
@@ -131,8 +136,8 @@ class QKANLayer(nn.Module):
         ba_trainable: bool = True,
         is_batchnorm: bool = False,
         fast_measure: bool = True,
-        c_dtype=torch.complex64,
-        p_dtype=torch.float32,
+        c_dtype: torch.dtype = torch.complex64,
+        p_dtype: torch.dtype = torch.float32,
         seed=None,
     ):
         super(QKANLayer, self).__init__()
@@ -709,8 +714,8 @@ class QKAN(nn.Module):
         ba_trainable: bool = False,
         fast_measure: bool = True,
         save_act: bool = False,
-        c_dtype=torch.complex64,
-        p_dtype=torch.float32,
+        c_dtype: torch.dtype = torch.complex64,
+        p_dtype: torch.dtype = torch.float32,
         seed=None,
         **kwargs,
     ):
@@ -757,9 +762,14 @@ class QKAN(nn.Module):
                 Enable to use fast measurement in exact solver. Which would be quantum-inspired method.
                 When False, the exact solver simulates the exact measurement process of quantum circuit.
             p_dtype : torch.dtype
-                Parameter dtype for quantum simulation, default: torch.float32
+                Parameter dtype (``torch.float32`` or ``torch.bfloat16``).
+                Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.
             c_dtype : torch.dtype
-                Compute dtype for quantum simulation, default: torch.complex64
+                Compute dtype for quantum simulation. Supported values:
+
+                - ``torch.complex64`` / ``torch.float32``: full-precision f32 (default)
+                - ``torch.bfloat16``: mixed-precision bf16 I/O, f32 compute, bf16 state checkpoints
+                - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints
             seed : Any
                 Random seed, default: None
         """

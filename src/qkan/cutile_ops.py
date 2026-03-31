@@ -191,8 +191,8 @@ def cutile_pz_forward(
     grid = (n_oi, math.ceil(batch / BLOCK_B), 1)
 
     if preacts_trainable:
-        preacts_w = preacts_w.to(c_dtype).contiguous()
-        preacts_b = preacts_b.to(c_dtype).contiguous()
+        preacts_w = preacts_w.to(io_dtype).contiguous()
+        preacts_b = preacts_b.to(io_dtype).contiguous()
 
     ct.launch(
         torch.cuda.current_stream(),
