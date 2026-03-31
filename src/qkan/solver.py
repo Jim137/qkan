@@ -782,10 +782,23 @@ class _FlashFunction(torch.autograd.Function):
 
         if ansatz in ("pz_encoding", "pz"):
             return triton_pz_forward(
-                x, theta, preacts_w, preacts_b, preacts_trainable, fast_measure
+                x,
+                theta,
+                preacts_w,
+                preacts_b,
+                preacts_trainable,
+                fast_measure,
+                c_dtype=c_dtype,
             )
         elif ansatz in ("rpz_encoding", "rpz"):
-            return triton_rpz_forward(x, theta, preacts_w, preacts_b, fast_measure)
+            return triton_rpz_forward(
+                x,
+                theta,
+                preacts_w,
+                preacts_b,
+                fast_measure,
+                c_dtype=c_dtype,
+            )
         elif ansatz == "real":
             return triton_real_forward(
                 x,
@@ -813,6 +826,7 @@ class _FlashFunction(torch.autograd.Function):
                 grad_output,
                 ctx.preacts_trainable,
                 ctx.fast_measure,
+                c_dtype=ctx.c_dtype,
             )
         elif ansatz in ("rpz_encoding", "rpz"):
             grad_x, grad_theta, grad_pw, grad_pb = triton_rpz_backward(
@@ -822,6 +836,7 @@ class _FlashFunction(torch.autograd.Function):
                 preacts_b,
                 grad_output,
                 ctx.fast_measure,
+                c_dtype=ctx.c_dtype,
             )
         elif ansatz == "real":
             grad_x, grad_theta, grad_pw, grad_pb = triton_real_backward(
@@ -834,16 +849,13 @@ class _FlashFunction(torch.autograd.Function):
                 ctx.fast_measure,
                 c_dtype=ctx.c_dtype,
             )
-            # Cast gradients back to parameter dtype
-            p_dtype = x.dtype
-            grad_x = grad_x.to(p_dtype)
-            grad_theta = grad_theta.to(p_dtype)
-            if grad_pw is not None:
-                grad_pw = grad_pw.to(p_dtype)
-            if grad_pb is not None:
-                grad_pb = grad_pb.to(p_dtype)
         else:
             raise ValueError(f"Unsupported ansatz for flash backward: {ansatz}")
+
+        if ctx.c_dtype == torch.bfloat16:
+            grad_x, grad_theta, grad_pw, grad_pb = _cast_grads_to_dtype(
+                grad_x, grad_theta, grad_pw, grad_pb, x.dtype
+            )
 
         return (
             grad_x,
@@ -857,6 +869,17 @@ class _FlashFunction(torch.autograd.Function):
             None,  # c_dtype
             None,  # ansatz
         )
+
+
+def _cast_grads_to_dtype(grad_x, grad_theta, grad_pw, grad_pb, dtype):
+    """Cast f32 gradients back to parameter dtype (used after bf16 backward)."""
+    grad_x = grad_x.to(dtype)
+    grad_theta = grad_theta.to(dtype)
+    if grad_pw is not None:
+        grad_pw = grad_pw.to(dtype)
+    if grad_pb is not None:
+        grad_pb = grad_pb.to(dtype)
+    return grad_x, grad_theta, grad_pw, grad_pb
 
 
 def flash_exact_solver(
@@ -952,6 +975,7 @@ def flash_exact_solver(
                 preacts_bias,
                 preacts_trainable,
                 fast_measure,
+                c_dtype=c_dtype,
             )
         elif ansatz in ("rpz_encoding", "rpz"):
             return triton_rpz_forward(
@@ -960,6 +984,7 @@ def flash_exact_solver(
                 preacts_weight,
                 preacts_bias,
                 fast_measure,
+                c_dtype=c_dtype,
             )
         elif ansatz == "real":
             return triton_real_forward(
@@ -1014,10 +1039,23 @@ class _CuTileFlashFunction(torch.autograd.Function):
 
         if ansatz in ("pz_encoding", "pz"):
             return cutile_pz_forward(
-                x, theta, preacts_w, preacts_b, preacts_trainable, fast_measure
+                x,
+                theta,
+                preacts_w,
+                preacts_b,
+                preacts_trainable,
+                fast_measure,
+                c_dtype=c_dtype,
             )
         elif ansatz in ("rpz_encoding", "rpz"):
-            return cutile_rpz_forward(x, theta, preacts_w, preacts_b, fast_measure)
+            return cutile_rpz_forward(
+                x,
+                theta,
+                preacts_w,
+                preacts_b,
+                fast_measure,
+                c_dtype=c_dtype,
+            )
         elif ansatz == "real":
             return cutile_real_forward(
                 x,
@@ -1045,6 +1083,7 @@ class _CuTileFlashFunction(torch.autograd.Function):
                 grad_output,
                 ctx.preacts_trainable,
                 ctx.fast_measure,
+                c_dtype=ctx.c_dtype,
             )
         elif ansatz in ("rpz_encoding", "rpz"):
             grad_x, grad_theta, grad_pw, grad_pb = cutile_rpz_backward(
@@ -1054,6 +1093,7 @@ class _CuTileFlashFunction(torch.autograd.Function):
                 preacts_b,
                 grad_output,
                 ctx.fast_measure,
+                c_dtype=ctx.c_dtype,
             )
         elif ansatz == "real":
             grad_x, grad_theta, grad_pw, grad_pb = cutile_real_backward(
@@ -1066,16 +1106,13 @@ class _CuTileFlashFunction(torch.autograd.Function):
                 ctx.fast_measure,
                 c_dtype=ctx.c_dtype,
             )
-            # Cast gradients back to parameter dtype
-            p_dtype = x.dtype
-            grad_x = grad_x.to(p_dtype)
-            grad_theta = grad_theta.to(p_dtype)
-            if grad_pw is not None:
-                grad_pw = grad_pw.to(p_dtype)
-            if grad_pb is not None:
-                grad_pb = grad_pb.to(p_dtype)
         else:
             raise ValueError(f"Unsupported ansatz for cutile backward: {ansatz}")
+
+        if ctx.c_dtype == torch.bfloat16:
+            grad_x, grad_theta, grad_pw, grad_pb = _cast_grads_to_dtype(
+                grad_x, grad_theta, grad_pw, grad_pb, x.dtype
+            )
 
         return (
             grad_x,
@@ -1184,6 +1221,7 @@ def cutile_flash_exact_solver(
                 preacts_bias,
                 preacts_trainable,
                 fast_measure,
+                c_dtype=c_dtype,
             )
         elif ansatz in ("rpz_encoding", "rpz"):
             return cutile_rpz_forward(
@@ -1192,6 +1230,7 @@ def cutile_flash_exact_solver(
                 preacts_weight,
                 preacts_bias,
                 fast_measure,
+                c_dtype=c_dtype,
             )
         elif ansatz == "real":
             return cutile_real_forward(

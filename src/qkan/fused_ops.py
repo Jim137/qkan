@@ -83,7 +83,7 @@ def _pz_encoding_kernel(
 
     x_vals = tl.load(
         x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
-    )
+    ).to(tl.float32)
 
     INV_SQRT2: tl.constexpr = 0.7071067811865476
     r0 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
@@ -95,7 +95,7 @@ def _pz_encoding_kernel(
 
     for layer in range(reps):
         # Rz(t0) — scalar theta trig, broadcast to batch tile
-        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p).to(tl.float32)
         a = t0 * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
@@ -106,7 +106,7 @@ def _pz_encoding_kernel(
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
         # Ry(t1) — scalar theta trig
-        t1 = tl.load(theta_base + layer * stride_t_r + 1 * stride_t_p)
+        t1 = tl.load(theta_base + layer * stride_t_r + 1 * stride_t_p).to(tl.float32)
         a = t1 * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
@@ -121,10 +121,10 @@ def _pz_encoding_kernel(
         if PREACTS_TRAINABLE:
             w = tl.load(
                 pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
-            )
+            ).to(tl.float32)
             b = tl.load(
                 pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
-            )
+            ).to(tl.float32)
             enc = w * x_vals + b
 
         a = enc * 0.5
@@ -137,8 +137,8 @@ def _pz_encoding_kernel(
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
     # Final Rz(t0), Ry(t1)
-    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p)
-    t1 = tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p)
+    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
+    t1 = tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p).to(tl.float32)
 
     a = t0 * 0.5
     c = tl.cos(a)
@@ -174,37 +174,38 @@ def triton_pz_forward(
     preacts_b: torch.Tensor,
     preacts_trainable: bool,
     fast_measure: bool = True,
+    c_dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """
     Launch the Triton pz_encoding kernel.
 
     Args:
-        x: (batch, in_dim) float32 on CUDA
-        theta: (out_dim, in_dim, reps+1, 2) float32 on CUDA, already expanded
-        preacts_w: (out_dim, in_dim, reps) float32, or any tensor if not trainable
-        preacts_b: (out_dim, in_dim, reps) float32, or any tensor if not trainable
+        x: (batch, in_dim) on CUDA
+        theta: (out_dim, in_dim, reps+1, 2) on CUDA
+        preacts_w, preacts_b: (out_dim, in_dim, reps)
         preacts_trainable: whether preacts are used
         fast_measure: True for |alpha|-|beta|, False for |alpha|^2-|beta|^2
+        c_dtype: compute/storage dtype (torch.float32 or torch.bfloat16)
 
     Returns:
-        (batch, out_dim, in_dim) float32
+        (batch, out_dim, in_dim) in c_dtype
     """
     batch, in_dim = x.shape
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    x = x.contiguous()
-    theta = theta.contiguous()
+    x = x.to(c_dtype).contiguous()
+    theta = theta.to(c_dtype).contiguous()
 
-    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=x.dtype)
+    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
 
     n_oi = out_dim * in_dim
     BLOCK_B = _select_block_b(n_oi, batch)
     grid = (n_oi, triton.cdiv(batch, BLOCK_B))
 
     if preacts_trainable:
-        preacts_w = preacts_w.contiguous()
-        preacts_b = preacts_b.contiguous()
+        preacts_w = preacts_w.to(c_dtype).contiguous()
+        preacts_b = preacts_b.to(c_dtype).contiguous()
         pw_strides = (preacts_w.stride(0), preacts_w.stride(1), preacts_w.stride(2))
         pb_strides = (preacts_b.stride(0), preacts_b.stride(1), preacts_b.stride(2))
     else:
@@ -299,7 +300,7 @@ def _rpz_encoding_kernel(
 
     x_vals = tl.load(
         x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
-    )
+    ).to(tl.float32)
 
     INV_SQRT2: tl.constexpr = 0.7071067811865476
     r0 = tl.full([BLOCK_B], INV_SQRT2, dtype=tl.float32)
@@ -313,7 +314,7 @@ def _rpz_encoding_kernel(
 
     for layer in range(reps):
         # Ry(theta) — scalar trig, broadcast
-        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p).to(tl.float32)
         a = t0 * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
@@ -324,8 +325,8 @@ def _rpz_encoding_kernel(
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
         # Rz(w*x+b) — vectorized data trig
-        w = tl.load(pw_base + layer * stride_pw_r)
-        b = tl.load(pb_base + layer * stride_pb_r)
+        w = tl.load(pw_base + layer * stride_pw_r).to(tl.float32)
+        b = tl.load(pb_base + layer * stride_pb_r).to(tl.float32)
         enc = w * x_vals + b
 
         a = enc * 0.5
@@ -338,7 +339,7 @@ def _rpz_encoding_kernel(
         r0, i0, r1, i1 = nr0, ni0, nr1, ni1
 
     # Final Ry(theta[reps, 0])
-    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p)
+    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
     a = t0 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -363,30 +364,29 @@ def triton_rpz_forward(
     preacts_w: torch.Tensor,
     preacts_b: torch.Tensor,
     fast_measure: bool = True,
+    c_dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """
     Launch the Triton rpz_encoding kernel.
 
     Args:
-        x: (batch, in_dim) float32
-        theta: (out_dim, in_dim, reps+1, 1) float32, already expanded
-        preacts_w: (out_dim, in_dim, reps) float32, already expanded
-        preacts_b: (out_dim, in_dim, reps) float32, already expanded
+        x, theta, preacts_w, preacts_b: tensors on CUDA
         fast_measure: measurement mode
+        c_dtype: compute/storage dtype (torch.float32 or torch.bfloat16)
 
     Returns:
-        (batch, out_dim, in_dim) float32
+        (batch, out_dim, in_dim) in c_dtype
     """
     batch, in_dim = x.shape
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    x = x.contiguous()
-    theta = theta.contiguous()
-    preacts_w = preacts_w.contiguous()
-    preacts_b = preacts_b.contiguous()
+    x = x.to(c_dtype).contiguous()
+    theta = theta.to(c_dtype).contiguous()
+    preacts_w = preacts_w.to(c_dtype).contiguous()
+    preacts_b = preacts_b.to(c_dtype).contiguous()
 
-    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=x.dtype)
+    output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=c_dtype)
     n_oi = out_dim * in_dim
     BLOCK_B = _select_block_b(n_oi, batch)
     grid = (n_oi, triton.cdiv(batch, BLOCK_B))
@@ -500,7 +500,7 @@ def _rpz_encoding_backward_kernel(
 
     x_vals = tl.load(
         x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
-    )
+    ).to(tl.float32)
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     pw_base = pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i
     pb_base = pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i
@@ -537,7 +537,7 @@ def _rpz_encoding_backward_kernel(
 
     state_idx = 1
     for layer in range(reps):
-        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p).to(tl.float32)
         a = t0 * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
@@ -581,8 +581,8 @@ def _rpz_encoding_backward_kernel(
         )
         state_idx += 1
 
-        w = tl.load(pw_base + layer * stride_pw_r)
-        b = tl.load(pb_base + layer * stride_pb_r)
+        w = tl.load(pw_base + layer * stride_pw_r).to(tl.float32)
+        b = tl.load(pb_base + layer * stride_pb_r).to(tl.float32)
         enc = w * x_vals + b
 
         a = enc * 0.5
@@ -629,7 +629,7 @@ def _rpz_encoding_backward_kernel(
         state_idx += 1
 
     # Final Ry(theta[reps,0])
-    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p)
+    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
     a = t0 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -644,7 +644,7 @@ def _rpz_encoding_backward_kernel(
         grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
 
     if FAST_MEASURE:
         alpha_norm = tl.sqrt(r0 * r0 + i0 * i0)
@@ -671,24 +671,24 @@ def _rpz_encoding_backward_kernel(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
     si0 = tl.load(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
     sr1 = tl.load(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
     si1 = tl.load(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
 
-    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p)
+    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
     a = t0 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -720,7 +720,7 @@ def _rpz_encoding_backward_kernel(
             + 0 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         si0 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -728,7 +728,7 @@ def _rpz_encoding_backward_kernel(
             + 1 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         sr1 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -736,7 +736,7 @@ def _rpz_encoding_backward_kernel(
             + 2 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         si1 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -744,10 +744,10 @@ def _rpz_encoding_backward_kernel(
             + 3 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
 
-        w = tl.load(pw_base + layer * stride_pw_r)
-        b = tl.load(pb_base + layer * stride_pb_r)
+        w = tl.load(pw_base + layer * stride_pw_r).to(tl.float32)
+        b = tl.load(pb_base + layer * stride_pb_r).to(tl.float32)
         enc = w * x_vals + b
 
         a = enc * 0.5
@@ -790,7 +790,7 @@ def _rpz_encoding_backward_kernel(
             + 0 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         si0 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -798,7 +798,7 @@ def _rpz_encoding_backward_kernel(
             + 1 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         sr1 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -806,7 +806,7 @@ def _rpz_encoding_backward_kernel(
             + 2 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         si1 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -814,9 +814,9 @@ def _rpz_encoding_backward_kernel(
             + 3 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
 
-        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p).to(tl.float32)
         a = t0 * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
@@ -842,16 +842,18 @@ def _rpz_encoding_backward_kernel(
     tl.atomic_add(gx_offs, grad_x_local, mask=b_mask)
 
 
-def triton_rpz_backward(x, theta, pw, pb, grad_output, fast_measure):
+def triton_rpz_backward(
+    x, theta, pw, pb, grad_output, fast_measure, c_dtype=torch.float32
+):
     """Launch rpz_encoding backward kernel. Returns (grad_x, grad_theta, grad_pw, grad_pb)."""
     batch, in_dim = x.shape
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    x = x.contiguous()
-    theta = theta.contiguous()
-    pw = pw.contiguous()
-    pb = pb.contiguous()
+    x = x.to(c_dtype).contiguous()
+    theta = theta.to(c_dtype).contiguous()
+    pw = pw.to(c_dtype).contiguous()
+    pb = pb.to(c_dtype).contiguous()
     grad_output = grad_output.contiguous()
 
     n_oi = out_dim * in_dim
@@ -859,14 +861,15 @@ def triton_rpz_backward(x, theta, pw, pb, grad_output, fast_measure):
     n_states = 2 * reps + 2
     n_b_blocks = triton.cdiv(batch, BLOCK_B)
     n_programs = n_oi * n_b_blocks
+    states_dtype = torch.bfloat16 if c_dtype == torch.bfloat16 else torch.float32
     states = torch.empty(
-        n_programs, n_states, BLOCK_B, 4, device=x.device, dtype=x.dtype
+        n_programs, n_states, 4, BLOCK_B, device=x.device, dtype=states_dtype
     )
 
-    grad_theta = torch.zeros_like(theta)
-    grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=x.dtype)
-    grad_pw = torch.zeros_like(pw)
-    grad_pb = torch.zeros_like(pb)
+    grad_theta = torch.zeros(theta.shape, device=x.device, dtype=torch.float32)
+    grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=torch.float32)
+    grad_pw = torch.zeros(pw.shape, device=x.device, dtype=torch.float32)
+    grad_pb = torch.zeros(pb.shape, device=x.device, dtype=torch.float32)
 
     grid = (out_dim * in_dim, n_b_blocks)
     _rpz_encoding_backward_kernel[grid](
@@ -901,8 +904,8 @@ def triton_rpz_backward(x, theta, pw, pb, grad_output, fast_measure):
         grad_output.stride(2),
         states.stride(0),
         states.stride(1),
-        states.stride(2),
-        states.stride(3),
+        states.stride(3),  # stride_s_b: BLOCK_B dim (contiguous)
+        states.stride(2),  # stride_s_c: component dim
         grad_theta.stride(0),
         grad_theta.stride(1),
         grad_theta.stride(2),
@@ -1224,7 +1227,7 @@ def _pz_encoding_backward_kernel(
 
     x_vals = tl.load(
         x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
-    )
+    ).to(tl.float32)
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     program_idx = pid_oi * tl.cdiv(batch_size, BLOCK_B) + pid_b
     states_base = states_ptr + program_idx * stride_s_n
@@ -1260,7 +1263,7 @@ def _pz_encoding_backward_kernel(
     state_idx = 1
     for layer in range(reps):
         # Rz(t0) — scalar trig
-        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p).to(tl.float32)
         a = t0 * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
@@ -1305,7 +1308,7 @@ def _pz_encoding_backward_kernel(
         state_idx += 1
 
         # Ry(t1) — scalar trig
-        t1 = tl.load(theta_base + layer * stride_t_r + 1 * stride_t_p)
+        t1 = tl.load(theta_base + layer * stride_t_r + 1 * stride_t_p).to(tl.float32)
         a = t1 * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
@@ -1354,10 +1357,10 @@ def _pz_encoding_backward_kernel(
         if PREACTS_TRAINABLE:
             w = tl.load(
                 pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
-            )
+            ).to(tl.float32)
             b = tl.load(
                 pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
-            )
+            ).to(tl.float32)
             enc = w * x_vals + b
 
         a = enc * 0.5
@@ -1404,7 +1407,7 @@ def _pz_encoding_backward_kernel(
         state_idx += 1
 
     # Final Rz(t0)
-    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p)
+    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
     a = t0 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -1437,7 +1440,7 @@ def _pz_encoding_backward_kernel(
     state_idx += 1
 
     # Final Ry(t1)
-    t1 = tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p)
+    t1 = tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p).to(tl.float32)
     a = t1 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -1452,7 +1455,7 @@ def _pz_encoding_backward_kernel(
         grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
 
     if FAST_MEASURE:
         alpha_norm = tl.sqrt(r0 * r0 + i0 * i0)
@@ -1479,24 +1482,24 @@ def _pz_encoding_backward_kernel(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
     si0 = tl.load(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
     sr1 = tl.load(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
     si1 = tl.load(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
 
-    t1 = tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p)
+    t1 = tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p).to(tl.float32)
     a = t1 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -1524,24 +1527,24 @@ def _pz_encoding_backward_kernel(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 0 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
     si0 = tl.load(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 1 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
     sr1 = tl.load(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 2 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
     si1 = tl.load(
         states_base + state_idx * stride_s_s + b_range * stride_s_b + 3 * stride_s_c,
         mask=b_mask,
         other=0.0,
-    )
+    ).to(tl.float32)
 
-    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p)
+    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
     a = t0 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -1571,7 +1574,7 @@ def _pz_encoding_backward_kernel(
             + 0 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         si0 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -1579,7 +1582,7 @@ def _pz_encoding_backward_kernel(
             + 1 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         sr1 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -1587,7 +1590,7 @@ def _pz_encoding_backward_kernel(
             + 2 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         si1 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -1595,16 +1598,16 @@ def _pz_encoding_backward_kernel(
             + 3 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
 
         enc = x_vals
         if PREACTS_TRAINABLE:
             w = tl.load(
                 pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i + layer * stride_pw_r
-            )
+            ).to(tl.float32)
             b = tl.load(
                 pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i + layer * stride_pb_r
-            )
+            ).to(tl.float32)
             enc = w * x_vals + b
 
         a = enc * 0.5
@@ -1650,7 +1653,7 @@ def _pz_encoding_backward_kernel(
             + 0 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         si0 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -1658,7 +1661,7 @@ def _pz_encoding_backward_kernel(
             + 1 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         sr1 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -1666,7 +1669,7 @@ def _pz_encoding_backward_kernel(
             + 2 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         si1 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -1674,9 +1677,9 @@ def _pz_encoding_backward_kernel(
             + 3 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
 
-        t1 = tl.load(theta_base + layer * stride_t_r + 1 * stride_t_p)
+        t1 = tl.load(theta_base + layer * stride_t_r + 1 * stride_t_p).to(tl.float32)
         a = t1 * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
@@ -1707,7 +1710,7 @@ def _pz_encoding_backward_kernel(
             + 0 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         si0 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -1715,7 +1718,7 @@ def _pz_encoding_backward_kernel(
             + 1 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         sr1 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -1723,7 +1726,7 @@ def _pz_encoding_backward_kernel(
             + 2 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
         si1 = tl.load(
             states_base
             + state_idx * stride_s_s
@@ -1731,9 +1734,9 @@ def _pz_encoding_backward_kernel(
             + 3 * stride_s_c,
             mask=b_mask,
             other=0.0,
-        )
+        ).to(tl.float32)
 
-        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p)
+        t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p).to(tl.float32)
         a = t0 * 0.5
         c = tl.cos(a)
         s = tl.sin(a)
@@ -1757,14 +1760,23 @@ def _pz_encoding_backward_kernel(
     tl.atomic_add(gx_offs, grad_x_local, mask=b_mask)
 
 
-def triton_pz_backward(x, theta, pw, pb, grad_output, preacts_trainable, fast_measure):
+def triton_pz_backward(
+    x,
+    theta,
+    pw,
+    pb,
+    grad_output,
+    preacts_trainable,
+    fast_measure,
+    c_dtype=torch.float32,
+):
     """Launch pz_encoding backward kernel. Returns (grad_x, grad_theta, grad_pw, grad_pb)."""
     batch, in_dim = x.shape
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    x = x.contiguous()
-    theta = theta.contiguous()
+    x = x.to(c_dtype).contiguous()
+    theta = theta.to(c_dtype).contiguous()
     grad_output = grad_output.contiguous()
 
     n_oi = out_dim * in_dim
@@ -1772,25 +1784,26 @@ def triton_pz_backward(x, theta, pw, pb, grad_output, preacts_trainable, fast_me
     n_states = 3 * reps + 3  # H state + 3 per layer + after final Rz
     n_b_blocks = triton.cdiv(batch, BLOCK_B)
     n_programs = n_oi * n_b_blocks
+    states_dtype = torch.bfloat16 if c_dtype == torch.bfloat16 else torch.float32
     states = torch.empty(
-        n_programs, n_states, BLOCK_B, 4, device=x.device, dtype=x.dtype
+        n_programs, n_states, 4, BLOCK_B, device=x.device, dtype=states_dtype
     )
 
-    grad_theta = torch.zeros_like(theta)
-    grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=x.dtype)
+    grad_theta = torch.zeros(theta.shape, device=x.device, dtype=torch.float32)
+    grad_x = torch.zeros(batch, in_dim, device=x.device, dtype=torch.float32)
 
     if preacts_trainable:
-        pw = pw.contiguous()
-        pb = pb.contiguous()
-        grad_pw = torch.zeros_like(pw)
-        grad_pb = torch.zeros_like(pb)
+        pw = pw.to(c_dtype).contiguous()
+        pb = pb.to(c_dtype).contiguous()
+        grad_pw = torch.zeros(pw.shape, device=x.device, dtype=torch.float32)
+        grad_pb = torch.zeros(pb.shape, device=x.device, dtype=torch.float32)
         pw_strides = (pw.stride(0), pw.stride(1), pw.stride(2))
         pb_strides = (pb.stride(0), pb.stride(1), pb.stride(2))
         gpw_strides = (grad_pw.stride(0), grad_pw.stride(1), grad_pw.stride(2))
         gpb_strides = (grad_pb.stride(0), grad_pb.stride(1), grad_pb.stride(2))
     else:
-        grad_pw = torch.zeros(1, device=x.device)
-        grad_pb = torch.zeros(1, device=x.device)
+        grad_pw = torch.zeros(1, device=x.device, dtype=torch.float32)
+        grad_pb = torch.zeros(1, device=x.device, dtype=torch.float32)
         pw_strides = (0, 0, 0)
         pb_strides = (0, 0, 0)
         gpw_strides = (0, 0, 0)
@@ -1825,8 +1838,8 @@ def triton_pz_backward(x, theta, pw, pb, grad_output, preacts_trainable, fast_me
         grad_output.stride(2),
         states.stride(0),
         states.stride(1),
-        states.stride(2),
-        states.stride(3),
+        states.stride(3),  # stride_s_b: BLOCK_B dim (contiguous)
+        states.stride(2),  # stride_s_c: component dim
         grad_theta.stride(0),
         grad_theta.stride(1),
         grad_theta.stride(2),
@@ -2655,12 +2668,12 @@ def triton_real_backward(
     n_programs = n_oi * n_b_blocks
     # Real-only bf16 path stores 2 components (r0, r1); full path stores 4
     n_components = 2 if compute_bf16 else 4
-    # States: (n_programs, n_states, BLOCK_B, n_components)
+    # States: (n_programs, n_states, n_components, BLOCK_B) — coalesced layout
     states = torch.empty(
         n_programs,
         n_states,
-        BLOCK_B,
         n_components,
+        BLOCK_B,
         device=x.device,
         dtype=torch.float32,
     )
@@ -2713,8 +2726,8 @@ def triton_real_backward(
         grad_output.stride(2),
         states.stride(0),
         states.stride(1),
-        states.stride(2),
-        states.stride(3),
+        states.stride(3),  # stride_s_b: BLOCK_B dim (contiguous)
+        states.stride(2),  # stride_s_c: component dim
         grad_theta.stride(0),
         grad_theta.stride(1),
         grad_theta.stride(2),
