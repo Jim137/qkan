@@ -1,0 +1,819 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qkan.solver.qiskit_solver &mdash; QKAN 0.2.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/qiskit_solver.html" />
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=37f418d5"></script>
+      <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples &amp; Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">qkan.solver.qiskit_solver</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for qkan.solver.qiskit_solver</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">QKAN solver for real quantum device execution via Qiskit Runtime.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit</span><span class="w"> </span><span class="kn">import</span> <span class="n">QuantumCircuit</span>  <span class="c1"># type: ignore</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit.quantum_info</span><span class="w"> </span><span class="kn">import</span> <span class="n">SparsePauliOp</span>  <span class="c1"># type: ignore</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit.transpiler.preset_passmanagers</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>  <span class="c1"># type: ignore</span>
+        <span class="n">generate_preset_pass_manager</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">_QISKIT_AVAILABLE</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">_QISKIT_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit_ibm_runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">EstimatorV2</span> <span class="k">as</span> <span class="n">Estimator</span>  <span class="c1"># type: ignore</span>
+
+    <span class="n">_QISKIT_RUNTIME_AVAILABLE</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">_QISKIT_RUNTIME_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit.primitives</span><span class="w"> </span><span class="kn">import</span> <span class="n">StatevectorEstimator</span>  <span class="c1"># type: ignore</span>
+
+    <span class="n">_SV_ESTIMATOR_AVAILABLE</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">_SV_ESTIMATOR_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit_aer</span><span class="w"> </span><span class="kn">import</span> <span class="n">AerSimulator</span>  <span class="c1"># type: ignore</span>
+
+    <span class="n">_AER_AVAILABLE</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">_AER_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
+
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">._mitigation</span><span class="w"> </span><span class="kn">import</span> <span class="n">_apply_mitigation</span>
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Qiskit circuit builders</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_fold_qiskit_circuit</span><span class="p">(</span><span class="n">qc</span><span class="p">:</span> <span class="s2">&quot;QuantumCircuit&quot;</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QuantumCircuit&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Apply gate folding to a Qiskit circuit for ZNE.</span>
+
+<span class="sd">    Produces U . (U_dag . U)^((scale_factor-1)/2) which has the same unitary</span>
+<span class="sd">    as U but with scale_factor x the gate count (and thus noise).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">scale_factor</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">qc</span>
+    <span class="n">folded</span> <span class="o">=</span> <span class="n">qc</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">((</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">):</span>
+        <span class="n">folded</span> <span class="o">=</span> <span class="n">folded</span><span class="o">.</span><span class="n">compose</span><span class="p">(</span><span class="n">qc</span><span class="o">.</span><span class="n">inverse</span><span class="p">())</span><span class="o">.</span><span class="n">compose</span><span class="p">(</span><span class="n">qc</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">folded</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_qiskit_pz_circuit</span><span class="p">(</span>
+    <span class="n">x_val</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">theta_vals</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">encoded_x_vals</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QuantumCircuit&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Build pz_encoding circuit: H -&gt; [RZ(θ₀) RY(θ₁) RZ(x)]^reps -&gt; RZ(θ_f₀) RY(θ_f₁)</span>
+
+<span class="sd">    theta_vals layout: [θ₀₀, θ₀₁, θ₁₀, θ₁₁, ..., θ_f₀, θ_f₁]  (2 params per layer + 2 final)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">qc</span> <span class="o">=</span> <span class="n">QuantumCircuit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">qc</span><span class="o">.</span><span class="n">h</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+        <span class="n">qc</span><span class="o">.</span><span class="n">rz</span><span class="p">(</span><span class="n">theta_vals</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">qc</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">theta_vals</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">enc</span> <span class="o">=</span> <span class="n">encoded_x_vals</span><span class="p">[</span><span class="n">l</span><span class="p">]</span> <span class="k">if</span> <span class="n">encoded_x_vals</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">x_val</span>
+        <span class="n">qc</span><span class="o">.</span><span class="n">rz</span><span class="p">(</span><span class="n">enc</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">qc</span><span class="o">.</span><span class="n">rz</span><span class="p">(</span><span class="n">theta_vals</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">qc</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">theta_vals</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">qc</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_qiskit_rpz_circuit</span><span class="p">(</span>
+    <span class="n">encoded_x_vals</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">theta_vals</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QuantumCircuit&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Build rpz_encoding circuit: H -&gt; [RY(θ) RZ(encoded_x)]^reps -&gt; RY(θ_final)</span>
+
+<span class="sd">    theta_vals layout: [θ₀, θ₁, ..., θ_final]  (1 param per layer + 1 final)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">qc</span> <span class="o">=</span> <span class="n">QuantumCircuit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">qc</span><span class="o">.</span><span class="n">h</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+        <span class="n">qc</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">theta_vals</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">qc</span><span class="o">.</span><span class="n">rz</span><span class="p">(</span><span class="n">encoded_x_vals</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">qc</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">theta_vals</span><span class="p">[</span><span class="n">reps</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">qc</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_qiskit_real_circuit</span><span class="p">(</span>
+    <span class="n">x_val</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">theta_vals</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">encoded_x_vals</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QuantumCircuit&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Build real ansatz circuit: H -&gt; [X RY(θ) Z RY(x)]^reps</span>
+
+<span class="sd">    theta_vals layout: [θ₀, θ₁, ...]  (1 param per layer, no final gate)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">qc</span> <span class="o">=</span> <span class="n">QuantumCircuit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">qc</span><span class="o">.</span><span class="n">h</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+        <span class="n">qc</span><span class="o">.</span><span class="n">x</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">qc</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">theta_vals</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">qc</span><span class="o">.</span><span class="n">z</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">enc</span> <span class="o">=</span> <span class="n">encoded_x_vals</span><span class="p">[</span><span class="n">l</span><span class="p">]</span> <span class="k">if</span> <span class="n">encoded_x_vals</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">x_val</span>
+        <span class="n">qc</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">enc</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">qc</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Parallel multi-qubit packing (Qiskit)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_qiskit_parallel_circuit</span><span class="p">(</span>
+    <span class="n">single_circuits</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="s2">&quot;QuantumCircuit&quot;</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QuantumCircuit&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Pack N independent single-qubit circuits into one N-qubit circuit.</span>
+
+<span class="sd">    Each single-qubit circuit is applied to a separate qubit, enabling</span>
+<span class="sd">    parallel execution on a multi-qubit QPU.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">single_circuits</span><span class="p">)</span>
+    <span class="n">qc</span> <span class="o">=</span> <span class="n">QuantumCircuit</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">qubit_idx</span><span class="p">,</span> <span class="n">sc</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">single_circuits</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">instruction</span> <span class="ow">in</span> <span class="n">sc</span><span class="o">.</span><span class="n">data</span><span class="p">:</span>
+            <span class="n">gate</span> <span class="o">=</span> <span class="n">instruction</span><span class="o">.</span><span class="n">operation</span>
+            <span class="n">params</span> <span class="o">=</span> <span class="n">gate</span><span class="o">.</span><span class="n">params</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">gate</span><span class="o">.</span><span class="n">name</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;h&quot;</span><span class="p">:</span>
+                <span class="n">qc</span><span class="o">.</span><span class="n">h</span><span class="p">(</span><span class="n">qubit_idx</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;x&quot;</span><span class="p">:</span>
+                <span class="n">qc</span><span class="o">.</span><span class="n">x</span><span class="p">(</span><span class="n">qubit_idx</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;z&quot;</span><span class="p">:</span>
+                <span class="n">qc</span><span class="o">.</span><span class="n">z</span><span class="p">(</span><span class="n">qubit_idx</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;rx&quot;</span><span class="p">:</span>
+                <span class="n">qc</span><span class="o">.</span><span class="n">rx</span><span class="p">(</span><span class="n">params</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">qubit_idx</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;ry&quot;</span><span class="p">:</span>
+                <span class="n">qc</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">params</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">qubit_idx</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;rz&quot;</span><span class="p">:</span>
+                <span class="n">qc</span><span class="o">.</span><span class="n">rz</span><span class="p">(</span><span class="n">params</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">qubit_idx</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported gate &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; in parallel packing&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">qc</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_parallel_observables</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="s2">&quot;SparsePauliOp&quot;</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Create Z observables for each qubit in an N-qubit circuit.</span>
+
+<span class="sd">    Returns a list of N SparsePauliOp, each measuring Z on one qubit.</span>
+<span class="sd">    Qiskit uses little-endian ordering: qubit 0 is the rightmost character.</span>
+<span class="sd">    E.g. for 3 qubits: [IIZ, IZI, ZII] for qubits 0, 1, 2 respectively.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">observables</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">):</span>
+        <span class="c1"># Qiskit little-endian: qubit k is at string position (n-1-k) from the left</span>
+        <span class="n">pauli_str</span> <span class="o">=</span> <span class="s2">&quot;I&quot;</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_qubits</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">k</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;Z&quot;</span> <span class="o">+</span> <span class="s2">&quot;I&quot;</span> <span class="o">*</span> <span class="n">k</span>
+        <span class="n">observables</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">SparsePauliOp</span><span class="o">.</span><span class="n">from_list</span><span class="p">([(</span><span class="n">pauli_str</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)]))</span>
+    <span class="k">return</span> <span class="n">observables</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Qiskit solver</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_QiskitParamShift</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Autograd function using parameter-shift rule for Qiskit circuits.&quot;&quot;&quot;</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">)</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">reps</span> <span class="o">=</span> <span class="n">reps</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span>
+        <span class="k">return</span> <span class="n">_qiskit_evaluate</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">grad_output</span><span class="p">):</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
+        <span class="n">reps</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">reps</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">config</span>
+        <span class="n">shift</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span>
+
+        <span class="c1"># Gradient w.r.t. theta via parameter-shift rule</span>
+        <span class="n">grad_theta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+        <span class="n">flat_theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">flat_theta</span><span class="o">.</span><span class="n">numel</span><span class="p">()):</span>
+            <span class="n">theta_plus</span> <span class="o">=</span> <span class="n">flat_theta</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+            <span class="n">theta_plus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">+=</span> <span class="n">shift</span>
+            <span class="n">theta_minus</span> <span class="o">=</span> <span class="n">flat_theta</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+            <span class="n">theta_minus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">-=</span> <span class="n">shift</span>
+
+            <span class="n">f_plus</span> <span class="o">=</span> <span class="n">_qiskit_evaluate</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span> <span class="n">theta_plus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+            <span class="p">)</span>
+            <span class="n">f_minus</span> <span class="o">=</span> <span class="n">_qiskit_evaluate</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span> <span class="n">theta_minus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+            <span class="p">)</span>
+            <span class="n">grad_k</span> <span class="o">=</span> <span class="p">(</span><span class="n">f_plus</span> <span class="o">-</span> <span class="n">f_minus</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">shift</span><span class="p">))</span>
+            <span class="n">grad_theta</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">grad_output</span> <span class="o">*</span> <span class="n">grad_k</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+        <span class="c1"># Gradient w.r.t. preacts_weight</span>
+        <span class="n">grad_pw</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">preacts_w</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">:</span>
+            <span class="n">grad_pw</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">preacts_w</span><span class="p">)</span>
+            <span class="n">flat_pw</span> <span class="o">=</span> <span class="n">preacts_w</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">flat_pw</span><span class="o">.</span><span class="n">numel</span><span class="p">()):</span>
+                <span class="n">pw_plus</span> <span class="o">=</span> <span class="n">flat_pw</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+                <span class="n">pw_plus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">+=</span> <span class="n">shift</span>
+                <span class="n">pw_minus</span> <span class="o">=</span> <span class="n">flat_pw</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+                <span class="n">pw_minus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">-=</span> <span class="n">shift</span>
+                <span class="n">f_plus</span> <span class="o">=</span> <span class="n">_qiskit_evaluate</span><span class="p">(</span>
+                    <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">pw_plus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">preacts_w</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+                <span class="p">)</span>
+                <span class="n">f_minus</span> <span class="o">=</span> <span class="n">_qiskit_evaluate</span><span class="p">(</span>
+                    <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">pw_minus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">preacts_w</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+                <span class="p">)</span>
+                <span class="n">grad_pw</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">grad_output</span> <span class="o">*</span> <span class="p">(</span><span class="n">f_plus</span> <span class="o">-</span> <span class="n">f_minus</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">shift</span><span class="p">))</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+        <span class="c1"># Gradient w.r.t. preacts_bias</span>
+        <span class="n">grad_pb</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">preacts_b</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">:</span>
+            <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">preacts_b</span><span class="p">)</span>
+            <span class="n">flat_pb</span> <span class="o">=</span> <span class="n">preacts_b</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">flat_pb</span><span class="o">.</span><span class="n">numel</span><span class="p">()):</span>
+                <span class="n">pb_plus</span> <span class="o">=</span> <span class="n">flat_pb</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+                <span class="n">pb_plus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">+=</span> <span class="n">shift</span>
+                <span class="n">pb_minus</span> <span class="o">=</span> <span class="n">flat_pb</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+                <span class="n">pb_minus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">-=</span> <span class="n">shift</span>
+                <span class="n">f_plus</span> <span class="o">=</span> <span class="n">_qiskit_evaluate</span><span class="p">(</span>
+                    <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">pb_plus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">preacts_b</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+                <span class="p">)</span>
+                <span class="n">f_minus</span> <span class="o">=</span> <span class="n">_qiskit_evaluate</span><span class="p">(</span>
+                    <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">pb_minus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">preacts_b</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+                <span class="p">)</span>
+                <span class="n">grad_pb</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">grad_output</span> <span class="o">*</span> <span class="p">(</span><span class="n">f_plus</span> <span class="o">-</span> <span class="n">f_minus</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">shift</span><span class="p">))</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_probe_max_pubs</span><span class="p">(</span><span class="n">est</span><span class="p">,</span> <span class="n">probe_pubs</span><span class="p">,</span> <span class="n">max_pubs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Binary-search for the largest PUB batch the QPU accepts.</span>
+
+<span class="sd">    Submits `probe_pubs[:max_pubs]` synchronously. On memory error (6073),</span>
+<span class="sd">    halves and retries until a working size is found. Returns (result, max_pubs)</span>
+<span class="sd">    where result is the successful job result for the probe batch.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">while</span> <span class="n">max_pubs</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">batch</span> <span class="o">=</span> <span class="n">probe_pubs</span><span class="p">[:</span><span class="n">max_pubs</span><span class="p">]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">job</span> <span class="o">=</span> <span class="n">est</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">max_pubs</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">err_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;6073&quot;</span> <span class="ow">in</span> <span class="n">err_str</span> <span class="ow">or</span> <span class="s2">&quot;memory&quot;</span> <span class="ow">in</span> <span class="n">err_str</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+                <span class="n">old_max</span> <span class="o">=</span> <span class="n">max_pubs</span>
+                <span class="n">max_pubs</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_pubs</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">max_pubs</span> <span class="o">==</span> <span class="n">old_max</span><span class="p">:</span>
+                    <span class="k">raise</span>  <span class="c1"># can&#39;t go smaller than 1</span>
+                <span class="nb">print</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;  [qsolver] Job memory limit hit at </span><span class="si">{</span><span class="n">old_max</span><span class="si">}</span><span class="s2"> PUBs/job, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;trying </span><span class="si">{</span><span class="n">max_pubs</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span>
+    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Could not find a working PUB batch size&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_submit_and_collect</span><span class="p">(</span><span class="n">est</span><span class="p">,</span> <span class="n">all_pubs</span><span class="p">,</span> <span class="n">all_chunk_sizes</span><span class="p">,</span> <span class="n">max_pubs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Submit PUBs with the largest batch size the QPU can handle.</span>
+
+<span class="sd">    1. Probes with max_pubs (all PUBs if 0) synchronously to find the</span>
+<span class="sd">       largest accepted batch size via binary search on memory errors.</span>
+<span class="sd">    2. Submits all remaining batches asynchronously for max throughput.</span>
+<span class="sd">    3. Collects results in order.</span>
+
+<span class="sd">    Returns (expvals, actual_max_pubs) so callers can cache the working size.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n_total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_pubs</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">max_pubs</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">max_pubs</span> <span class="o">=</span> <span class="n">n_total</span>
+    <span class="n">expvals</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_total</span>
+
+    <span class="c1"># Step 1: Probe with first batch to discover working max_pubs</span>
+    <span class="n">first_batch_size</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">max_pubs</span><span class="p">,</span> <span class="n">n_total</span><span class="p">)</span>
+    <span class="n">first_batch</span> <span class="o">=</span> <span class="n">all_pubs</span><span class="p">[:</span><span class="n">first_batch_size</span><span class="p">]</span>
+    <span class="n">probe_result</span><span class="p">,</span> <span class="n">max_pubs</span> <span class="o">=</span> <span class="n">_probe_max_pubs</span><span class="p">(</span><span class="n">est</span><span class="p">,</span> <span class="n">first_batch</span><span class="p">,</span> <span class="n">first_batch_size</span><span class="p">)</span>
+
+    <span class="c1"># Collect probe results (first max_pubs PUBs)</span>
+    <span class="n">probed_count</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">max_pubs</span><span class="p">,</span> <span class="n">n_total</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">probed_count</span><span class="p">):</span>
+        <span class="n">evs</span> <span class="o">=</span> <span class="n">probe_result</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">evs</span>
+        <span class="n">expvals</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">evs</span><span class="p">]</span>
+
+    <span class="c1"># Step 2: Submit remaining batches asynchronously</span>
+    <span class="n">remaining_start</span> <span class="o">=</span> <span class="n">probed_count</span>
+    <span class="k">if</span> <span class="n">remaining_start</span> <span class="o">&lt;</span> <span class="n">n_total</span><span class="p">:</span>
+        <span class="n">jobs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">job_ranges</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">batch_start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">remaining_start</span><span class="p">,</span> <span class="n">n_total</span><span class="p">,</span> <span class="n">max_pubs</span><span class="p">):</span>
+            <span class="n">batch_end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">batch_start</span> <span class="o">+</span> <span class="n">max_pubs</span><span class="p">,</span> <span class="n">n_total</span><span class="p">)</span>
+            <span class="n">job_pubs</span> <span class="o">=</span> <span class="n">all_pubs</span><span class="p">[</span><span class="n">batch_start</span><span class="p">:</span><span class="n">batch_end</span><span class="p">]</span>
+            <span class="n">jobs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">est</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">job_pubs</span><span class="p">))</span>
+            <span class="n">job_ranges</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">batch_start</span><span class="p">,</span> <span class="n">batch_end</span><span class="p">))</span>
+
+        <span class="n">n_jobs</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">jobs</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [qsolver] Submitting </span><span class="si">{</span><span class="n">n_jobs</span><span class="si">}</span><span class="s2"> async job(s), </span><span class="si">{</span><span class="n">max_pubs</span><span class="si">}</span><span class="s2"> PUBs/job&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Collect all async results</span>
+        <span class="k">for</span> <span class="n">job</span><span class="p">,</span> <span class="p">(</span><span class="n">batch_start</span><span class="p">,</span> <span class="n">batch_end</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">jobs</span><span class="p">,</span> <span class="n">job_ranges</span><span class="p">):</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">global_idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">batch_start</span><span class="p">,</span> <span class="n">batch_end</span><span class="p">)):</span>
+                <span class="n">evs</span> <span class="o">=</span> <span class="n">result</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">evs</span>
+                <span class="n">expvals</span><span class="p">[</span><span class="n">global_idx</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">evs</span><span class="p">]</span>
+
+    <span class="c1"># Flatten</span>
+    <span class="n">flat</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">ev_list</span> <span class="ow">in</span> <span class="n">expvals</span><span class="p">:</span>
+        <span class="n">flat</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">ev_list</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">flat</span><span class="p">,</span> <span class="n">max_pubs</span>
+
+
+<span class="c1"># Module-level cache for the discovered max PUBs per backend</span>
+<span class="n">_MAX_PUBS_CACHE</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_qiskit_run_parallel</span><span class="p">(</span>
+    <span class="n">circuits</span><span class="p">,</span>
+    <span class="n">n_qubits</span><span class="p">,</span>
+    <span class="n">estimator</span><span class="p">,</span>
+    <span class="n">backend</span><span class="p">,</span>
+    <span class="n">optimization_level</span><span class="p">,</span>
+    <span class="n">shots</span><span class="p">,</span>
+    <span class="n">max_pubs_per_job</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">resilience_level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">twirling</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Pack single-qubit circuits into multi-qubit batches and submit async.</span>
+
+<span class="sd">    Groups `circuits` into chunks of `n_qubits`, packs each chunk into one</span>
+<span class="sd">    multi-qubit circuit. Jobs are submitted asynchronously with automatic</span>
+<span class="sd">    PUB batch sizing:</span>
+
+<span class="sd">    - If `max_pubs_per_job` &gt; 0, uses that as the initial batch size.</span>
+<span class="sd">    - If `max_pubs_per_job` == 0 (default), starts with all PUBs in one job.</span>
+<span class="sd">    - On memory error (6073), automatically halves and retries.</span>
+<span class="sd">    - The discovered working batch size is cached per backend.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">circuits</span><span class="p">)</span>
+
+    <span class="c1"># Build all PUBs first</span>
+    <span class="n">all_pubs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">all_chunk_sizes</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">if</span> <span class="n">estimator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">total</span><span class="p">,</span> <span class="n">n_qubits</span><span class="p">):</span>
+            <span class="n">batch_circuits</span> <span class="o">=</span> <span class="n">circuits</span><span class="p">[</span><span class="n">start</span> <span class="p">:</span> <span class="n">start</span> <span class="o">+</span> <span class="n">n_qubits</span><span class="p">]</span>
+            <span class="n">chunk_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">batch_circuits</span><span class="p">)</span>
+            <span class="n">all_chunk_sizes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">chunk_size</span><span class="p">)</span>
+            <span class="n">packed_qc</span> <span class="o">=</span> <span class="n">_build_qiskit_parallel_circuit</span><span class="p">(</span><span class="n">batch_circuits</span><span class="p">)</span>
+            <span class="n">chunk_obs</span> <span class="o">=</span> <span class="n">_make_parallel_observables</span><span class="p">(</span><span class="n">chunk_size</span><span class="p">)</span>
+            <span class="n">all_pubs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">packed_qc</span><span class="p">,</span> <span class="n">chunk_obs</span><span class="p">))</span>
+
+        <span class="n">initial_max</span> <span class="o">=</span> <span class="n">max_pubs_per_job</span> <span class="k">if</span> <span class="n">max_pubs_per_job</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_pubs</span><span class="p">)</span>
+        <span class="n">expvals</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_submit_and_collect</span><span class="p">(</span>
+            <span class="n">estimator</span><span class="p">,</span> <span class="n">all_pubs</span><span class="p">,</span> <span class="n">all_chunk_sizes</span><span class="p">,</span> <span class="n">initial_max</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">expvals</span>
+
+    <span class="k">elif</span> <span class="n">backend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">pm</span> <span class="o">=</span> <span class="n">generate_preset_pass_manager</span><span class="p">(</span>
+            <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span> <span class="n">optimization_level</span><span class="o">=</span><span class="n">optimization_level</span>
+        <span class="p">)</span>
+        <span class="n">rt_estimator</span> <span class="o">=</span> <span class="n">Estimator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="n">backend</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">shots</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">default_shots</span> <span class="o">=</span> <span class="n">shots</span>
+        <span class="k">if</span> <span class="n">resilience_level</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">resilience_level</span> <span class="o">=</span> <span class="n">resilience_level</span>
+        <span class="k">if</span> <span class="n">twirling</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">twirling</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enable_gates&quot;</span><span class="p">):</span>
+                <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">enable_gates</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">if</span> <span class="n">twirling</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enable_measure&quot;</span><span class="p">):</span>
+                <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">enable_measure</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">if</span> <span class="n">twirling</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;num_randomizations&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">num_randomizations</span> <span class="o">=</span> <span class="n">twirling</span><span class="p">[</span>
+                    <span class="s2">&quot;num_randomizations&quot;</span>
+                <span class="p">]</span>
+
+        <span class="k">for</span> <span class="n">start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">total</span><span class="p">,</span> <span class="n">n_qubits</span><span class="p">):</span>
+            <span class="n">batch_circuits</span> <span class="o">=</span> <span class="n">circuits</span><span class="p">[</span><span class="n">start</span> <span class="p">:</span> <span class="n">start</span> <span class="o">+</span> <span class="n">n_qubits</span><span class="p">]</span>
+            <span class="n">chunk_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">batch_circuits</span><span class="p">)</span>
+            <span class="n">all_chunk_sizes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">chunk_size</span><span class="p">)</span>
+            <span class="n">packed_qc</span> <span class="o">=</span> <span class="n">_build_qiskit_parallel_circuit</span><span class="p">(</span><span class="n">batch_circuits</span><span class="p">)</span>
+            <span class="n">isa_qc</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">packed_qc</span><span class="p">)</span>
+            <span class="n">chunk_obs</span> <span class="o">=</span> <span class="n">_make_parallel_observables</span><span class="p">(</span><span class="n">chunk_size</span><span class="p">)</span>
+            <span class="n">isa_obs</span> <span class="o">=</span> <span class="p">[</span><span class="n">obs</span><span class="o">.</span><span class="n">apply_layout</span><span class="p">(</span><span class="n">isa_qc</span><span class="o">.</span><span class="n">layout</span><span class="p">)</span> <span class="k">for</span> <span class="n">obs</span> <span class="ow">in</span> <span class="n">chunk_obs</span><span class="p">]</span>
+            <span class="n">all_pubs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">isa_qc</span><span class="p">,</span> <span class="n">isa_obs</span><span class="p">))</span>
+
+        <span class="c1"># Use cached max or start with all PUBs</span>
+        <span class="n">cache_key</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">backend</span><span class="p">))</span>
+        <span class="n">initial_max</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">max_pubs_per_job</span>
+            <span class="k">if</span> <span class="n">max_pubs_per_job</span> <span class="o">&gt;</span> <span class="mi">0</span>
+            <span class="k">else</span> <span class="n">_MAX_PUBS_CACHE</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_pubs</span><span class="p">))</span>
+        <span class="p">)</span>
+        <span class="n">expvals</span><span class="p">,</span> <span class="n">actual_max</span> <span class="o">=</span> <span class="n">_submit_and_collect</span><span class="p">(</span>
+            <span class="n">rt_estimator</span><span class="p">,</span> <span class="n">all_pubs</span><span class="p">,</span> <span class="n">all_chunk_sizes</span><span class="p">,</span> <span class="n">initial_max</span>
+        <span class="p">)</span>
+        <span class="n">_MAX_PUBS_CACHE</span><span class="p">[</span><span class="n">cache_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">actual_max</span>
+        <span class="k">return</span> <span class="n">expvals</span>
+
+    <span class="k">return</span> <span class="p">[]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_qiskit_evaluate</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">preacts_weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">preacts_bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Evaluate all circuits on the Qiskit backend and return expectation values.</span>
+
+<span class="sd">    Returns shape: (batch_size, out_dim, in_dim)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">batch</span><span class="p">,</span> <span class="n">in_dim</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">ansatz</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;ansatz&quot;</span><span class="p">]</span>
+    <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;preacts_trainable&quot;</span><span class="p">]</span>
+    <span class="n">out_dim</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;out_dim&quot;</span><span class="p">]</span>
+    <span class="n">backend</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;backend&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">estimator</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;estimator&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">shots</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;shots&quot;</span><span class="p">]</span>
+    <span class="n">optimization_level</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;optimization_level&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;parallel_qubits&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="c1"># Broadcast theta/preacts to (out_dim, in_dim, ...)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">in_dim</span><span class="p">:</span>
+        <span class="n">repeat_out</span> <span class="o">=</span> <span class="n">out_dim</span>
+        <span class="n">repeat_in</span> <span class="o">=</span> <span class="n">in_dim</span> <span class="o">//</span> <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>
+
+    <span class="n">_needs_encoded_x</span> <span class="o">=</span> <span class="n">preacts_trainable</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">)</span>
+    <span class="n">encoded_x</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">_needs_encoded_x</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">in_dim</span><span class="p">:</span>
+            <span class="n">repeat_out</span> <span class="o">=</span> <span class="n">out_dim</span>
+            <span class="n">repeat_in</span> <span class="o">=</span> <span class="n">in_dim</span> <span class="o">//</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span>
+                <span class="p">:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:</span>
+            <span class="p">]</span>
+            <span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="n">encoded_x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;oir,bi-&gt;boir&quot;</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">preacts_bias</span><span class="p">)</span>
+
+    <span class="c1"># Move to CPU for circuit parameter extraction</span>
+    <span class="n">x_np</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+    <span class="n">theta_np</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+    <span class="n">encoded_x_np</span> <span class="o">=</span> <span class="n">encoded_x</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span> <span class="k">if</span> <span class="n">encoded_x</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="c1"># Build circuits and observables</span>
+    <span class="n">circuits</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">observables</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">pauli_z</span> <span class="o">=</span> <span class="n">SparsePauliOp</span><span class="o">.</span><span class="n">from_list</span><span class="p">([(</span><span class="s2">&quot;Z&quot;</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)])</span>
+
+    <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">batch</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">out_dim</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">in_dim</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">):</span>
+                    <span class="n">t</span> <span class="o">=</span> <span class="n">theta_np</span><span class="p">[</span><span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                    <span class="n">enc_vals</span> <span class="o">=</span> <span class="kc">None</span>
+                    <span class="k">if</span> <span class="n">encoded_x_np</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">enc_vals</span> <span class="o">=</span> <span class="n">encoded_x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                    <span class="n">qc</span> <span class="o">=</span> <span class="n">_build_qiskit_pz_circuit</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">i</span><span class="p">]),</span> <span class="n">t</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">enc_vals</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
+                    <span class="n">t</span> <span class="o">=</span> <span class="n">theta_np</span><span class="p">[</span><span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                    <span class="n">enc_vals</span> <span class="o">=</span> <span class="n">encoded_x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
+                    <span class="n">qc</span> <span class="o">=</span> <span class="n">_build_qiskit_rpz_circuit</span><span class="p">(</span><span class="n">enc_vals</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">reps</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
+                    <span class="n">t</span> <span class="o">=</span> <span class="n">theta_np</span><span class="p">[</span><span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                    <span class="n">enc_vals</span> <span class="o">=</span> <span class="kc">None</span>
+                    <span class="k">if</span> <span class="n">encoded_x_np</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">enc_vals</span> <span class="o">=</span> <span class="n">encoded_x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                    <span class="n">qc</span> <span class="o">=</span> <span class="n">_build_qiskit_real_circuit</span><span class="p">(</span>
+                        <span class="nb">float</span><span class="p">(</span><span class="n">x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">i</span><span class="p">]),</span> <span class="n">t</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">enc_vals</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Ansatz &#39;</span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&#39; not supported by qiskit_solver&quot;</span>
+                    <span class="p">)</span>
+                <span class="n">circuits</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">qc</span><span class="p">)</span>
+                <span class="n">observables</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pauli_z</span><span class="p">)</span>
+
+    <span class="c1"># Execute via the appropriate Estimator</span>
+    <span class="n">max_pubs</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_pubs_per_job&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">mitigation</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mitigation&quot;</span><span class="p">,</span> <span class="p">{})</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_run_qiskit</span><span class="p">(</span><span class="n">scale_factor</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="n">run_circuits</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">[</span><span class="n">_fold_qiskit_circuit</span><span class="p">(</span><span class="n">qc</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">)</span> <span class="k">for</span> <span class="n">qc</span> <span class="ow">in</span> <span class="n">circuits</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">scale_factor</span> <span class="o">&gt;</span> <span class="mi">1</span>
+            <span class="k">else</span> <span class="n">circuits</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">parallel_qubits</span> <span class="ow">and</span> <span class="n">parallel_qubits</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_qiskit_run_parallel</span><span class="p">(</span>
+                <span class="n">run_circuits</span><span class="p">,</span>
+                <span class="n">parallel_qubits</span><span class="p">,</span>
+                <span class="n">estimator</span><span class="p">,</span>
+                <span class="n">backend</span><span class="p">,</span>
+                <span class="n">optimization_level</span><span class="p">,</span>
+                <span class="n">shots</span><span class="p">,</span>
+                <span class="n">max_pubs_per_job</span><span class="o">=</span><span class="n">max_pubs</span><span class="p">,</span>
+                <span class="n">resilience_level</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;resilience_level&quot;</span><span class="p">),</span>
+                <span class="n">twirling</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;twirling&quot;</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">estimator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">pubs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">run_circuits</span><span class="p">,</span> <span class="n">observables</span><span class="p">))</span>
+            <span class="n">job</span> <span class="o">=</span> <span class="n">estimator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">pubs</span><span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+            <span class="k">return</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">evs</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">result</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="n">backend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">pm</span> <span class="o">=</span> <span class="n">generate_preset_pass_manager</span><span class="p">(</span>
+                <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span> <span class="n">optimization_level</span><span class="o">=</span><span class="n">optimization_level</span>
+            <span class="p">)</span>
+            <span class="n">isa_circuits</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">run_circuits</span><span class="p">)</span>
+            <span class="n">isa_observables</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">obs</span><span class="o">.</span><span class="n">apply_layout</span><span class="p">(</span><span class="n">qc</span><span class="o">.</span><span class="n">layout</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">obs</span><span class="p">,</span> <span class="n">qc</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">observables</span><span class="p">,</span> <span class="n">isa_circuits</span><span class="p">)</span>
+            <span class="p">]</span>
+            <span class="n">rt_estimator</span> <span class="o">=</span> <span class="n">Estimator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="n">backend</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">shots</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">default_shots</span> <span class="o">=</span> <span class="n">shots</span>
+            <span class="n">rl</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;resilience_level&quot;</span><span class="p">)</span>
+            <span class="n">tw</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;twirling&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">rl</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">resilience_level</span> <span class="o">=</span> <span class="n">rl</span>
+            <span class="k">if</span> <span class="n">tw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">tw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enable_gates&quot;</span><span class="p">):</span>
+                    <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">enable_gates</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">if</span> <span class="n">tw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enable_measure&quot;</span><span class="p">):</span>
+                    <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">enable_measure</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">pubs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">isa_circuits</span><span class="p">,</span> <span class="n">isa_observables</span><span class="p">))</span>
+            <span class="n">job</span> <span class="o">=</span> <span class="n">rt_estimator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">pubs</span><span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+            <span class="k">return</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">evs</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">result</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No estimator or backend provided.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">mitigation</span><span class="p">:</span>
+        <span class="n">expvals</span> <span class="o">=</span> <span class="n">_apply_mitigation</span><span class="p">(</span><span class="n">_run_qiskit</span><span class="p">,</span> <span class="n">mitigation</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">expvals</span> <span class="o">=</span> <span class="n">_run_qiskit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">output</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">expvals</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">output</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">batch</span><span class="p">,</span> <span class="n">out_dim</span><span class="p">,</span> <span class="n">in_dim</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="qiskit_solver">
+<a class="viewcode-back" href="../../../api.html#qkan.solver.qiskit_solver">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">qiskit_solver</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">preacts_weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">preacts_bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Execute QKAN circuits on IBM Quantum backends via Qiskit Runtime.</span>
+
+<span class="sd">    Drop-in replacement for torch_exact_solver. Circuits are built to match</span>
+<span class="sd">    the exact gate sequences of each ansatz, then executed on the specified</span>
+<span class="sd">    backend using Qiskit&#39;s Estimator primitive.</span>
+
+<span class="sd">    Supports training via the parameter-shift rule when gradients are needed.</span>
+
+<span class="sd">    Args</span>
+<span class="sd">    ----</span>
+<span class="sd">        x : torch.Tensor</span>
+<span class="sd">            shape: (batch_size, in_dim)</span>
+<span class="sd">        theta : torch.Tensor</span>
+<span class="sd">            shape: (\\*group, reps+1, n_params) or (\\*group, reps, 1) for real</span>
+<span class="sd">        preacts_weight : torch.Tensor</span>
+<span class="sd">            shape: (\\*group, reps)</span>
+<span class="sd">        preacts_bias : torch.Tensor</span>
+<span class="sd">            shape: (\\*group, reps)</span>
+<span class="sd">        reps : int</span>
+<span class="sd">        ansatz : str</span>
+<span class="sd">            &quot;pz_encoding&quot;, &quot;pz&quot;, &quot;rpz_encoding&quot;, &quot;rpz&quot;, or &quot;real&quot;</span>
+<span class="sd">        preacts_trainable : bool</span>
+<span class="sd">        out_dim : int</span>
+<span class="sd">        backend : qiskit Backend</span>
+<span class="sd">            Qiskit backend instance (e.g., AerSimulator(), or from QiskitRuntimeService)</span>
+<span class="sd">        shots : int, optional</span>
+<span class="sd">            Number of shots per circuit. None for exact expectation (statevector).</span>
+<span class="sd">        optimization_level : int</span>
+<span class="sd">            Transpiler optimization level (0-3), default: 1</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        torch.Tensor</span>
+<span class="sd">            shape: (batch_size, out_dim, in_dim)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_QISKIT_AVAILABLE</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+            <span class="s2">&quot;Qiskit is required for qiskit_solver. &quot;</span>
+            <span class="s2">&quot;Install with: pip install qiskit qiskit-ibm-runtime&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">ansatz</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ansatz&quot;</span><span class="p">,</span> <span class="s2">&quot;pz_encoding&quot;</span><span class="p">)</span>
+    <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;preacts_trainable&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="n">out_dim</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;out_dim&quot;</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">shots</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;shots&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">optimization_level</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;optimization_level&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;parallel_qubits&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="n">backend</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;backend&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">estimator</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;estimator&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="c1"># Resolve execution mode: estimator &gt; backend &gt; StatevectorEstimator &gt; AerSimulator</span>
+    <span class="k">if</span> <span class="n">estimator</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">backend</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">_SV_ESTIMATOR_AVAILABLE</span><span class="p">:</span>
+            <span class="n">estimator</span> <span class="o">=</span> <span class="n">StatevectorEstimator</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">_AER_AVAILABLE</span><span class="p">:</span>
+            <span class="n">backend</span> <span class="o">=</span> <span class="n">AerSimulator</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="s2">&quot;statevector&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;No backend or estimator specified. Install qiskit &gt;= 1.0 &quot;</span>
+                <span class="s2">&quot;(for StatevectorEstimator), qiskit-aer, or qiskit-ibm-runtime.&quot;</span>
+            <span class="p">)</span>
+
+    <span class="c1"># Auto-detect QPU size from backend if parallel_qubits=&quot;auto&quot;</span>
+    <span class="k">if</span> <span class="n">parallel_qubits</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span> <span class="ow">and</span> <span class="n">backend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">num_qubits</span>
+
+    <span class="n">max_pubs_per_job</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_pubs_per_job&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">config</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;ansatz&quot;</span><span class="p">:</span> <span class="n">ansatz</span><span class="p">,</span>
+        <span class="s2">&quot;preacts_trainable&quot;</span><span class="p">:</span> <span class="n">preacts_trainable</span><span class="p">,</span>
+        <span class="s2">&quot;out_dim&quot;</span><span class="p">:</span> <span class="n">out_dim</span><span class="p">,</span>
+        <span class="s2">&quot;backend&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
+        <span class="s2">&quot;estimator&quot;</span><span class="p">:</span> <span class="n">estimator</span><span class="p">,</span>
+        <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="n">shots</span><span class="p">,</span>
+        <span class="s2">&quot;optimization_level&quot;</span><span class="p">:</span> <span class="n">optimization_level</span><span class="p">,</span>
+        <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="n">parallel_qubits</span><span class="p">,</span>
+        <span class="s2">&quot;max_pubs_per_job&quot;</span><span class="p">:</span> <span class="n">max_pubs_per_job</span><span class="p">,</span>
+        <span class="s2">&quot;resilience_level&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;resilience_level&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="s2">&quot;twirling&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;twirling&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="s2">&quot;mitigation&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mitigation&quot;</span><span class="p">,</span> <span class="p">{}),</span>
+    <span class="p">}</span>
+
+    <span class="n">needs_grad</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">requires_grad</span>
+    <span class="k">if</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+        <span class="n">needs_grad</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">needs_grad</span> <span class="ow">or</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">requires_grad</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">needs_grad</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_QiskitParamShift</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">preacts_bias</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_qiskit_evaluate</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">preacts_bias</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

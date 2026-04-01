@@ -1,0 +1,968 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qkan.solver.cudaq_solver &mdash; QKAN 0.2.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/cudaq_solver.html" />
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=37f418d5"></script>
+      <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples &amp; Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">qkan.solver.cudaq_solver</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for qkan.solver.cudaq_solver</h1><div class="highlight"><pre>
+<span></span><span class="c1"># mypy: ignore-errors</span>
+<span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">QKAN solver for CUDA-Q GPU-accelerated simulation or QPU execution.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">cudaq</span>  <span class="c1"># type: ignore</span>
+
+    <span class="n">_CUDAQ_AVAILABLE</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">_CUDAQ_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
+
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">._mitigation</span><span class="w"> </span><span class="kn">import</span> <span class="n">_apply_mitigation</span>
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># CUDA-Q gate-folded kernel builders (for ZNE)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_pz_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded pz_encoding kernel for ZNE: U . (U_dag . U)^n.&quot;&quot;&quot;</span>
+    <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">x_val</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qubit</span><span class="p">()</span>
+        <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">x_val</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>
+        <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_f</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_folds</span><span class="p">):</span>
+            <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+                <span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">x_val</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">x_val</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_pz_preact_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded pz_encoding preact kernel for ZNE.&quot;&quot;&quot;</span>
+    <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qubit</span><span class="p">()</span>
+        <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_f</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_folds</span><span class="p">):</span>
+            <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+                <span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_rpz_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded rpz_encoding kernel for ZNE.&quot;&quot;&quot;</span>
+    <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qubit</span><span class="p">()</span>
+        <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_f</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_folds</span><span class="p">):</span>
+            <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+                <span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_real_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded real ansatz kernel for ZNE.&quot;&quot;&quot;</span>
+    <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">x_val</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qubit</span><span class="p">()</span>
+        <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+            <span class="n">x</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">z</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">x_val</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_f</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_folds</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+                <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">x_val</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">z</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+                <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">x</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                <span class="n">x</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">z</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">x_val</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_real_preact_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded real preact kernel for ZNE.&quot;&quot;&quot;</span>
+    <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qubit</span><span class="p">()</span>
+        <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+            <span class="n">x</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">z</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_f</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_folds</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+                <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">z</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+                <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">x</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                <span class="n">x</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+                <span class="n">z</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_parallel_pz_folded_kernel</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded parallel pz kernel for ZNE.&quot;&quot;&quot;</span>
+    <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">x_vals</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">all_thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">qubits</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qvector</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">)</span>
+        <span class="n">params_per</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">q_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">):</span>
+            <span class="n">offset</span> <span class="o">=</span> <span class="n">q_idx</span> <span class="o">*</span> <span class="n">params_per</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">x_vals</span><span class="p">[</span><span class="n">q_idx</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">_f</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_folds</span><span class="p">):</span>
+                <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+                    <span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">x_vals</span><span class="p">[</span><span class="n">q_idx</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                    <span class="n">rz</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">rz</span><span class="p">(</span><span class="n">x_vals</span><span class="p">[</span><span class="n">q_idx</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_parallel_real_folded_kernel</span><span class="p">(</span>
+    <span class="n">n_qubits</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded parallel real kernel for ZNE.&quot;&quot;&quot;</span>
+    <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">x_vals</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">all_thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">qubits</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qvector</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">q_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">):</span>
+            <span class="n">offset</span> <span class="o">=</span> <span class="n">q_idx</span> <span class="o">*</span> <span class="n">reps</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                <span class="n">x</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">z</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">x_vals</span><span class="p">[</span><span class="n">q_idx</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">_f</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_folds</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+                    <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">x_vals</span><span class="p">[</span><span class="n">q_idx</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">z</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">x</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                    <span class="n">x</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">z</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">ry</span><span class="p">(</span><span class="n">x_vals</span><span class="p">[</span><span class="n">q_idx</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_parallel_rpz_folded_kernel</span><span class="p">(</span>
+    <span class="n">n_qubits</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded parallel rpz kernel for ZNE.&quot;&quot;&quot;</span>
+    <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">encoded_xs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">all_thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">qubits</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qvector</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">)</span>
+        <span class="n">t_per</span> <span class="o">=</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="k">for</span> <span class="n">q_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">):</span>
+            <span class="n">t_off</span> <span class="o">=</span> <span class="n">q_idx</span> <span class="o">*</span> <span class="n">t_per</span>
+            <span class="n">x_off</span> <span class="o">=</span> <span class="n">q_idx</span> <span class="o">*</span> <span class="n">reps</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">t_off</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">encoded_xs</span><span class="p">[</span><span class="n">x_off</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">t_off</span> <span class="o">+</span> <span class="n">reps</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">_f</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_folds</span><span class="p">):</span>
+                <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">t_off</span> <span class="o">+</span> <span class="n">reps</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+                    <span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">encoded_xs</span><span class="p">[</span><span class="n">x_off</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">ry</span><span class="p">(</span><span class="o">-</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">t_off</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                    <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">t_off</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                    <span class="n">rz</span><span class="p">(</span><span class="n">encoded_xs</span><span class="p">[</span><span class="n">x_off</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">t_off</span> <span class="o">+</span> <span class="n">reps</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># CUDA-Q solver</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_pz_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel for pz_encoding ansatz.&quot;&quot;&quot;</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">x_val</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qubit</span><span class="p">()</span>
+        <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">x_val</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>
+        <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_pz_preact_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel for pz_encoding with trainable preactivation.&quot;&quot;&quot;</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qubit</span><span class="p">()</span>
+        <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="n">rz</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_rpz_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel for rpz_encoding ansatz.&quot;&quot;&quot;</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qubit</span><span class="p">()</span>
+        <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+        <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">reps</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_real_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel for real ansatz.&quot;&quot;&quot;</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">x_val</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qubit</span><span class="p">()</span>
+        <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+            <span class="n">x</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">z</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">x_val</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_real_preact_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel for real ansatz with trainable preactivation.&quot;&quot;&quot;</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qubit</span><span class="p">()</span>
+        <span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+            <span class="n">x</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">thetas</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">z</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">[</span><span class="n">l</span><span class="p">],</span> <span class="n">q</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="c1"># Cache: {(ansatz, reps, preacts_trainable, scale_factor): kernel}</span>
+<span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_cudaq_kernel</span><span class="p">(</span>
+    <span class="n">ansatz</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">preacts_trainable</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get or build a cached CUDA-Q kernel (optionally gate-folded for ZNE).&quot;&quot;&quot;</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">ansatz</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">preacts_trainable</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">:</span>
+        <span class="n">sf</span> <span class="o">=</span> <span class="n">scale_factor</span>
+        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+                <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">_build_cudaq_pz_preact_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">,</span> <span class="n">sf</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">sf</span> <span class="o">&gt;</span> <span class="mi">1</span>
+                    <span class="k">else</span> <span class="n">_build_cudaq_pz_preact_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">_build_cudaq_pz_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">,</span> <span class="n">sf</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">sf</span> <span class="o">&gt;</span> <span class="mi">1</span>
+                    <span class="k">else</span> <span class="n">_build_cudaq_pz_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">)</span>
+                <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
+            <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_build_cudaq_rpz_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">,</span> <span class="n">sf</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">sf</span> <span class="o">&gt;</span> <span class="mi">1</span>
+                <span class="k">else</span> <span class="n">_build_cudaq_rpz_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+                <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">_build_cudaq_real_preact_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">,</span> <span class="n">sf</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">sf</span> <span class="o">&gt;</span> <span class="mi">1</span>
+                    <span class="k">else</span> <span class="n">_build_cudaq_real_preact_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">_build_cudaq_real_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">,</span> <span class="n">sf</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">sf</span> <span class="o">&gt;</span> <span class="mi">1</span>
+                    <span class="k">else</span> <span class="n">_build_cudaq_real_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">)</span>
+                <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Ansatz &#39;</span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&#39; not supported by cudaq_solver&quot;</span>
+            <span class="p">)</span>
+    <span class="k">return</span> <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_parallel_pz_kernel</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel that runs N independent pz circuits in parallel.&quot;&quot;&quot;</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">x_vals</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">all_thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">qubits</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qvector</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">)</span>
+        <span class="n">params_per</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">q_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">):</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="n">offset</span> <span class="o">=</span> <span class="n">q_idx</span> <span class="o">*</span> <span class="n">params_per</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">x_vals</span><span class="p">[</span><span class="n">q_idx</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="n">rz</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_parallel_real_kernel</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel that runs N independent real circuits in parallel.&quot;&quot;&quot;</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">x_vals</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">all_thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">qubits</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qvector</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">q_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">):</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="n">offset</span> <span class="o">=</span> <span class="n">q_idx</span> <span class="o">*</span> <span class="n">reps</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                <span class="n">x</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">offset</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">z</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">x_vals</span><span class="p">[</span><span class="n">q_idx</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_parallel_rpz_kernel</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel that runs N independent rpz circuits in parallel.&quot;&quot;&quot;</span>
+
+    <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">encoded_xs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">all_thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
+        <span class="n">qubits</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qvector</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">)</span>
+        <span class="n">t_per</span> <span class="o">=</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="k">for</span> <span class="n">q_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_qubits</span><span class="p">):</span>
+            <span class="n">h</span><span class="p">(</span><span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="n">t_off</span> <span class="o">=</span> <span class="n">q_idx</span> <span class="o">*</span> <span class="n">t_per</span>
+            <span class="n">x_off</span> <span class="o">=</span> <span class="n">q_idx</span> <span class="o">*</span> <span class="n">reps</span>
+            <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">reps</span><span class="p">):</span>
+                <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">t_off</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+                <span class="n">rz</span><span class="p">(</span><span class="n">encoded_xs</span><span class="p">[</span><span class="n">x_off</span> <span class="o">+</span> <span class="n">l</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+            <span class="n">ry</span><span class="p">(</span><span class="n">all_thetas</span><span class="p">[</span><span class="n">t_off</span> <span class="o">+</span> <span class="n">reps</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="n">q_idx</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_cudaq_run_parallel</span><span class="p">(</span>
+    <span class="n">all_args</span><span class="p">,</span>
+    <span class="n">ansatz</span><span class="p">,</span>
+    <span class="n">reps</span><span class="p">,</span>
+    <span class="n">preacts_trainable</span><span class="p">,</span>
+    <span class="n">n_qubits</span><span class="p">,</span>
+    <span class="n">shots_count</span><span class="p">,</span>
+    <span class="n">scale_factor</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Pack independent single-qubit circuits onto an N-qubit QPU.</span>
+
+<span class="sd">    Runs ceil(total / n_qubits) multi-qubit jobs instead of `total` single-qubit jobs.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_args</span><span class="p">)</span>
+    <span class="n">expvals</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">total</span><span class="p">,</span> <span class="n">n_qubits</span><span class="p">):</span>
+        <span class="n">chunk</span> <span class="o">=</span> <span class="n">all_args</span><span class="p">[</span><span class="n">start</span> <span class="p">:</span> <span class="n">start</span> <span class="o">+</span> <span class="n">n_qubits</span><span class="p">]</span>
+        <span class="n">chunk_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+
+        <span class="c1"># Flatten args into parallel kernel format</span>
+        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+            <span class="n">x_vals</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">]</span>
+            <span class="n">all_thetas</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">:</span>
+                <span class="n">all_thetas</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">a</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="c1"># Pad if chunk &lt; n_qubits</span>
+            <span class="n">actual_n</span> <span class="o">=</span> <span class="n">chunk_size</span>
+            <span class="k">if</span> <span class="n">actual_n</span> <span class="o">&lt;</span> <span class="n">n_qubits</span><span class="p">:</span>
+                <span class="n">x_vals</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="mf">0.0</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_qubits</span> <span class="o">-</span> <span class="n">actual_n</span><span class="p">))</span>
+                <span class="n">pad_thetas</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_qubits</span> <span class="o">-</span> <span class="n">actual_n</span><span class="p">):</span>
+                    <span class="n">all_thetas</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">pad_thetas</span><span class="p">)</span>
+                <span class="n">actual_n</span> <span class="o">=</span> <span class="n">n_qubits</span>
+
+            <span class="n">par_kernel</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_build_cudaq_parallel_pz_folded_kernel</span><span class="p">(</span><span class="n">actual_n</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">scale_factor</span> <span class="o">&gt;</span> <span class="mi">1</span>
+                <span class="k">else</span> <span class="n">_build_cudaq_parallel_pz_kernel</span><span class="p">(</span><span class="n">actual_n</span><span class="p">,</span> <span class="n">reps</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">x_vals</span><span class="p">,</span> <span class="n">all_thetas</span><span class="p">)</span>
+
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+            <span class="n">x_vals</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">]</span>
+            <span class="n">all_thetas</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">:</span>
+                <span class="n">all_thetas</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">a</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">actual_n</span> <span class="o">=</span> <span class="n">chunk_size</span>
+            <span class="k">if</span> <span class="n">actual_n</span> <span class="o">&lt;</span> <span class="n">n_qubits</span><span class="p">:</span>
+                <span class="n">x_vals</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="mf">0.0</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">n_qubits</span> <span class="o">-</span> <span class="n">actual_n</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_qubits</span> <span class="o">-</span> <span class="n">actual_n</span><span class="p">):</span>
+                    <span class="n">all_thetas</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="mf">0.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">reps</span><span class="p">)</span>
+                <span class="n">actual_n</span> <span class="o">=</span> <span class="n">n_qubits</span>
+
+            <span class="n">par_kernel</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_build_cudaq_parallel_real_folded_kernel</span><span class="p">(</span><span class="n">actual_n</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">scale_factor</span> <span class="o">&gt;</span> <span class="mi">1</span>
+                <span class="k">else</span> <span class="n">_build_cudaq_parallel_real_kernel</span><span class="p">(</span><span class="n">actual_n</span><span class="p">,</span> <span class="n">reps</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">x_vals</span><span class="p">,</span> <span class="n">all_thetas</span><span class="p">)</span>
+
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+            <span class="n">encoded_xs</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">all_thetas</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">:</span>
+                <span class="n">enc</span><span class="p">,</span> <span class="n">t</span> <span class="o">=</span> <span class="n">a</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">enc</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                    <span class="n">encoded_xs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">enc</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">encoded_xs</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">enc</span><span class="p">]</span> <span class="o">*</span> <span class="n">reps</span><span class="p">)</span>
+                <span class="n">all_thetas</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">actual_n</span> <span class="o">=</span> <span class="n">chunk_size</span>
+            <span class="k">if</span> <span class="n">actual_n</span> <span class="o">&lt;</span> <span class="n">n_qubits</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_qubits</span> <span class="o">-</span> <span class="n">actual_n</span><span class="p">):</span>
+                    <span class="n">encoded_xs</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="mf">0.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">reps</span><span class="p">)</span>
+                    <span class="n">all_thetas</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="mf">0.0</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+                <span class="n">actual_n</span> <span class="o">=</span> <span class="n">n_qubits</span>
+
+            <span class="n">par_kernel</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_build_cudaq_parallel_rpz_folded_kernel</span><span class="p">(</span><span class="n">actual_n</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">scale_factor</span> <span class="o">&gt;</span> <span class="mi">1</span>
+                <span class="k">else</span> <span class="n">_build_cudaq_parallel_rpz_kernel</span><span class="p">(</span><span class="n">actual_n</span><span class="p">,</span> <span class="n">reps</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">encoded_xs</span><span class="p">,</span> <span class="n">all_thetas</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Parallel not supported for ansatz &#39;</span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Single observe call with Z0 + Z1 + ... + Z_{N-1} Hamiltonian,</span>
+        <span class="c1"># then extract per-qubit &lt;Z_k&gt; from the result</span>
+        <span class="n">spin_sum</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">spin</span><span class="o">.</span><span class="n">z</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">q_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">actual_n</span><span class="p">):</span>
+            <span class="n">spin_sum</span> <span class="o">+=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">spin</span><span class="o">.</span><span class="n">z</span><span class="p">(</span><span class="n">q_idx</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">shots_count</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">observe</span><span class="p">(</span><span class="n">par_kernel</span><span class="p">,</span> <span class="n">spin_sum</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">shots_count</span><span class="o">=</span><span class="n">shots_count</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">observe</span><span class="p">(</span><span class="n">par_kernel</span><span class="p">,</span> <span class="n">spin_sum</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">q_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">chunk_size</span><span class="p">):</span>
+            <span class="n">expvals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">expectation</span><span class="p">(</span><span class="n">cudaq</span><span class="o">.</span><span class="n">spin</span><span class="o">.</span><span class="n">z</span><span class="p">(</span><span class="n">q_idx</span><span class="p">)))</span>
+
+    <span class="k">return</span> <span class="n">expvals</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_cudaq_evaluate</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">preacts_weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">preacts_bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Evaluate all circuits on CUDA-Q and return expectation values.</span>
+
+<span class="sd">    Returns shape: (batch_size, out_dim, in_dim)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">batch</span><span class="p">,</span> <span class="n">in_dim</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">ansatz</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;ansatz&quot;</span><span class="p">]</span>
+    <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;preacts_trainable&quot;</span><span class="p">]</span>
+    <span class="n">out_dim</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;out_dim&quot;</span><span class="p">]</span>
+    <span class="n">shots_count</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;shots&quot;</span><span class="p">]</span>
+    <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;parallel_qubits&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="c1"># Broadcasting (same as other solvers)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">in_dim</span><span class="p">:</span>
+        <span class="n">repeat_out</span> <span class="o">=</span> <span class="n">out_dim</span>
+        <span class="n">repeat_in</span> <span class="o">=</span> <span class="n">in_dim</span> <span class="o">//</span> <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>
+
+    <span class="n">_needs_encoded_x</span> <span class="o">=</span> <span class="n">preacts_trainable</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">)</span>
+    <span class="n">encoded_x</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">_needs_encoded_x</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">in_dim</span><span class="p">:</span>
+            <span class="n">repeat_out</span> <span class="o">=</span> <span class="n">out_dim</span>
+            <span class="n">repeat_in</span> <span class="o">=</span> <span class="n">in_dim</span> <span class="o">//</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span>
+                <span class="p">:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:</span>
+            <span class="p">]</span>
+            <span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="n">encoded_x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;oir,bi-&gt;boir&quot;</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">preacts_bias</span><span class="p">)</span>
+
+    <span class="n">x_np</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+    <span class="n">theta_np</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+    <span class="n">encoded_x_np</span> <span class="o">=</span> <span class="n">encoded_x</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span> <span class="k">if</span> <span class="n">encoded_x</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="c1"># Collect all circuit args first</span>
+    <span class="n">all_args</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">batch</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">out_dim</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">in_dim</span><span class="p">):</span>
+                <span class="n">t</span> <span class="o">=</span> <span class="n">theta_np</span><span class="p">[</span><span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+                <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+                        <span class="n">all_args</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">encoded_x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span> <span class="n">t</span><span class="p">))</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">all_args</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="nb">float</span><span class="p">(</span><span class="n">x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">i</span><span class="p">]),</span> <span class="n">t</span><span class="p">))</span>
+                <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
+                    <span class="n">all_args</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">encoded_x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span> <span class="n">t</span><span class="p">))</span>
+                <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+                        <span class="n">all_args</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">encoded_x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span> <span class="n">t</span><span class="p">))</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">all_args</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="nb">float</span><span class="p">(</span><span class="n">x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">i</span><span class="p">]),</span> <span class="n">t</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
+    <span class="n">mitigation</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mitigation&quot;</span><span class="p">,</span> <span class="p">{})</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_run_cudaq</span><span class="p">(</span><span class="n">scale_factor</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">parallel_qubits</span> <span class="ow">and</span> <span class="n">parallel_qubits</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_cudaq_run_parallel</span><span class="p">(</span>
+                <span class="n">all_args</span><span class="p">,</span>
+                <span class="n">ansatz</span><span class="p">,</span>
+                <span class="n">reps</span><span class="p">,</span>
+                <span class="n">preacts_trainable</span><span class="p">,</span>
+                <span class="n">parallel_qubits</span><span class="p">,</span>
+                <span class="n">shots_count</span><span class="p">,</span>
+                <span class="n">scale_factor</span><span class="o">=</span><span class="n">scale_factor</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">kernel</span> <span class="o">=</span> <span class="n">_get_cudaq_kernel</span><span class="p">(</span><span class="n">ansatz</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">preacts_trainable</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">)</span>
+            <span class="n">spin_z</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">spin</span><span class="o">.</span><span class="n">z</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">ev</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">args</span> <span class="ow">in</span> <span class="n">all_args</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">shots_count</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">result</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">observe</span><span class="p">(</span>
+                        <span class="n">kernel</span><span class="p">,</span> <span class="n">spin_z</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">shots_count</span><span class="o">=</span><span class="n">shots_count</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">result</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">observe</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">spin_z</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">)</span>
+                <span class="n">ev</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">expectation</span><span class="p">())</span>
+            <span class="k">return</span> <span class="n">ev</span>
+
+    <span class="k">if</span> <span class="n">mitigation</span><span class="p">:</span>
+        <span class="n">expvals</span> <span class="o">=</span> <span class="n">_apply_mitigation</span><span class="p">(</span><span class="n">_run_cudaq</span><span class="p">,</span> <span class="n">mitigation</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">expvals</span> <span class="o">=</span> <span class="n">_run_cudaq</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">output</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">expvals</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">output</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">batch</span><span class="p">,</span> <span class="n">out_dim</span><span class="p">,</span> <span class="n">in_dim</span><span class="p">)</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_CudaqParamShift</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Autograd function using parameter-shift rule for CUDA-Q circuits.&quot;&quot;&quot;</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">)</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">reps</span> <span class="o">=</span> <span class="n">reps</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span>
+        <span class="k">return</span> <span class="n">_cudaq_evaluate</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">grad_output</span><span class="p">):</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
+        <span class="n">reps</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">reps</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">config</span>
+        <span class="n">shift</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span>
+
+        <span class="n">grad_theta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+        <span class="n">flat_theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">flat_theta</span><span class="o">.</span><span class="n">numel</span><span class="p">()):</span>
+            <span class="n">theta_plus</span> <span class="o">=</span> <span class="n">flat_theta</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+            <span class="n">theta_plus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">+=</span> <span class="n">shift</span>
+            <span class="n">theta_minus</span> <span class="o">=</span> <span class="n">flat_theta</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+            <span class="n">theta_minus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">-=</span> <span class="n">shift</span>
+
+            <span class="n">f_plus</span> <span class="o">=</span> <span class="n">_cudaq_evaluate</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span> <span class="n">theta_plus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+            <span class="p">)</span>
+            <span class="n">f_minus</span> <span class="o">=</span> <span class="n">_cudaq_evaluate</span><span class="p">(</span>
+                <span class="n">x</span><span class="p">,</span> <span class="n">theta_minus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+            <span class="p">)</span>
+            <span class="n">grad_theta</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">grad_output</span> <span class="o">*</span> <span class="p">(</span><span class="n">f_plus</span> <span class="o">-</span> <span class="n">f_minus</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">shift</span><span class="p">))</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+        <span class="n">grad_pw</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">preacts_w</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">:</span>
+            <span class="n">grad_pw</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">preacts_w</span><span class="p">)</span>
+            <span class="n">flat_pw</span> <span class="o">=</span> <span class="n">preacts_w</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">flat_pw</span><span class="o">.</span><span class="n">numel</span><span class="p">()):</span>
+                <span class="n">pw_plus</span> <span class="o">=</span> <span class="n">flat_pw</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+                <span class="n">pw_plus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">+=</span> <span class="n">shift</span>
+                <span class="n">pw_minus</span> <span class="o">=</span> <span class="n">flat_pw</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+                <span class="n">pw_minus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">-=</span> <span class="n">shift</span>
+                <span class="n">f_plus</span> <span class="o">=</span> <span class="n">_cudaq_evaluate</span><span class="p">(</span>
+                    <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">pw_plus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">preacts_w</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+                <span class="p">)</span>
+                <span class="n">f_minus</span> <span class="o">=</span> <span class="n">_cudaq_evaluate</span><span class="p">(</span>
+                    <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">pw_minus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">preacts_w</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+                <span class="p">)</span>
+                <span class="n">grad_pw</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">grad_output</span> <span class="o">*</span> <span class="p">(</span><span class="n">f_plus</span> <span class="o">-</span> <span class="n">f_minus</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">shift</span><span class="p">))</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+        <span class="n">grad_pb</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">preacts_b</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">:</span>
+            <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">preacts_b</span><span class="p">)</span>
+            <span class="n">flat_pb</span> <span class="o">=</span> <span class="n">preacts_b</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">flat_pb</span><span class="o">.</span><span class="n">numel</span><span class="p">()):</span>
+                <span class="n">pb_plus</span> <span class="o">=</span> <span class="n">flat_pb</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+                <span class="n">pb_plus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">+=</span> <span class="n">shift</span>
+                <span class="n">pb_minus</span> <span class="o">=</span> <span class="n">flat_pb</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+                <span class="n">pb_minus</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">-=</span> <span class="n">shift</span>
+                <span class="n">f_plus</span> <span class="o">=</span> <span class="n">_cudaq_evaluate</span><span class="p">(</span>
+                    <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">pb_plus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">preacts_b</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+                <span class="p">)</span>
+                <span class="n">f_minus</span> <span class="o">=</span> <span class="n">_cudaq_evaluate</span><span class="p">(</span>
+                    <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">pb_minus</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">preacts_b</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+                <span class="p">)</span>
+                <span class="n">grad_pb</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">grad_output</span> <span class="o">*</span> <span class="p">(</span><span class="n">f_plus</span> <span class="o">-</span> <span class="n">f_minus</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">shift</span><span class="p">))</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+
+
+<div class="viewcode-block" id="cudaq_solver">
+<a class="viewcode-back" href="../../../api.html#qkan.solver.cudaq_solver">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">cudaq_solver</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">preacts_weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">preacts_bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Execute QKAN circuits via NVIDIA CUDA-Q.</span>
+
+<span class="sd">    Drop-in replacement for torch_exact_solver using CUDA-Q&#39;s GPU-accelerated</span>
+<span class="sd">    quantum simulation or QPU backends. Circuits are built as CUDA-Q kernels</span>
+<span class="sd">    and expectation values are computed via cudaq.observe().</span>
+
+<span class="sd">    Supports training via the parameter-shift rule when gradients are needed.</span>
+
+<span class="sd">    Args</span>
+<span class="sd">    ----</span>
+<span class="sd">        x : torch.Tensor</span>
+<span class="sd">            shape: (batch_size, in_dim)</span>
+<span class="sd">        theta : torch.Tensor</span>
+<span class="sd">            shape: (\\*group, reps+1, n_params) or (\\*group, reps, 1) for real</span>
+<span class="sd">        preacts_weight : torch.Tensor</span>
+<span class="sd">            shape: (\\*group, reps)</span>
+<span class="sd">        preacts_bias : torch.Tensor</span>
+<span class="sd">            shape: (\\*group, reps)</span>
+<span class="sd">        reps : int</span>
+<span class="sd">        ansatz : str</span>
+<span class="sd">            &quot;pz_encoding&quot;, &quot;pz&quot;, &quot;rpz_encoding&quot;, &quot;rpz&quot;, or &quot;real&quot;</span>
+<span class="sd">        preacts_trainable : bool</span>
+<span class="sd">        out_dim : int</span>
+<span class="sd">        target : str, optional</span>
+<span class="sd">            CUDA-Q target (e.g., &quot;nvidia&quot;, &quot;nvidia-mqpu&quot;, &quot;qpp-cpu&quot;).</span>
+<span class="sd">            Set before calling via cudaq.set_target().</span>
+<span class="sd">        shots : int, optional</span>
+<span class="sd">            Number of shots. None for exact statevector expectation.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        torch.Tensor</span>
+<span class="sd">            shape: (batch_size, out_dim, in_dim)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_CUDAQ_AVAILABLE</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+            <span class="s2">&quot;CUDA-Q is required for cudaq_solver. &quot;</span>
+            <span class="s2">&quot;Install from: https://nvidia.github.io/cuda-quantum/&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">ansatz</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ansatz&quot;</span><span class="p">,</span> <span class="s2">&quot;pz_encoding&quot;</span><span class="p">)</span>
+    <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;preacts_trainable&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="n">out_dim</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;out_dim&quot;</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">shots</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;shots&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">target</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;target&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">machine</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;machine&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;parallel_qubits&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">target</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">target_kwargs</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">machine</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">target_kwargs</span><span class="p">[</span><span class="s2">&quot;machine&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">machine</span>
+        <span class="n">cudaq</span><span class="o">.</span><span class="n">set_target</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="o">**</span><span class="n">target_kwargs</span><span class="p">)</span>
+
+    <span class="n">config</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;ansatz&quot;</span><span class="p">:</span> <span class="n">ansatz</span><span class="p">,</span>
+        <span class="s2">&quot;preacts_trainable&quot;</span><span class="p">:</span> <span class="n">preacts_trainable</span><span class="p">,</span>
+        <span class="s2">&quot;out_dim&quot;</span><span class="p">:</span> <span class="n">out_dim</span><span class="p">,</span>
+        <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="n">shots</span><span class="p">,</span>
+        <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="n">target</span><span class="p">,</span>
+        <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="n">parallel_qubits</span><span class="p">,</span>
+        <span class="s2">&quot;mitigation&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mitigation&quot;</span><span class="p">,</span> <span class="p">{}),</span>
+    <span class="p">}</span>
+
+    <span class="n">needs_grad</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">requires_grad</span>
+    <span class="k">if</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+        <span class="n">needs_grad</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">needs_grad</span> <span class="ow">or</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">requires_grad</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">needs_grad</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_CudaqParamShift</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">preacts_bias</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_cudaq_evaluate</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">preacts_bias</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

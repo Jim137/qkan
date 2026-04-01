@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quantum-Inspired Kolmogorov-Arnold Network (QKAN) &mdash; QKAN 0.2.0 documentation</title>
+  <title>Quantum-Inspired Kolmogorov-Arnold Network (QKAN) &mdash; QKAN 0.2.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
@@ -14,7 +14,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/index.html" />
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=938c9ccc"></script>
+      <script src="_static/documentation_options.js?v=37f418d5"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -46,6 +46,7 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solver_guide.html">Solver Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples &amp; Applications</a></li>
 </ul>
@@ -92,8 +93,12 @@
 pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
 </pre></div>
 </div>
-<p>To use the GPU-optimized solvers (including <cite>flash</cite> and <cite>cutn</cite> solver), you can install with the <cite>gpu</cite> extra:</p>
+<p>To use the GPU-optimized solvers (including <code class="docutils literal notranslate"><span class="pre">flash</span></code>, <code class="docutils literal notranslate"><span class="pre">cutile</span></code> and <code class="docutils literal notranslate"><span class="pre">cutn</span></code> solver), install with the <code class="docutils literal notranslate"><span class="pre">gpu</span></code> extra:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>qkan<span class="o">[</span>gpu<span class="o">]</span>
+</pre></div>
+</div>
+<p>For real quantum device solvers, install the corresponding backend:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>qkan<span class="o">[</span>real-device<span class="o">]</span>
 </pre></div>
 </div>
 </section>
@@ -163,6 +168,14 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li class="toctree-l2"><a class="reference internal" href="intro/qkan.html">First Glance at QKAN and DARUAN</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="solver_guide.html">Solver Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="solver_guide.html#solver-overview">Solver Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="solver_guide.html#ansatz-choice">Ansatz Choice</a></li>
+<li class="toctree-l2"><a class="reference internal" href="solver_guide.html#mixed-precision">Mixed Precision</a></li>
+<li class="toctree-l2"><a class="reference internal" href="solver_guide.html#real-quantum-device-deployment">Real Quantum Device Deployment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="solver_guide.html#error-mitigation">Error Mitigation</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="api.html#module-qkan">Core Module</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api.html#module-qkan.solver">Solver Module</a></li>
@@ -173,6 +186,7 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li class="toctree-l2"><a class="reference internal" href="examples/layer_ext.html">Layer Extension</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples/mnist.html">MNIST</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples/hqkan_cifar100.html">Hybrid QKAN on CIFAR-100</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/ansatz_comparison.html">Ansatz Comparison: PZ vs RPZ vs Real</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples/gqkan_gpt.html">Group QKAN for Transformers</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples/qkan2kan.html">Transferring from QKAN to KAN</a></li>
 </ul>
