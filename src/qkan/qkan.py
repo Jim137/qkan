@@ -38,9 +38,13 @@ from tqdm import tqdm  # type: ignore
 
 from .info import get_dist_info, print0, print_version
 from .solver import (
+    _CUTILE_AVAILABLE,
     _FLASH_AVAILABLE,
+    cudaq_solver,
+    cutile_flash_exact_solver,
     cutn_solver,
     flash_exact_solver,
+    qiskit_solver,
     qml_solver,
     torch_exact_solver,
 )
@@ -94,9 +98,14 @@ class QKANLayer(nn.Module):
             Enable to use fast measurement in exact solver. Which would be quantum-inspired method.
             When False, the exact solver simulates the exact measurement process of quantum circuit.
         c_dtype : torch.dtype
-            Compute dtype for quantum simulation
+            Compute dtype for quantum simulation. Supported values:
+
+            - ``torch.complex64`` / ``torch.float32``: full-precision f32 (default)
+            - ``torch.bfloat16``: mixed-precision bf16 I/O, f32 compute, bf16 state checkpoints
+            - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints
         p_dtype : torch.dtype
-            Parameter dtype for quantum simulation
+            Parameter dtype (``torch.float32`` or ``torch.bfloat16``).
+            Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.
         _x0 : Optional[torch.Tensor]
             Leave for ResQKANLayer
     """
@@ -115,6 +124,9 @@ class QKANLayer(nn.Module):
                 "flash",
                 "cutn",
                 "tn",
+                "cutile",
+                "qiskit",
+                "cudaq",
             ],
             Callable,
         ] = "exact",
@@ -129,11 +141,13 @@ class QKANLayer(nn.Module):
         ba_trainable: bool = True,
         is_batchnorm: bool = False,
         fast_measure: bool = True,
-        c_dtype=torch.complex64,
-        p_dtype=torch.float32,
+        c_dtype: torch.dtype = torch.complex64,
+        p_dtype: torch.dtype = torch.float32,
         seed=None,
+        solver_kwargs: Optional[dict] = None,
     ):
         super(QKANLayer, self).__init__()
+        self.solver_kwargs = solver_kwargs or {}
 
         if seed is not None:
             torch.manual_seed(seed)
@@ -158,6 +172,9 @@ class QKANLayer(nn.Module):
                 "flash",
                 "cutn",
                 "tn",
+                "cutile",
+                "qiskit",
+                "cudaq",
             ],
             Callable,
         ] = solver
@@ -409,6 +426,58 @@ class QKANLayer(nn.Module):
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
             ).to(self.p_dtype)
+        elif self.solver == "cutile":
+            if not _CUTILE_AVAILABLE:
+                raise ImportError(
+                    "cuda.tile is required for solver='cutile'. "
+                    "Install with: pip install cuda-tile"
+                )
+            postacts = cutile_flash_exact_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
+        elif self.solver == "qiskit":
+            postacts = qiskit_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+                **self.solver_kwargs,
+            ).to(self.p_dtype)
+        elif self.solver == "cudaq":
+            postacts = cudaq_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+                **self.solver_kwargs,
+            ).to(self.p_dtype)
         elif callable(self.solver):
             postacts = self.solver(
                 x,
@@ -418,6 +487,7 @@ class QKANLayer(nn.Module):
                 self.reps,
                 device=self.device,
                 ansatz=self.ansatz,
+                **self.solver_kwargs,
             )
         else:
             raise NotImplementedError()
@@ -672,6 +742,9 @@ class QKAN(nn.Module):
                 "flash",
                 "cutn",
                 "tn",
+                "cutile",
+                "qiskit",
+                "cudaq",
             ],
             Callable,
         ] = "exact",
@@ -687,9 +760,10 @@ class QKAN(nn.Module):
         ba_trainable: bool = False,
         fast_measure: bool = True,
         save_act: bool = False,
-        c_dtype=torch.complex64,
-        p_dtype=torch.float32,
+        c_dtype: torch.dtype = torch.complex64,
+        p_dtype: torch.dtype = torch.float32,
         seed=None,
+        solver_kwargs: Optional[dict] = None,
         **kwargs,
     ):
         """
@@ -735,9 +809,14 @@ class QKAN(nn.Module):
                 Enable to use fast measurement in exact solver. Which would be quantum-inspired method.
                 When False, the exact solver simulates the exact measurement process of quantum circuit.
             p_dtype : torch.dtype
-                Parameter dtype for quantum simulation, default: torch.float32
+                Parameter dtype (``torch.float32`` or ``torch.bfloat16``).
+                Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.
             c_dtype : torch.dtype
-                Compute dtype for quantum simulation, default: torch.complex64
+                Compute dtype for quantum simulation. Supported values:
+
+                - ``torch.complex64`` / ``torch.float32``: full-precision f32 (default)
+                - ``torch.bfloat16``: mixed-precision bf16 I/O, f32 compute, bf16 state checkpoints
+                - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints
             seed : Any
                 Random seed, default: None
         """
@@ -760,6 +839,9 @@ class QKAN(nn.Module):
                 "flash",
                 "cutn",
                 "tn",
+                "cutile",
+                "qiskit",
+                "cudaq",
             ],
             Callable,
         ] = solver
@@ -778,6 +860,7 @@ class QKAN(nn.Module):
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
         self.seed = seed
+        self.solver_kwargs = solver_kwargs or {}
 
         self.layers = QKANModuleList()
         for l in range(self.depth):
@@ -803,6 +886,7 @@ class QKAN(nn.Module):
                     c_dtype=c_dtype,
                     p_dtype=p_dtype,
                     seed=seed,
+                    solver_kwargs=self.solver_kwargs,
                 )
             )
 

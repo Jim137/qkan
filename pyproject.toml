@@ -25,13 +25,33 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gpu = [
-    "triton",
+flash = [
+    "triton>=3.0",
+]
+
+cutile = [
+    "cuda-tile",
+]
+
+cutn = [
     "cuquantum",
 ]
 
 qml = [
     "pennylane>=0.37",
+]
+
+qiskit = [
+    "qiskit>=2.0",
+    "qiskit-ibm-runtime>=0.30",
+]
+
+cudaq = [
+    "cuda-quantum",
+]
+
+real-device = [
+    "qkan[qiskit,cudaq]",
 ]
 
 dev = [
@@ -53,6 +73,10 @@ doc = [
     "qiskit[visualization]>=2.0",
     "transformers",
     "torchvision",
+]
+
+gpu = [
+    "qkan[flash,cutile,cutn]",
 ]
 
 all = ["qkan[gpu,qml,dev,doc]"]

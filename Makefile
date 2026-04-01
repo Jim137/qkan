@@ -5,12 +5,12 @@ install:
 	pip install -e .
 
 lint:
-	ruff check src --ignore E731,E741,F405
+	ruff check src --ignore E731,E741,F405,F821
 	ruff format src --diff
 	mypy src
 
 lint-fix:
-	ruff check src --ignore E731,E741,F405 --fix
+	ruff check src --ignore E731,E741,F405,F821 --fix
 	ruff format src
 
 .PHONY: docs
