@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__version__ = "0.2.1"
+__version__ = "0.2.2dev"
 
 from .daruan import DARUAN
 from .feynman import dataset_range, get_feynman_dataset
+from .fourier_kan import FourierKAN
 from .info import print0, print_banner, print_version
 from .kan import KAN
 from .qkan import QKAN, QKANLayer
@@ -27,6 +28,7 @@ __email__ = "jcjiang@phys.ntu.edu.tw"
 
 __all__ = [
     "DARUAN",
+    "FourierKAN",
     "KAN",
     "QKAN",
     "QKANLayer",
