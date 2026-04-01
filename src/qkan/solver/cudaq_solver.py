@@ -31,7 +31,6 @@ except ImportError:
 
 from ._mitigation import _apply_mitigation
 
-
 # ---------------------------------------------------------------------------
 # CUDA-Q gate-folded kernel builders (for ZNE)
 # ---------------------------------------------------------------------------
@@ -190,9 +189,7 @@ def _build_cudaq_real_preact_folded_kernel(reps: int, scale_factor: int):
     return kernel
 
 
-def _build_cudaq_parallel_pz_folded_kernel(
-    n_qubits: int, reps: int, scale_factor: int
-):
+def _build_cudaq_parallel_pz_folded_kernel(n_qubits: int, reps: int, scale_factor: int):
     """Build a gate-folded parallel pz kernel for ZNE."""
     n_folds = (scale_factor - 1) // 2
 
@@ -489,7 +486,12 @@ def _build_cudaq_parallel_rpz_kernel(n_qubits: int, reps: int):
 
 
 def _cudaq_run_parallel(
-    all_args, ansatz, reps, preacts_trainable, n_qubits, shots_count,
+    all_args,
+    ansatz,
+    reps,
+    preacts_trainable,
+    n_qubits,
+    shots_count,
     scale_factor=1,
 ):
     """
@@ -663,8 +665,13 @@ def _cudaq_evaluate(
     def _run_cudaq(scale_factor=1):
         if parallel_qubits and parallel_qubits > 1:
             return _cudaq_run_parallel(
-                all_args, ansatz, reps, preacts_trainable,
-                parallel_qubits, shots_count, scale_factor=scale_factor,
+                all_args,
+                ansatz,
+                reps,
+                preacts_trainable,
+                parallel_qubits,
+                shots_count,
+                scale_factor=scale_factor,
             )
         else:
             kernel = _get_cudaq_kernel(ansatz, reps, preacts_trainable, scale_factor)

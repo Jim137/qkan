@@ -86,9 +86,7 @@ def _apply_mitigation(
             # Richardson extrapolate per circuit
             n_circuits = len(scaled_results[0])
             extrapolated = [
-                _richardson_extrapolate(
-                    scale_factors, [sr[i] for sr in scaled_results]
-                )
+                _richardson_extrapolate(scale_factors, [sr[i] for sr in scaled_results])
                 for i in range(n_circuits)
             ]
             all_repeat_results.append(extrapolated)
@@ -99,8 +97,7 @@ def _apply_mitigation(
     n_circuits = len(all_repeat_results[0])
     if n_repeats > 1:
         expvals = [
-            sum(r[i] for r in all_repeat_results) / n_repeats
-            for i in range(n_circuits)
+            sum(r[i] for r in all_repeat_results) / n_repeats for i in range(n_circuits)
         ]
     else:
         expvals = all_repeat_results[0]
