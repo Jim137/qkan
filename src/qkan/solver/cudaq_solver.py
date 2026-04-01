@@ -608,7 +608,6 @@ def _cudaq_evaluate(
     preacts_trainable = config["preacts_trainable"]
     out_dim = config["out_dim"]
     shots_count = config["shots"]
-    target = config.get("target", None)
     parallel_qubits = config.get("parallel_qubits", None)
 
     # Broadcasting (same as other solvers)
