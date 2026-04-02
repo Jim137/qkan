@@ -1,0 +1,315 @@
+# Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+CuTe DSL CUDA kernels for QKAN quantum circuit simulation.
+
+Uses CUTLASS CuTe tensor abstractions, __sincosf intrinsics, shared-memory
+trig caching, and warp-shuffle reductions.
+
+Loading strategy (flash-attention pattern):
+  1. Try importing the pre-built extension ``qkan._C`` (compiled by setup.py)
+  2. Fall back to JIT compilation via ``torch.utils.cpp_extension.load()``
+  3. If neither works, ``_CUTE_KERNELS_AVAILABLE`` stays False
+
+Build the extension with::
+
+    CUTLASS_PATH=/path/to/cutlass pip install -e .[cute]
+"""
+
+from __future__ import annotations
+
+import os
+import pathlib
+
+import torch
+
+# ---------------------------------------------------------------------------
+# Extension loading: pre-built → JIT fallback
+# ---------------------------------------------------------------------------
+
+_ext = None
+_CUTE_KERNELS_AVAILABLE = False
+
+
+def _find_cutlass_include() -> str | None:
+    """Locate CUTLASS include/ directory."""
+    candidates = [
+        os.environ.get("CUTLASS_PATH", ""),
+        str(pathlib.Path(__file__).resolve().parents[4] / "cutlass"),
+        "/usr/local/cutlass",
+        os.path.expanduser("~/cutlass"),
+    ]
+    for base in candidates:
+        inc = os.path.join(base, "include")
+        if os.path.isfile(os.path.join(inc, "cute", "tensor.hpp")):
+            return inc
+    return None
+
+
+def _load_prebuilt():
+    """Try importing the extension compiled by setup.py."""
+    global _ext, _CUTE_KERNELS_AVAILABLE
+    try:
+        import qkan._C as _prebuilt
+
+        _ext = _prebuilt
+        _CUTE_KERNELS_AVAILABLE = True
+        return _ext
+    except ImportError:
+        return None
+
+
+def _load_jit():
+    """Fall back to JIT compilation (requires CUTLASS headers at runtime)."""
+    global _ext, _CUTE_KERNELS_AVAILABLE
+
+    cutlass_inc = _find_cutlass_include()
+    if cutlass_inc is None:
+        raise ImportError(
+            "CuTe extension not pre-built and CUTLASS headers not found.\n"
+            "Either:\n"
+            "  CUTLASS_PATH=/path/to/cutlass pip install -e .[cute]\n"
+            "or:\n"
+            "  export CUTLASS_PATH=/path/to/cutlass  (for JIT fallback)"
+        )
+
+    from torch.utils.cpp_extension import load
+
+    csrc = pathlib.Path(__file__).resolve().parent / "csrc"
+    _ext = load(
+        name="qkan_cute_ops",
+        sources=[str(csrc / "cute_kernels.cu")],
+        extra_include_paths=[cutlass_inc],
+        extra_cflags=["-O3", "-std=c++17"],
+        extra_cuda_cflags=[
+            "-O3",
+            "-std=c++17",
+            "--expt-relaxed-constexpr",
+            "--expt-extended-lambda",
+            "--use_fast_math",
+            "-lineinfo",
+        ],
+        verbose=False,
+    )
+    _CUTE_KERNELS_AVAILABLE = True
+    return _ext
+
+
+def _get_ext():
+    global _ext
+    if _ext is not None:
+        return _ext
+    # Try pre-built first (instant), then JIT (slow first time)
+    _ext = _load_prebuilt()
+    if _ext is None:
+        _ext = _load_jit()
+    return _ext
+
+
+# ---------------------------------------------------------------------------
+# Eagerly check availability (don't compile, just probe)
+# ---------------------------------------------------------------------------
+
+try:
+    import qkan._C  # noqa: F401
+
+    _CUTE_KERNELS_AVAILABLE = True
+except ImportError:
+    try:
+        if _find_cutlass_include() is not None:
+            _CUTE_KERNELS_AVAILABLE = True  # headers found → JIT will work
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Python wrappers matching the fused_ops.py interface
+# ---------------------------------------------------------------------------
+
+
+def _state_bits(c_dtype: torch.dtype) -> int:
+    """Map c_dtype to state checkpoint precision bits (32=f32, 16=bf16, 8=nvfp8)."""
+    if c_dtype == torch.float8_e4m3fn:
+        return 8
+    if c_dtype == torch.bfloat16:
+        return 16
+    return 32
+
+
+def _use_bf16(c_dtype: torch.dtype) -> bool:
+    """Whether to use bf16 I/O for forward kernels (halves memory bandwidth)."""
+    return c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
+
+
+def _resolve_io_dtype(c_dtype: torch.dtype) -> torch.dtype:
+    """Map QKAN compute dtype to I/O dtype for CuTe kernels.
+
+    complex64/128 → float32 (QKAN uses complex to mean 'full precision float')
+    float8_e4m3fn → bfloat16 (bf16 I/O with fp8 checkpoints)
+    """
+    if c_dtype in (torch.complex64, torch.complex128, torch.float32):
+        return torch.float32
+    if c_dtype == torch.float8_e4m3fn:
+        return torch.bfloat16
+    return c_dtype  # bfloat16 etc.
+
+
+def cute_pz_forward(
+    x: torch.Tensor,
+    theta: torch.Tensor,
+    preacts_w: torch.Tensor,
+    preacts_b: torch.Tensor,
+    preacts_trainable: bool,
+    fast_measure: bool = True,
+    c_dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """CuTe PZ-encoding forward.  Returns (batch, out_dim, in_dim)."""
+    ext = _get_ext()
+    bf16 = _use_bf16(c_dtype)
+    # C++ launcher handles dtype conversion — just ensure contiguity
+    return ext.pz_forward(
+        x.contiguous(),
+        theta.contiguous(),
+        preacts_w.contiguous() if preacts_trainable else preacts_w,
+        preacts_b.contiguous() if preacts_trainable else preacts_b,
+        preacts_trainable,
+        fast_measure,
+        bf16,
+    )
+
+
+def cute_pz_backward(
+    x: torch.Tensor,
+    theta: torch.Tensor,
+    preacts_w: torch.Tensor,
+    preacts_b: torch.Tensor,
+    grad_output: torch.Tensor,
+    preacts_trainable: bool,
+    fast_measure: bool = True,
+    c_dtype: torch.dtype = torch.float32,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    ext = _get_ext()
+    io_dtype = _resolve_io_dtype(c_dtype)
+    results = ext.pz_backward(
+        x.to(io_dtype).contiguous(),
+        theta.to(io_dtype).contiguous(),
+        preacts_w.to(io_dtype).contiguous() if preacts_trainable else preacts_w,
+        preacts_b.to(io_dtype).contiguous() if preacts_trainable else preacts_b,
+        grad_output.contiguous(),
+        preacts_trainable,
+        fast_measure,
+        _state_bits(c_dtype),
+    )
+    return tuple(results)
+
+
+def cute_rpz_forward(
+    x: torch.Tensor,
+    theta: torch.Tensor,
+    preacts_w: torch.Tensor,
+    preacts_b: torch.Tensor,
+    fast_measure: bool = True,
+    c_dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    ext = _get_ext()
+    bf16 = _use_bf16(c_dtype)
+    return ext.rpz_forward(
+        x.contiguous(),
+        theta.contiguous(),
+        preacts_w.contiguous(),
+        preacts_b.contiguous(),
+        fast_measure,
+        bf16,
+    )
+
+
+def cute_rpz_backward(
+    x: torch.Tensor,
+    theta: torch.Tensor,
+    preacts_w: torch.Tensor,
+    preacts_b: torch.Tensor,
+    grad_output: torch.Tensor,
+    fast_measure: bool = True,
+    c_dtype: torch.dtype = torch.float32,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ext = _get_ext()
+    io_dtype = _resolve_io_dtype(c_dtype)
+    results = ext.rpz_backward(
+        x.to(io_dtype).contiguous(),
+        theta.to(io_dtype).contiguous(),
+        preacts_w.to(io_dtype).contiguous(),
+        preacts_b.to(io_dtype).contiguous(),
+        grad_output.contiguous(),
+        fast_measure,
+        _state_bits(c_dtype),
+    )
+    return tuple(results)
+
+
+def cute_real_forward(
+    x: torch.Tensor,
+    theta: torch.Tensor,
+    preacts_w: torch.Tensor,
+    preacts_b: torch.Tensor,
+    preacts_trainable: bool,
+    fast_measure: bool = True,
+    c_dtype: torch.dtype = torch.bfloat16,
+) -> torch.Tensor:
+    ext = _get_ext()
+    compute_bf16 = (
+        c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
+        or _resolve_io_dtype(c_dtype) == torch.bfloat16
+    )
+    bf16 = _use_bf16(c_dtype)
+    return ext.real_forward(
+        x.contiguous(),
+        theta.contiguous(),
+        preacts_w.contiguous(),
+        preacts_b.contiguous(),
+        preacts_trainable,
+        fast_measure,
+        compute_bf16,
+        bf16,
+    )
+
+
+def cute_real_backward(
+    x: torch.Tensor,
+    theta: torch.Tensor,
+    preacts_w: torch.Tensor,
+    preacts_b: torch.Tensor,
+    grad_output: torch.Tensor,
+    preacts_trainable: bool,
+    fast_measure: bool = True,
+    c_dtype: torch.dtype = torch.bfloat16,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    ext = _get_ext()
+    compute_bf16 = (
+        c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
+        or _resolve_io_dtype(c_dtype) == torch.bfloat16
+    )
+    io_dtype = _resolve_io_dtype(c_dtype)
+    results = ext.real_backward(
+        x.to(io_dtype).contiguous(),
+        theta.to(io_dtype).contiguous(),
+        preacts_w.to(io_dtype).contiguous(),
+        preacts_b.to(io_dtype).contiguous(),
+        grad_output.contiguous(),
+        preacts_trainable,
+        fast_measure,
+        compute_bf16,
+        _state_bits(c_dtype),
+    )
+    return tuple(results)

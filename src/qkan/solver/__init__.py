@@ -27,6 +27,7 @@ Each solver is implemented in its own module:
 """
 
 from .cudaq_solver import cudaq_solver
+from .cute import _CUTE_AVAILABLE, cute_exact_solver
 from .cutile import _CUTILE_AVAILABLE, cutile_flash_exact_solver
 from .cutn import cutn_solver
 from .flash import _FLASH_AVAILABLE, flash_exact_solver
@@ -35,9 +36,11 @@ from .qml import qml_solver
 from .torch_exact import torch_exact_solver
 
 __all__ = [
+    "_CUTE_AVAILABLE",
     "_CUTILE_AVAILABLE",
     "_FLASH_AVAILABLE",
     "cudaq_solver",
+    "cute_exact_solver",
     "cutile_flash_exact_solver",
     "cutn_solver",
     "flash_exact_solver",
