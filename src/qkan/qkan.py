@@ -188,6 +188,19 @@ class QKANLayer(nn.Module):
         self.is_batchnorm = is_batchnorm
         self.fast_measure = fast_measure
         self.seed = seed
+        # Flash / cutile / cute solvers use real-valued Triton/CUDA kernels and
+        # cannot operate on complex dtypes.  Transparently map complex → real so
+        # users can keep the default ``c_dtype=torch.complex64`` without error.
+        if solver in ("flash", "cutile", "cute") and c_dtype in (
+            torch.complex64,
+            torch.complex128,
+        ):
+            _complex_to_real = {
+                torch.complex64: torch.float32,
+                torch.complex128: torch.float64,
+            }
+            c_dtype = _complex_to_real[c_dtype]
+
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
 
