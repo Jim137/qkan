@@ -503,30 +503,48 @@ def _cudaq_run_parallel(
     total = len(all_args)
     expvals = []
 
-    for start in range(0, total, n_qubits):
-        chunk = all_args[start : start + n_qubits]
-        chunk_size = len(chunk)
+    # Build kernel once — all chunks pad to n_qubits
+    if ansatz in ("pz_encoding", "pz") and not preacts_trainable:
+        par_kernel = (
+            _build_cudaq_parallel_pz_folded_kernel(n_qubits, reps, scale_factor)
+            if scale_factor > 1
+            else _build_cudaq_parallel_pz_kernel(n_qubits, reps)
+        )
+    elif ansatz == "real" and not preacts_trainable:
+        par_kernel = (
+            _build_cudaq_parallel_real_folded_kernel(n_qubits, reps, scale_factor)
+            if scale_factor > 1
+            else _build_cudaq_parallel_real_kernel(n_qubits, reps)
+        )
+    elif ansatz in ("rpz_encoding", "rpz") or preacts_trainable:
+        par_kernel = (
+            _build_cudaq_parallel_rpz_folded_kernel(n_qubits, reps, scale_factor)
+            if scale_factor > 1
+            else _build_cudaq_parallel_rpz_kernel(n_qubits, reps)
+        )
+    else:
+        raise NotImplementedError(f"Parallel not supported for ansatz '{ansatz}'")
 
-        # Flatten args into parallel kernel format
+    spin_sum = cudaq.spin.z(0)
+    for q_idx in range(1, n_qubits):
+        spin_sum += cudaq.spin.z(q_idx)
+
+    for start in range(0, total, n_qubits):
+        end = min(start + n_qubits, total)
+        chunk = all_args[start:end]
+        chunk_size = end - start
+
+        # Flatten args and pad to n_qubits
         if ansatz in ("pz_encoding", "pz") and not preacts_trainable:
             x_vals = [a[0] for a in chunk]
             all_thetas = []
             for a in chunk:
                 all_thetas.extend(a[1])
-            # Pad if chunk < n_qubits
-            actual_n = chunk_size
-            if actual_n < n_qubits:
-                x_vals.extend([0.0] * (n_qubits - actual_n))
+            if chunk_size < n_qubits:
+                x_vals.extend([0.0] * (n_qubits - chunk_size))
                 pad_thetas = [0.0] * (2 * (reps + 1))
-                for _ in range(n_qubits - actual_n):
+                for _ in range(n_qubits - chunk_size):
                     all_thetas.extend(pad_thetas)
-                actual_n = n_qubits
-
-            par_kernel = (
-                _build_cudaq_parallel_pz_folded_kernel(actual_n, reps, scale_factor)
-                if scale_factor > 1
-                else _build_cudaq_parallel_pz_kernel(actual_n, reps)
-            )
             args = (x_vals, all_thetas)
 
         elif ansatz == "real" and not preacts_trainable:
@@ -534,21 +552,13 @@ def _cudaq_run_parallel(
             all_thetas = []
             for a in chunk:
                 all_thetas.extend(a[1])
-            actual_n = chunk_size
-            if actual_n < n_qubits:
-                x_vals.extend([0.0] * (n_qubits - actual_n))
-                for _ in range(n_qubits - actual_n):
+            if chunk_size < n_qubits:
+                x_vals.extend([0.0] * (n_qubits - chunk_size))
+                for _ in range(n_qubits - chunk_size):
                     all_thetas.extend([0.0] * reps)
-                actual_n = n_qubits
-
-            par_kernel = (
-                _build_cudaq_parallel_real_folded_kernel(actual_n, reps, scale_factor)
-                if scale_factor > 1
-                else _build_cudaq_parallel_real_kernel(actual_n, reps)
-            )
             args = (x_vals, all_thetas)
 
-        elif ansatz in ("rpz_encoding", "rpz") or preacts_trainable:
+        else:  # rpz or preacts_trainable
             encoded_xs = []
             all_thetas = []
             for a in chunk:
@@ -558,27 +568,11 @@ def _cudaq_run_parallel(
                 else:
                     encoded_xs.extend([enc] * reps)
                 all_thetas.extend(t)
-            actual_n = chunk_size
-            if actual_n < n_qubits:
-                for _ in range(n_qubits - actual_n):
+            if chunk_size < n_qubits:
+                for _ in range(n_qubits - chunk_size):
                     encoded_xs.extend([0.0] * reps)
                     all_thetas.extend([0.0] * (reps + 1))
-                actual_n = n_qubits
-
-            par_kernel = (
-                _build_cudaq_parallel_rpz_folded_kernel(actual_n, reps, scale_factor)
-                if scale_factor > 1
-                else _build_cudaq_parallel_rpz_kernel(actual_n, reps)
-            )
             args = (encoded_xs, all_thetas)
-        else:
-            raise NotImplementedError(f"Parallel not supported for ansatz '{ansatz}'")
-
-        # Single observe call with Z0 + Z1 + ... + Z_{N-1} Hamiltonian,
-        # then extract per-qubit <Z_k> from the result
-        spin_sum = cudaq.spin.z(0)
-        for q_idx in range(1, actual_n):
-            spin_sum += cudaq.spin.z(q_idx)
 
         if shots_count is not None:
             result = cudaq.observe(par_kernel, spin_sum, *args, shots_count=shots_count)
@@ -638,27 +632,24 @@ def _cudaq_evaluate(
     theta_np = theta.detach().cpu()
     encoded_x_np = encoded_x.detach().cpu() if encoded_x is not None else None
 
-    # Collect all circuit args first
+    # Pre-convert theta (batch-independent) and x to Python lists
+    theta_lists = {
+        (o, i): theta_np[o, i].reshape(-1).tolist()
+        for o in range(out_dim)
+        for i in range(in_dim)
+    }
+    x_py = x_np.tolist() if not _needs_encoded_x else None
+    enc_py = encoded_x_np.tolist() if encoded_x_np is not None else None
+
     all_args = []
     for b in range(batch):
         for o in range(out_dim):
             for i in range(in_dim):
-                t = theta_np[o, i].reshape(-1).tolist()
-
-                if ansatz in ("pz_encoding", "pz"):
-                    if preacts_trainable:
-                        all_args.append((encoded_x_np[b, o, i].tolist(), t))
-                    else:
-                        all_args.append((float(x_np[b, i]), t))
-                elif ansatz in ("rpz_encoding", "rpz"):
-                    all_args.append((encoded_x_np[b, o, i].tolist(), t))
-                elif ansatz == "real":
-                    if preacts_trainable:
-                        all_args.append((encoded_x_np[b, o, i].tolist(), t))
-                    else:
-                        all_args.append((float(x_np[b, i]), t))
+                t = theta_lists[(o, i)]
+                if _needs_encoded_x:
+                    all_args.append((enc_py[b][o][i], t))
                 else:
-                    raise NotImplementedError
+                    all_args.append((x_py[b][i], t))
 
     mitigation = config.get("mitigation", {})
 
@@ -840,7 +831,6 @@ def cudaq_solver(
         "preacts_trainable": preacts_trainable,
         "out_dim": out_dim,
         "shots": shots,
-        "target": target,
         "parallel_qubits": parallel_qubits,
         "mitigation": kwargs.get("mitigation", {}),
     }
