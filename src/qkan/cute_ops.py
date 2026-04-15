@@ -178,15 +178,8 @@ def cute_pz_forward(
     """CuTe PZ-encoding forward.  Returns (batch, out_dim, in_dim)."""
     ext = _get_ext()
     bf16 = _use_bf16(c_dtype)
-    # C++ launcher handles dtype conversion — just ensure contiguity
     return ext.pz_forward(
-        x.contiguous(),
-        theta.contiguous(),
-        preacts_w.contiguous() if preacts_trainable else preacts_w,
-        preacts_b.contiguous() if preacts_trainable else preacts_b,
-        preacts_trainable,
-        fast_measure,
-        bf16,
+        x, theta, preacts_w, preacts_b, preacts_trainable, fast_measure, bf16
     )
 
 
@@ -313,3 +306,52 @@ def cute_real_backward(
         _state_bits(c_dtype),
     )
     return tuple(results)
+
+
+# ---------------------------------------------------------------------------
+# Fused HQKAN module: Linear → QKAN → Linear with minimal dispatch overhead
+# ---------------------------------------------------------------------------
+
+
+class FusedHQKAN(torch.nn.Module):
+    """Fused Linear→QKAN→Linear as used in HQKANsformer MLP blocks.
+
+    Convenience wrapper replacing ``nn.Sequential(Linear(d, els), QKAN(...), Linear(els, d))``
+    with named sub-modules for easier parameter access and serialization.
+
+    Usage::
+
+        block = FusedHQKAN(768, 10, reps=1)
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        qkan_width: int,
+        reps: int = 1,
+        solver: str = "cute",
+        ansatz: str = "pz_encoding",
+        c_dtype: torch.dtype = torch.bfloat16,
+        p_dtype: torch.dtype = torch.bfloat16,
+        device: str = "cuda",
+    ):
+        super().__init__()
+        from qkan import QKAN
+
+        self.down = torch.nn.Linear(
+            in_features, qkan_width, device=device, dtype=p_dtype
+        )
+        self.qkan = QKAN(
+            width=[qkan_width, qkan_width],
+            reps=reps,
+            ba_trainable=True,
+            device=device,
+            solver=solver,
+            ansatz=ansatz,
+            c_dtype=c_dtype,
+            p_dtype=p_dtype,
+        )
+        self.up = torch.nn.Linear(qkan_width, in_features, device=device, dtype=p_dtype)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.up(self.qkan(self.down(x)))

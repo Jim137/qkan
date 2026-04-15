@@ -153,6 +153,7 @@ __global__ void cute_pz_fwd_kernel(
     auto gPB = make_tensor(make_gmem_ptr(pb_ptr),
                  ROWMAJOR3(out_dim, in_dim, reps));
 
+    #pragma unroll
     for (int l = 0; l < reps; l++) {
         // Rz(θ[l,0])
         float cz = s_cos[l * 2], sz = s_sin[l * 2];
@@ -304,6 +305,7 @@ __global__ void cute_pz_bwd_kernel(
     SAVE_STATE(0, r0, i0, r1, i1);
 
     int state_idx = 1;
+    #pragma unroll
     for (int l = 0; l < reps; l++) {
         // Rz(θ[l,0])
         float cz = s_cos[l * 2], sz = s_sin[l * 2];
@@ -424,6 +426,7 @@ __global__ void cute_pz_bwd_kernel(
     }
 
     // Loop backward through layers
+    #pragma unroll
     for (int l = reps - 1; l >= 0; l--) {
         // Backward Rz(enc)
         state_idx--;
@@ -555,6 +558,7 @@ __global__ void cute_rpz_fwd_kernel(
 
     float r0 = INV_SQRT2, i0 = 0.0f, r1 = INV_SQRT2, i1 = 0.0f;
 
+    #pragma unroll
     for (int l = 0; l < reps; l++) {
         // Ry(θ[l])
         float cy = s_cos[l], sy = s_sin[l];
@@ -665,6 +669,7 @@ __global__ void cute_rpz_bwd_kernel(
     SAVE_STATE(0, r0, i0, r1, i1);
     int state_idx = 1;
 
+    #pragma unroll
     for (int l = 0; l < reps; l++) {
         float cy = s_cos[l], sy = s_sin[l];
         float nr0 = cy*r0 - sy*r1, ni0 = cy*i0 - sy*i1;
@@ -721,6 +726,7 @@ __global__ void cute_rpz_bwd_kernel(
         ar0=nar0; ai0=nai0; ar1=nar1; ai1=nai1;
     }
 
+    #pragma unroll
     for (int l = reps - 1; l >= 0; l--) {
         // Backward Rz(enc)
         state_idx--;
@@ -816,6 +822,7 @@ __global__ void cute_real_fwd_kernel(
 
     if (compute_bf16) {
         float r0 = INV_SQRT2, r1 = INV_SQRT2;
+        #pragma unroll
         for (int l = 0; l < reps; l++) {
             float tmp = r0; r0 = r1; r1 = tmp;
             float cy = s_cos[l], sy = s_sin[l];
@@ -837,6 +844,7 @@ __global__ void cute_real_fwd_kernel(
         gOut(b, idx_o, idx_i) = IOT(result);
     } else {
         float r0 = INV_SQRT2, i0 = 0.0f, r1 = INV_SQRT2, i1 = 0.0f;
+        #pragma unroll
         for (int l = 0; l < reps; l++) {
             float tr = r0, ti = i0; r0 = r1; i0 = i1; r1 = tr; i1 = ti;
             float cy = s_cos[l], sy = s_sin[l];
@@ -938,6 +946,7 @@ __global__ void cute_real_bwd_kernel(
         SAVE2(0, r0, r1);
         int sidx = 1;
 
+        #pragma unroll
         for (int l = 0; l < reps; l++) {
             // X gate
             float tmp = r0; r0 = r1; r1 = tmp;
@@ -973,6 +982,7 @@ __global__ void cute_real_bwd_kernel(
         // Backward sweep — use direct index: 3l+2 = after Ry_θ (input to Z+Ry_enc),
         //                                      3l+1 = after X   (input to Ry_θ)
         float sr0, sr1;
+        #pragma unroll
         for (int l = reps - 1; l >= 0; l--) {
             // Backward Ry(enc) + Z gate — input state is after Ry_θ[l]
             LOAD2(3*l + 2, sr0, sr1);
@@ -1036,6 +1046,7 @@ __global__ void cute_real_bwd_kernel(
         SAVE4(0, r0, i0, r1, i1);
         int sidx = 1;
 
+        #pragma unroll
         for (int l = 0; l < reps; l++) {
             // X gate
             float tr=r0, ti=i0; r0=r1; i0=i1; r1=tr; i1=ti;
@@ -1074,6 +1085,7 @@ __global__ void cute_real_bwd_kernel(
 
         float sr0, si0, sr1, si1;
         // Backward sweep — direct index: 3l+2 = after Ry_θ, 3l+1 = after X
+        #pragma unroll
         for (int l = reps - 1; l >= 0; l--) {
             // Backward Ry(enc) + Z gate — input is after Ry_θ[l]
             LOAD4(3*l + 2, sr0, si0, sr1, si1);
@@ -1176,6 +1188,17 @@ static int select_block_b(int n_oi, int batch, int base = 32) {
     } while(0)
 
 // ====================================================================
+// Host helpers
+// ====================================================================
+
+/// Fast tensor preparation: ensure contiguity first, then dtype conversion.
+static inline torch::Tensor prep(torch::Tensor t, torch::ScalarType dtype) {
+    if (!t.is_contiguous()) t = t.contiguous();
+    if (t.scalar_type() != dtype) t = t.to(dtype);
+    return t;
+}
+
+// ====================================================================
 // Python-facing launchers
 // ====================================================================
 
@@ -1190,10 +1213,10 @@ torch::Tensor cute_pz_forward(
     int reps    = theta.size(2) - 1;
 
     auto io_dtype = use_bf16 ? torch::kBFloat16 : torch::kFloat32;
-    x     = x.to(io_dtype).contiguous();
-    theta = theta.to(io_dtype).contiguous();
-    pw = pw.to(io_dtype).contiguous();
-    pb = pb.to(io_dtype).contiguous();
+    x     = prep(x, io_dtype);
+    theta = prep(theta, io_dtype);
+    pw = prep(pw, io_dtype);
+    pb = prep(pb, io_dtype);
 
     auto output = torch::empty({batch, out_dim, in_dim},
         torch::TensorOptions().device(x.device()).dtype(io_dtype));
@@ -1235,11 +1258,11 @@ std::vector<torch::Tensor> cute_pz_backward(
     int out_dim = theta.size(0);
     int reps    = theta.size(2) - 1;
 
-    x     = x.to(torch::kFloat32).contiguous();
-    theta = theta.to(torch::kFloat32).contiguous();
-    grad_output = grad_output.to(torch::kFloat32).contiguous();
-    pw = pw.to(torch::kFloat32).contiguous();
-    pb = pb.to(torch::kFloat32).contiguous();
+    x     = prep(x, torch::kFloat32);
+    theta = prep(theta, torch::kFloat32);
+    grad_output = prep(grad_output, torch::kFloat32);
+    pw = prep(pw, torch::kFloat32);
+    pb = prep(pb, torch::kFloat32);
 
     int n_oi    = out_dim * in_dim;
     int block_b = select_block_b(n_oi, batch);
@@ -1322,10 +1345,10 @@ torch::Tensor cute_rpz_forward(
     int out_dim = theta.size(0), reps = theta.size(2) - 1;
 
     auto io_dtype = use_bf16 ? torch::kBFloat16 : torch::kFloat32;
-    x = x.to(io_dtype).contiguous();
-    theta = theta.to(io_dtype).contiguous();
-    pw = pw.to(io_dtype).contiguous();
-    pb = pb.to(io_dtype).contiguous();
+    x = prep(x, io_dtype);
+    theta = prep(theta, io_dtype);
+    pw = prep(pw, io_dtype);
+    pb = prep(pb, io_dtype);
 
     auto output = torch::empty({batch, out_dim, in_dim},
         torch::TensorOptions().device(x.device()).dtype(io_dtype));
@@ -1362,11 +1385,11 @@ std::vector<torch::Tensor> cute_rpz_backward(
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2) - 1;
 
-    x = x.to(torch::kFloat32).contiguous();
-    theta = theta.to(torch::kFloat32).contiguous();
-    pw = pw.to(torch::kFloat32).contiguous();
-    pb = pb.to(torch::kFloat32).contiguous();
-    grad_output = grad_output.to(torch::kFloat32).contiguous();
+    x = prep(x, torch::kFloat32);
+    theta = prep(theta, torch::kFloat32);
+    pw = prep(pw, torch::kFloat32);
+    pb = prep(pb, torch::kFloat32);
+    grad_output = prep(grad_output, torch::kFloat32);
 
     int n_oi = out_dim * in_dim;
     int block_b = select_block_b(n_oi, batch);
@@ -1439,10 +1462,10 @@ torch::Tensor cute_real_forward(
     int out_dim = theta.size(0), reps = theta.size(2);
 
     auto io_dtype = use_bf16 ? torch::kBFloat16 : torch::kFloat32;
-    x = x.to(io_dtype).contiguous();
-    theta = theta.to(io_dtype).contiguous();
-    pw = pw.to(io_dtype).contiguous();
-    pb = pb.to(io_dtype).contiguous();
+    x = prep(x, io_dtype);
+    theta = prep(theta, io_dtype);
+    pw = prep(pw, io_dtype);
+    pb = prep(pb, io_dtype);
 
     auto output = torch::empty({batch, out_dim, in_dim},
         torch::TensorOptions().device(x.device()).dtype(io_dtype));
@@ -1482,11 +1505,11 @@ std::vector<torch::Tensor> cute_real_backward(
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2);
 
-    x = x.to(torch::kFloat32).contiguous();
-    theta = theta.to(torch::kFloat32).contiguous();
-    pw = pw.to(torch::kFloat32).contiguous();
-    pb = pb.to(torch::kFloat32).contiguous();
-    grad_output = grad_output.to(torch::kFloat32).contiguous();
+    x = prep(x, torch::kFloat32);
+    theta = prep(theta, torch::kFloat32);
+    pw = prep(pw, torch::kFloat32);
+    pb = prep(pb, torch::kFloat32);
+    grad_output = prep(grad_output, torch::kFloat32);
 
     int n_oi = out_dim * in_dim;
     int block_b = select_block_b(n_oi, batch, compute_bf16 ? 32 : 32);

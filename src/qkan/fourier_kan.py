@@ -58,7 +58,10 @@ class FourierKANLinear(torch.nn.Module):
         )
         self.register_buffer(
             "input_shift",
-            torch.tensor(-grid_range[0] * 2.0 * math.pi / (grid_range[1] - grid_range[0]) - math.pi),
+            torch.tensor(
+                -grid_range[0] * 2.0 * math.pi / (grid_range[1] - grid_range[0])
+                - math.pi
+            ),
         )
 
         # Fourier coefficients: (out_features, in_features, 2 * grid_size)
