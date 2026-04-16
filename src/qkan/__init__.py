@@ -17,7 +17,12 @@ __version__ = "0.2.3dev"
 from .daruan import DARUAN
 from .feynman import dataset_range, get_feynman_dataset
 from .fourier_kan import FourierKAN
-from .inference import make_graphed_inference
+from .inference import (
+    CompiledInference,
+    compile_inference,
+    graph_submodules,
+    make_graphed_inference,
+)
 from .info import print0, print_banner, print_version
 from .kan import KAN
 from .qkan import QKAN, QKANLayer
@@ -36,9 +41,12 @@ __all__ = [
     "StateVector",
     "SYMBOLIC_LIB",
     "TorchGates",
+    "CompiledInference",
+    "compile_inference",
     "create_dataset",
     "dataset_range",
     "get_feynman_dataset",
+    "graph_submodules",
     "make_graphed_inference",
     "print0",
     "print_banner",
