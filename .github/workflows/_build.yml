@@ -101,22 +101,8 @@ jobs:
           echo "wheel_name=${wheel_name}" >> $GITHUB_ENV
           ls -lh dist/
 
-      - name: Get Release
-        if: inputs.upload-to-release
-        id: get_release
-        uses: joutvhu/get-release@v1
-        with:
-          tag_name: ${{ inputs.release-version }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload to Release
         if: inputs.upload-to-release
-        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.get_release.outputs.upload_url }}
-          asset_path: ./dist/${{ env.wheel_name }}
-          asset_name: ${{ env.wheel_name }}
-          asset_content_type: application/*
+        run: gh release upload "${{ inputs.release-version }}" ./dist/${{ env.wheel_name }} --repo $GITHUB_REPOSITORY --clobber
