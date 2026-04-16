@@ -267,7 +267,13 @@ try:
                 print(f"[qkan] Using pre-built wheel: {wheel_path}")
             except (urllib.error.HTTPError, urllib.error.URLError):
                 print("[qkan] Pre-built wheel not found, building from source...")
-                super().run()
+                try:
+                    super().run()
+                except Exception as e:
+                    print(f"[qkan] CUDA build failed ({e}), building pure-Python wheel")
+                    # Remove CUDA extension and rebuild without it
+                    self.distribution.ext_modules = []
+                    super().run()
 
 except ImportError:
     CachedWheelsCommand = None
@@ -297,6 +303,23 @@ if not SKIP_CUDA_BUILD:
         if cuda_version is None:
             print("[qkan] WARNING: Could not detect CUDA version, skipping CuTe build")
             BUILD_CUTE = False
+
+    # Check for CUDA version mismatch (common in build-isolation environments
+    # where pip installs a torch with a different CUDA than the system nvcc)
+    if BUILD_CUTE:
+        try:
+            import torch
+            torch_cuda = torch.version.cuda
+            if torch_cuda is not None:
+                torch_ver = int(torch_cuda.split(".")[0]) * 10 + int(torch_cuda.split(".")[1])
+                sys_ver = cuda_version[0] * 10 + cuda_version[1]
+                if torch_ver != sys_ver:
+                    print(f"[qkan] WARNING: System CUDA {cuda_version[0]}.{cuda_version[1]} "
+                          f"vs torch CUDA {torch_cuda} — skipping CuTe build "
+                          f"(use --no-build-isolation to match)")
+                    BUILD_CUTE = False
+        except Exception:
+            pass
 
 if BUILD_CUTE:
     archs = get_cuda_archs()

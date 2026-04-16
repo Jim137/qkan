@@ -1,0 +1,3 @@
+include csrc/*.cu
+include csrc/*.cuh
+include scripts/*.sh
