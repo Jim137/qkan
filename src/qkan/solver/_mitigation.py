@@ -89,8 +89,8 @@ def _apply_mitigation(
                     w *= -scale_factors[j] / (scale_factors[i] - scale_factors[j])
             zne_weights.append(w)
 
-    running_sum = None
-    for _ in range(n_repeats):
+    running_sum: list = []
+    for rep in range(n_repeats):
         if scale_factors:
             scaled_results = [run_fn(sf) for sf in scale_factors]
             n_circuits = len(scaled_results[0])
@@ -101,7 +101,7 @@ def _apply_mitigation(
         else:
             result = run_fn(1)
 
-        if running_sum is None:
+        if rep == 0:
             running_sum = list(result)
         else:
             for i in range(len(running_sum)):

@@ -536,6 +536,7 @@ def _qiskit_evaluate(
                 if ansatz in ("pz_encoding", "pz"):
                     qc = _build_qiskit_pz_circuit(x_py[b][i], t, reps, enc_vals)
                 elif ansatz in ("rpz_encoding", "rpz"):
+                    assert enc_vals is not None
                     qc = _build_qiskit_rpz_circuit(enc_vals, t, reps)
                 elif ansatz == "real":
                     qc = _build_qiskit_real_circuit(x_py[b][i], t, reps, enc_vals)
