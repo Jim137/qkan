@@ -175,7 +175,9 @@ class CompiledInference(nn.Module):
         self.max_shapes = int(max_shapes)
         self.warmup = int(warmup)
         # key -> (graph, static_input, static_output)
-        self._cache: dict[tuple, tuple[torch.cuda.CUDAGraph, torch.Tensor, torch.Tensor]] = {}
+        self._cache: dict[
+            tuple, tuple[torch.cuda.CUDAGraph, torch.Tensor, torch.Tensor]
+        ] = {}
 
     # Delegate train/eval/to/state_dict transparently.
     def train(self, mode: bool = True):
@@ -189,7 +191,9 @@ class CompiledInference(nn.Module):
         self._cache.clear()
 
     @torch.no_grad()
-    def _capture(self, sample: torch.Tensor) -> tuple[torch.cuda.CUDAGraph, torch.Tensor, torch.Tensor]:
+    def _capture(
+        self, sample: torch.Tensor
+    ) -> tuple[torch.cuda.CUDAGraph, torch.Tensor, torch.Tensor]:
         static_input = torch.empty_like(sample)
         static_input.copy_(sample)
 
@@ -287,7 +291,9 @@ def graph_submodules(
             if predicate(child):
                 targets.append((parent, name, child))
     for parent, name, child in targets:
-        setattr(parent, name, CompiledInference(child, max_shapes=max_shapes, warmup=warmup))
+        setattr(
+            parent, name, CompiledInference(child, max_shapes=max_shapes, warmup=warmup)
+        )
     # Trigger an initial capture pass with the provided sample so the first
     # live forward doesn't pay the compile cost.
     model.eval()

@@ -226,9 +226,7 @@ def cutile_flash_exact_solver(
         needs_grad = theta.requires_grad or x.requires_grad
         if _needs_encoded_x or preacts_trainable:
             needs_grad = (
-                needs_grad
-                or preacts_weight.requires_grad
-                or preacts_bias.requires_grad
+                needs_grad or preacts_weight.requires_grad or preacts_bias.requires_grad
             )
 
     if needs_grad:
