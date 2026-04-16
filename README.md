@@ -65,6 +65,16 @@ To use the GPU-optimized solvers (including `flash` and `cutn` solver), you can 
 pip install qkan[gpu]
 ```
 
+To use the CuTe DSL solver (`solver="cute"`) with pre-built CUDA kernels:
+
+```bash
+# Pre-built wheel (recommended — no compilation needed)
+pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/
+
+# Or compile locally (auto-downloads CUTLASS headers if needed)
+pip install --no-build-isolation qkan[cute]
+```
+
 <!-- To install QKAN from source, you can use the following command:
 
 ```bash
@@ -125,8 +135,9 @@ You can find more examples in the [examples](https://jim137.github.io/qkan/examp
 | Case                                                                      | Device       | Recommended solver    | Why                                                             | Notes                                                                            |
 | ------------------------------------------------------------------------- | ------------ | --------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Small models, CPU runs, debugging, or you want a trusted baseline         | CPU (or GPU) | `exact` *(default)*   | Simple + “reference” behavior                                   | First run may include one-time init overhead—do a warmup step before timing.     |
-| Most training workloads (medium → large models) / inference               | GPU          | `flash`               | Best overall speed / memory tradeoff in these benchmarks        | Good first choice for practical GPU training.                                    |
-| BF16/FP8 mixed-precision training for maximum throughput                  | GPU          | `cutile`              | cuTile fused kernels with BF16/FP8 + coalesced state layout     | Best with `real` ansatz.                       |
+| Most training workloads (medium → large models) / inference               | GPU          | `flash`               | Best overall speed / memory tradeoff, widest compatibility      | Good first choice for practical GPU training.                                    |
+| BF16/FP8 maximum throughput with CUTLASS                                  | GPU          | `cute`                | CuTe smem trig caching + __sincosf + FP8 prescaled states      | **1.95x** on GPT-2 HQKANsformer. Requires CUTLASS headers.                      |
+| BF16/FP8 mixed-precision training (alternative)                           | GPU          | `cutile`              | cuTile fused kernels with BF16/FP8 + coalesced state layout     | Best with `real` ansatz. Requires CUDA Toolkit 13.1+.                            |
 | Extremely large / memory-bound runs (near OOM, very large layers/batches) | GPU (or CPU) | `cutn`                | Best scaling and peak-memory reduction in the extreme benchmark | Use when size/memory dominates. Or CPU case better than `exact`. |
 
 **Ansatz choice (`pz` vs `real`)**
@@ -137,16 +148,20 @@ See [#8](https://github.com/Jim137/qkan/issues/8) for more discussion on solver 
 
 ## Mixed Precision
 
-The `flash` and `cutile` solvers support BF16 and FP8 mixed-precision via the `c_dtype` parameter:
+The `flash`, `cute`, and `cutile` solvers support BF16 and FP8 mixed-precision via the `c_dtype` parameter:
 
 ```python
-qkan = QKAN([10, 10], solver="flash", c_dtype=torch.bfloat16, device="cuda")
+# BF16 (recommended for training)
+qkan = QKAN([10, 10], solver="cute", c_dtype=torch.bfloat16, p_dtype=torch.bfloat16, device="cuda")
+
+# FP8 prescaled state checkpoints (max backward throughput)
+qkan = QKAN([10, 10], solver="cute", c_dtype=torch.float8_e4m3fn, p_dtype=torch.bfloat16, device="cuda")
 ```
 
 - `c_dtype` controls the **compute dtype** for quantum simulation kernels (state vectors, trig ops).
-- `p_dtype` controls the **parameter storage dtype** (theta, preacts). Keep this at `float32`.
+- `p_dtype` controls the **parameter storage dtype** (theta, preacts).
 - BF16 is the sweet spot: **2.3-2.5x faster training, 45% less peak memory**, with identical convergence.
-- FP8 (`torch.float8_e4m3fn`) provides additional memory savings for state checkpoints via prescaled storage.
+- FP8 (`torch.float8_e4m3fn`) provides additional memory savings for state checkpoints via prescaled storage (prescale=224, leveraging unitarity-bounded [-1,1] states).
 - All ansatzes (`pz`, `rpz`, `real`) are supported.
 
 See [#12](https://github.com/Jim137/qkan/issues/12) for full benchmarks (GPT-2 HQKANsformer, isolated kernel timings, and dtype performance matrix).
