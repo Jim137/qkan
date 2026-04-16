@@ -48,10 +48,13 @@ class FourierKANLinear(torch.nn.Module):
 
         # Precompute the frequency indices: 1, 2, ..., grid_size
         freqs = torch.arange(1, grid_size + 1, dtype=torch.float32)
+        self.freqs: torch.Tensor
         self.register_buffer("freqs", freqs)
 
         # Scale input from grid_range to [-pi, pi]
         self.grid_range = grid_range
+        self.input_scale: torch.Tensor
+        self.input_shift: torch.Tensor
         self.register_buffer(
             "input_scale",
             torch.tensor(2.0 * math.pi / (grid_range[1] - grid_range[0])),
@@ -282,7 +285,7 @@ class FourierKAN(torch.nn.Module):
                             steps=sampling,
                             device=x0.device,
                         )
-                        for j in range(qkan_layer.in_dim)
+                        for j in range(int(qkan_layer.in_dim))  # type: ignore[arg-type]
                     ]
                 ).permute(1, 0)  # x.shape = (sampling, in_dim)
             with torch.no_grad():
