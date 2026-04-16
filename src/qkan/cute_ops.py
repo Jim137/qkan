@@ -65,7 +65,7 @@ def _load_prebuilt():
     """Try importing the extension compiled by setup.py."""
     global _ext, _CUTE_KERNELS_AVAILABLE
     try:
-        import qkan._C as _prebuilt
+        import qkan._C as _prebuilt  # type: ignore[import-not-found]
 
         _ext = _prebuilt
         _CUTE_KERNELS_AVAILABLE = True
@@ -128,7 +128,7 @@ def _get_ext():
 # ---------------------------------------------------------------------------
 
 try:
-    import qkan._C  # noqa: F401
+    import qkan._C  # type: ignore[import-not-found]  # noqa: F401
 
     _CUTE_KERNELS_AVAILABLE = True
 except ImportError:
@@ -351,7 +351,7 @@ class FusedHQKAN(torch.nn.Module):
             reps=reps,
             ba_trainable=True,
             device=device,
-            solver=solver,
+            solver=solver,  # type: ignore[arg-type]
             ansatz=ansatz,
             c_dtype=c_dtype,
             p_dtype=p_dtype,

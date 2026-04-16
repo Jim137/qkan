@@ -57,6 +57,7 @@ except ImportError:
 
 from ._mitigation import _apply_mitigation
 
+
 def _configure_estimator(rt_estimator, shots, resilience_level, twirling):
     """Apply shots, resilience, and twirling options to an EstimatorV2."""
     if shots is not None:
@@ -554,8 +555,10 @@ def _qiskit_evaluate(
     _tw = config.get("twirling")
     _pm = None
     _rt_est = None
-    if backend is not None and estimator is None and not (
-        parallel_qubits and parallel_qubits > 1
+    if (
+        backend is not None
+        and estimator is None
+        and not (parallel_qubits and parallel_qubits > 1)
     ):
         _pm = generate_preset_pass_manager(
             backend=backend, optimization_level=optimization_level

@@ -77,9 +77,7 @@ def _apply_mitigation(
     n_repeats = mitigation.get("n_repeats", 1)
     clip = mitigation.get("clip_expvals", False)
 
-    scale_factors = (
-        zne_config.get("scale_factors", [1, 3, 5]) if zne_config else None
-    )
+    scale_factors = zne_config.get("scale_factors", [1, 3, 5]) if zne_config else None
     # Precompute ZNE weights once (they don't change across repeats)
     if scale_factors:
         n_sf = len(scale_factors)
@@ -109,9 +107,7 @@ def _apply_mitigation(
             for i in range(len(running_sum)):
                 running_sum[i] += result[i]
 
-    expvals = (
-        [v / n_repeats for v in running_sum] if n_repeats > 1 else running_sum
-    )
+    expvals = [v / n_repeats for v in running_sum] if n_repeats > 1 else running_sum
 
     if clip:
         expvals = _clip_expvals(expvals)
