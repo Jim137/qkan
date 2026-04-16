@@ -77,30 +77,37 @@ def _apply_mitigation(
     n_repeats = mitigation.get("n_repeats", 1)
     clip = mitigation.get("clip_expvals", False)
 
-    all_repeat_results = []
-    for _ in range(n_repeats):
-        if zne_config:
-            scale_factors = zne_config.get("scale_factors", [1, 3, 5])
-            # Run at each noise scale
+    scale_factors = zne_config.get("scale_factors", [1, 3, 5]) if zne_config else None
+    # Precompute ZNE weights once (they don't change across repeats)
+    if scale_factors:
+        n_sf = len(scale_factors)
+        zne_weights = []
+        for i in range(n_sf):
+            w = 1.0
+            for j in range(n_sf):
+                if j != i:
+                    w *= -scale_factors[j] / (scale_factors[i] - scale_factors[j])
+            zne_weights.append(w)
+
+    running_sum: list = []
+    for rep in range(n_repeats):
+        if scale_factors:
             scaled_results = [run_fn(sf) for sf in scale_factors]
-            # Richardson extrapolate per circuit
             n_circuits = len(scaled_results[0])
-            extrapolated = [
-                _richardson_extrapolate(scale_factors, [sr[i] for sr in scaled_results])
+            result = [
+                sum(zne_weights[s] * scaled_results[s][i] for s in range(n_sf))
                 for i in range(n_circuits)
             ]
-            all_repeat_results.append(extrapolated)
         else:
-            all_repeat_results.append(run_fn(1))
+            result = run_fn(1)
 
-    # Average across repeats
-    n_circuits = len(all_repeat_results[0])
-    if n_repeats > 1:
-        expvals = [
-            sum(r[i] for r in all_repeat_results) / n_repeats for i in range(n_circuits)
-        ]
-    else:
-        expvals = all_repeat_results[0]
+        if rep == 0:
+            running_sum = list(result)
+        else:
+            for i in range(len(running_sum)):
+                running_sum[i] += result[i]
+
+    expvals = [v / n_repeats for v in running_sum] if n_repeats > 1 else running_sum
 
     if clip:
         expvals = _clip_expvals(expvals)

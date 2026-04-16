@@ -1,0 +1,122 @@
+name: ~Build wheel template
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        required: true
+        type: string
+      python-version:
+        required: true
+        type: string
+      cuda-version:
+        required: true
+        type: string
+      torch-version:
+        required: true
+        type: string
+      cxx11_abi:
+        required: true
+        type: string
+      upload-to-release:
+        required: false
+        type: boolean
+        default: false
+      release-version:
+        required: false
+        type: string
+
+defaults:
+  run:
+    shell: bash -x -e -u -o pipefail {0}
+
+jobs:
+  build-wheel:
+    runs-on: ${{ inputs.runs-on }}
+    name: Build (${{ inputs.python-version }}-cu${{ inputs.cuda-version }}-torch${{ inputs.torch-version }}-abi${{ inputs.cxx11_abi }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.release-version }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Set version variables
+        run: |
+          echo "MATRIX_CUDA_VERSION=$(echo ${{ inputs.cuda-version }} | awk -F \. '{print $1 $2}')" >> $GITHUB_ENV
+          echo "MATRIX_TORCH_VERSION=$(echo ${{ inputs.torch-version }} | awk -F \. '{print $1 "." $2}')" >> $GITHUB_ENV
+          echo "WHEEL_CUDA_VERSION=$(echo ${{ inputs.cuda-version }} | awk -F \. '{print $1}')" >> $GITHUB_ENV
+          echo "MATRIX_PYTHON_VERSION=$(echo ${{ inputs.python-version }} | awk -F \. '{print $1 $2}')" >> $GITHUB_ENV
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Install CUDA ${{ inputs.cuda-version }}
+        uses: Jimver/cuda-toolkit@v0.2.30
+        with:
+          cuda: ${{ inputs.cuda-version }}
+          linux-local-args: '["--toolkit"]'
+          method: "network"
+          sub-packages: '["nvcc"]'
+
+      - name: Install PyTorch ${{ inputs.torch-version }}
+        run: |
+          pip install --upgrade pip
+          pip install typing-extensions==4.12.2
+          # Pick highest PyTorch wheel CUDA version that doesn't exceed system CUDA
+          export TORCH_CUDA_VERSION=$(python -c "from os import environ as env; \
+            available = { \
+              '2.6': [118, 124, 126], \
+              '2.7': [118, 126, 128], \
+              '2.8': [126, 128, 129], \
+              '2.9': [126, 128, 130], \
+              '2.10': [126, 128, 130], \
+            }[env['MATRIX_TORCH_VERSION']]; \
+            sys_cuda = int(env['MATRIX_CUDA_VERSION']); \
+            print(max(v for v in available if v <= sys_cuda))" \
+          )
+          pip install --no-cache-dir torch==${{ inputs.torch-version }} \
+            --index-url https://download.pytorch.org/whl/cu${TORCH_CUDA_VERSION}
+          nvcc --version
+          python -c "import torch; print('PyTorch:', torch.__version__, 'CUDA:', torch.version.cuda)"
+
+      - name: Build wheel
+        run: |
+          pip install setuptools==75.8.0 ninja packaging wheel
+          export NVCC_THREADS=2
+          export QKAN_FORCE_BUILD=TRUE
+          export CUTLASS_PATH=""  # auto-download via setup.py
+
+          pip wheel --no-build-isolation --no-deps -w dist .
+
+          # Rename wheel with version tag
+          tmpname=cu${WHEEL_CUDA_VERSION}torch${MATRIX_TORCH_VERSION}cxx11abi${{ inputs.cxx11_abi }}
+          wheel_name=$(ls dist/*whl | xargs -n 1 basename | sed "s/-/+$tmpname-/2")
+          ls dist/*whl | xargs -I {} mv {} dist/${wheel_name}
+          echo "wheel_name=${wheel_name}" >> $GITHUB_ENV
+          ls -lh dist/
+
+      - name: Get Release
+        if: inputs.upload-to-release
+        id: get_release
+        uses: joutvhu/get-release@v1
+        with:
+          tag_name: ${{ inputs.release-version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to Release
+        if: inputs.upload-to-release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_release.outputs.upload_url }}
+          asset_path: ./dist/${{ env.wheel_name }}
+          asset_name: ${{ env.wheel_name }}
+          asset_content_type: application/*

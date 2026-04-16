@@ -57,6 +57,24 @@ except ImportError:
 
 from ._mitigation import _apply_mitigation
 
+
+def _configure_estimator(rt_estimator, shots, resilience_level, twirling):
+    """Apply shots, resilience, and twirling options to an EstimatorV2."""
+    if shots is not None:
+        rt_estimator.options.default_shots = shots
+    if resilience_level is not None:
+        rt_estimator.options.resilience_level = resilience_level
+    if twirling is not None:
+        if twirling.get("enable_gates"):
+            rt_estimator.options.twirling.enable_gates = True
+        if twirling.get("enable_measure"):
+            rt_estimator.options.twirling.enable_measure = True
+        if twirling.get("num_randomizations") is not None:
+            rt_estimator.options.twirling.num_randomizations = twirling[
+                "num_randomizations"
+            ]
+
+
 # ---------------------------------------------------------------------------
 # Qiskit circuit builders
 # ---------------------------------------------------------------------------
@@ -397,8 +415,9 @@ def _qiskit_run_parallel(
 
     if estimator is not None:
         for start in range(0, total, n_qubits):
-            batch_circuits = circuits[start : start + n_qubits]
-            chunk_size = len(batch_circuits)
+            end = min(start + n_qubits, total)
+            batch_circuits = circuits[start:end]
+            chunk_size = end - start
             all_chunk_sizes.append(chunk_size)
             packed_qc = _build_qiskit_parallel_circuit(batch_circuits)
             chunk_obs = _make_parallel_observables(chunk_size)
@@ -415,23 +434,12 @@ def _qiskit_run_parallel(
             backend=backend, optimization_level=optimization_level
         )
         rt_estimator = Estimator(mode=backend)
-        if shots is not None:
-            rt_estimator.options.default_shots = shots
-        if resilience_level is not None:
-            rt_estimator.options.resilience_level = resilience_level
-        if twirling is not None:
-            if twirling.get("enable_gates"):
-                rt_estimator.options.twirling.enable_gates = True
-            if twirling.get("enable_measure"):
-                rt_estimator.options.twirling.enable_measure = True
-            if twirling.get("num_randomizations") is not None:
-                rt_estimator.options.twirling.num_randomizations = twirling[
-                    "num_randomizations"
-                ]
+        _configure_estimator(rt_estimator, shots, resilience_level, twirling)
 
         for start in range(0, total, n_qubits):
-            batch_circuits = circuits[start : start + n_qubits]
-            chunk_size = len(batch_circuits)
+            end = min(start + n_qubits, total)
+            batch_circuits = circuits[start:end]
+            chunk_size = end - start
             all_chunk_sizes.append(chunk_size)
             packed_qc = _build_qiskit_parallel_circuit(batch_circuits)
             isa_qc = pm.run(packed_qc)
@@ -511,27 +519,27 @@ def _qiskit_evaluate(
     observables = []
     pauli_z = SparsePauliOp.from_list([("Z", 1.0)])
 
+    # Pre-convert theta (batch-independent) and x to Python lists
+    theta_lists = {
+        (o, i): theta_np[o, i].reshape(-1).tolist()
+        for o in range(out_dim)
+        for i in range(in_dim)
+    }
+    x_py = x_np.tolist()
+    enc_py = encoded_x_np.tolist() if encoded_x_np is not None else None
+
     for b in range(batch):
         for o in range(out_dim):
             for i in range(in_dim):
+                t = theta_lists[(o, i)]
+                enc_vals = enc_py[b][o][i] if enc_py is not None else None
                 if ansatz in ("pz_encoding", "pz"):
-                    t = theta_np[o, i].reshape(-1).tolist()
-                    enc_vals = None
-                    if encoded_x_np is not None:
-                        enc_vals = encoded_x_np[b, o, i].tolist()
-                    qc = _build_qiskit_pz_circuit(float(x_np[b, i]), t, reps, enc_vals)
+                    qc = _build_qiskit_pz_circuit(x_py[b][i], t, reps, enc_vals)
                 elif ansatz in ("rpz_encoding", "rpz"):
-                    t = theta_np[o, i].reshape(-1).tolist()
-                    enc_vals = encoded_x_np[b, o, i].tolist()  # type: ignore
+                    assert enc_vals is not None
                     qc = _build_qiskit_rpz_circuit(enc_vals, t, reps)
                 elif ansatz == "real":
-                    t = theta_np[o, i].reshape(-1).tolist()
-                    enc_vals = None
-                    if encoded_x_np is not None:
-                        enc_vals = encoded_x_np[b, o, i].tolist()
-                    qc = _build_qiskit_real_circuit(
-                        float(x_np[b, i]), t, reps, enc_vals
-                    )
+                    qc = _build_qiskit_real_circuit(x_py[b][i], t, reps, enc_vals)
                 else:
                     raise NotImplementedError(
                         f"Ansatz '{ansatz}' not supported by qiskit_solver"
@@ -542,6 +550,22 @@ def _qiskit_evaluate(
     # Execute via the appropriate Estimator
     max_pubs = config.get("max_pubs_per_job", 0)
     mitigation = config.get("mitigation", {})
+
+    # Pre-build resources that don't change across ZNE/repeat calls
+    _rl = config.get("resilience_level")
+    _tw = config.get("twirling")
+    _pm = None
+    _rt_est = None
+    if (
+        backend is not None
+        and estimator is None
+        and not (parallel_qubits and parallel_qubits > 1)
+    ):
+        _pm = generate_preset_pass_manager(
+            backend=backend, optimization_level=optimization_level
+        )
+        _rt_est = Estimator(mode=backend)
+        _configure_estimator(_rt_est, shots, _rl, _tw)
 
     def _run_qiskit(scale_factor=1):
         run_circuits = (
@@ -558,37 +582,22 @@ def _qiskit_evaluate(
                 optimization_level,
                 shots,
                 max_pubs_per_job=max_pubs,
-                resilience_level=config.get("resilience_level"),
-                twirling=config.get("twirling"),
+                resilience_level=_rl,
+                twirling=_tw,
             )
         elif estimator is not None:
             pubs = list(zip(run_circuits, observables))
             job = estimator.run(pubs)
             result = job.result()
             return [float(r.data.evs) for r in result]
-        elif backend is not None:
-            pm = generate_preset_pass_manager(
-                backend=backend, optimization_level=optimization_level
-            )
-            isa_circuits = pm.run(run_circuits)
+        elif _rt_est is not None:
+            isa_circuits = _pm.run(run_circuits)
             isa_observables = [
                 obs.apply_layout(qc.layout)
                 for obs, qc in zip(observables, isa_circuits)
             ]
-            rt_estimator = Estimator(mode=backend)
-            if shots is not None:
-                rt_estimator.options.default_shots = shots
-            rl = config.get("resilience_level")
-            tw = config.get("twirling")
-            if rl is not None:
-                rt_estimator.options.resilience_level = rl
-            if tw is not None:
-                if tw.get("enable_gates"):
-                    rt_estimator.options.twirling.enable_gates = True
-                if tw.get("enable_measure"):
-                    rt_estimator.options.twirling.enable_measure = True
             pubs = list(zip(isa_circuits, isa_observables))
-            job = rt_estimator.run(pubs)
+            job = _rt_est.run(pubs)
             result = job.result()
             return [float(r.data.evs) for r in result]
         else:

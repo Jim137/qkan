@@ -38,9 +38,11 @@ from tqdm import tqdm  # type: ignore
 
 from .info import get_dist_info, print0, print_version
 from .solver import (
+    _CUTE_AVAILABLE,
     _CUTILE_AVAILABLE,
     _FLASH_AVAILABLE,
     cudaq_solver,
+    cute_exact_solver,
     cutile_flash_exact_solver,
     cutn_solver,
     flash_exact_solver,
@@ -124,6 +126,7 @@ class QKANLayer(nn.Module):
                 "flash",
                 "cutn",
                 "tn",
+                "cute",
                 "cutile",
                 "qiskit",
                 "cudaq",
@@ -172,6 +175,7 @@ class QKANLayer(nn.Module):
                 "flash",
                 "cutn",
                 "tn",
+                "cute",
                 "cutile",
                 "qiskit",
                 "cudaq",
@@ -186,6 +190,19 @@ class QKANLayer(nn.Module):
         self.is_batchnorm = is_batchnorm
         self.fast_measure = fast_measure
         self.seed = seed
+        # Flash / cutile / cute solvers use real-valued Triton/CUDA kernels and
+        # cannot operate on complex dtypes.  Transparently map complex → real so
+        # users can keep the default ``c_dtype=torch.complex64`` without error.
+        if solver in ("flash", "cutile", "cute") and c_dtype in (
+            torch.complex64,
+            torch.complex128,
+        ):
+            _complex_to_real = {
+                torch.complex64: torch.float32,
+                torch.complex128: torch.float64,
+            }
+            c_dtype = _complex_to_real[c_dtype]
+
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
 
@@ -446,6 +463,26 @@ class QKANLayer(nn.Module):
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
             ).to(self.p_dtype)
+        elif self.solver == "cute":
+            if not _CUTE_AVAILABLE:
+                raise ImportError(
+                    "CuTe DSL solver requires CUTLASS headers. "
+                    "Set CUTLASS_PATH env var or install CUTLASS."
+                )
+            postacts = cute_exact_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
         elif self.solver == "qiskit":
             postacts = qiskit_solver(
                 x,
@@ -615,6 +652,26 @@ class QKANLayer(nn.Module):
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
             ).to(self.p_dtype)
+        elif self.solver == "cute":
+            if not _CUTE_AVAILABLE:
+                raise ImportError(
+                    "CuTe DSL solver requires CUTLASS headers. "
+                    "Set CUTLASS_PATH env var or install CUTLASS."
+                )
+            postacts = cute_exact_solver(
+                x,
+                self.theta,
+                self.preacts_weight,
+                self.preacts_bias,
+                self.reps,
+                device=self.device,
+                ansatz=self.ansatz,
+                group=self.group,
+                preacts_trainable=self.preact_trainable,
+                fast_measure=self.fast_measure,
+                out_dim=self.out_dim,
+                dtype=self.c_dtype,
+            ).to(self.p_dtype)
         else:
             raise NotImplementedError()
         x_new = (
@@ -742,6 +799,7 @@ class QKAN(nn.Module):
                 "flash",
                 "cutn",
                 "tn",
+                "cute",
                 "cutile",
                 "qiskit",
                 "cudaq",
@@ -839,6 +897,7 @@ class QKAN(nn.Module):
                 "flash",
                 "cutn",
                 "tn",
+                "cute",
                 "cutile",
                 "qiskit",
                 "cudaq",

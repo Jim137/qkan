@@ -1,28 +1,150 @@
-name: build
+# Build wheels and deploy — follows flash-attention's publish.yml.
+#
+# Triggered by pushing a tag v*. This will:
+# 1. Create a GitHub release
+# 2. Build CUDA wheels for all supported Python/CUDA/PyTorch combos
+# 3. Upload wheels to the GitHub release
+# 4. Publish sdist to PyPI
+# 5. Deploy wheel index to GitHub Pages (Cloudflare: qkan.jimq.cc/whl/)
+#
+# Install pre-built:
+#   pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/
+
+name: Build wheels and deploy
+
 on:
-  release:
-    types: [created]
+  create:
+    tags:
+      - v*
+
 jobs:
-  pypi-publish:
-    name: Upload release to PyPI
+  # ── Step 1: Create GitHub Release ──────────────────────────────────
+  setup_release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      release-version: ${{ steps.extract_branch.outputs.branch }}
+    steps:
+      - name: Get tag
+        id: extract_branch
+        run: echo "branch=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create ${{ steps.extract_branch.outputs.branch }} --repo $GITHUB_REPOSITORY --title ${{ steps.extract_branch.outputs.branch }} --generate-notes
+
+  # ── Step 2: Build CUDA wheels ──────────────────────────────────────
+  build_wheels:
+    name: Build Wheel
+    needs: setup_release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-22.04-arm]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        torch-version: ["2.6.0", "2.7.1", "2.8.0", "2.9.1", "2.10.0"]
+        cuda-version: ["12.9.1", "13.0.1"]
+        cxx11_abi: ["FALSE", "TRUE"]
+        exclude:
+          # CUDA 13.0 only supported by PyTorch 2.9+
+          - torch-version: "2.6.0"
+            cuda-version: "13.0.1"
+          - torch-version: "2.7.1"
+            cuda-version: "13.0.1"
+          - torch-version: "2.8.0"
+            cuda-version: "13.0.1"
+          # PyTorch 2.7+ uses CXX11_ABI=1 by default
+          - torch-version: "2.7.1"
+            cxx11_abi: "FALSE"
+          - torch-version: "2.8.0"
+            cxx11_abi: "FALSE"
+          - torch-version: "2.9.1"
+            cxx11_abi: "FALSE"
+          - torch-version: "2.10.0"
+            cxx11_abi: "FALSE"
+          # No aarch64 PyTorch wheels for 2.6.0
+          - torch-version: "2.6.0"
+            os: ubuntu-22.04-arm
+    uses: ./.github/workflows/_build.yml
+    with:
+      runs-on: ${{ matrix.os }}
+      python-version: ${{ matrix.python-version }}
+      cuda-version: ${{ matrix.cuda-version }}
+      torch-version: ${{ matrix.torch-version }}
+      cxx11_abi: ${{ matrix.cxx11_abi }}
+      release-version: ${{ needs.setup_release.outputs.release-version }}
+      upload-to-release: true
+
+  # ── Step 3: Publish sdist to PyPI ──────────────────────────────────
+  publish_package:
+    name: Publish to PyPI
+    needs: [build_wheels]
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/qkan
     permissions:
-      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build setuptools wheel
-    - name: Build source tar
-      run: |
-        python -m build
-    - name: Publish package distributions to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install ninja packaging wheel setuptools==75.8.0
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Build sdist
+        env:
+          QKAN_SKIP_CUDA_BUILD: "TRUE"
+        run: python setup.py sdist --dist-dir=dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  # ── Step 4: Deploy wheel index to GitHub Pages ─────────────────────
+  publish_wheel_index:
+    name: Deploy wheel index
+    needs: [build_wheels, setup_release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
+
+      - name: Create index skeleton
+        run: mkdir -p gh-pages/whl/qkan
+
+      - name: Download wheels from release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ needs.setup_release.outputs.release-version }}" \
+            --repo $GITHUB_REPOSITORY --pattern "*.whl" --dir gh-pages/whl/qkan/ || true
+          echo "Downloaded $(ls gh-pages/whl/qkan/*.whl 2>/dev/null | wc -l) wheels"
+
+      - name: Build PEP 503 index
+        run: |
+          cd gh-pages/whl
+          # Root index
+          printf '<!DOCTYPE html><html><body>\n<a href="qkan/">qkan</a>\n</body></html>\n' > index.html
+          # Package index with sha256
+          cd qkan
+          echo '<!DOCTYPE html><html><body>' > index.html
+          for whl in *.whl; do
+            [ -f "$whl" ] && echo "<a href=\"${whl}#sha256=$(sha256sum "$whl" | cut -d' ' -f1)\">${whl}</a><br>" >> index.html
+          done
+          echo '</body></html>' >> index.html
+          # Cloudflare headers
+          cd ../..
+          printf '/whl/*\n  Content-Type: application/octet-stream\n  Access-Control-Allow-Origin: *\n' > _headers
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: gh-pages
+          keep_files: true

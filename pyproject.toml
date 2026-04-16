@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=49.4.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -75,8 +75,12 @@ doc = [
     "torchvision",
 ]
 
+cute = [
+    "ninja",
+]
+
 gpu = [
-    "qkan[flash,cutile,cutn]",
+    "qkan[flash,cutile,cutn,cute]",
 ]
 
 all = ["qkan[gpu,qml,dev,doc]"]
