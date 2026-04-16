@@ -218,15 +218,18 @@ def cutile_flash_exact_solver(
             preacts_bias = preacts_bias.repeat(repeat_out, repeat_in, 1)[:, :in_dim, :]
 
     # Check if gradients are needed (training)
-    needs_grad = theta.requires_grad or x.requires_grad
-    if _needs_encoded_x:
-        needs_grad = (
-            needs_grad or preacts_weight.requires_grad or preacts_bias.requires_grad
-        )
-    elif preacts_trainable:
-        needs_grad = (
-            needs_grad or preacts_weight.requires_grad or preacts_bias.requires_grad
-        )
+    # Bypass autograd.Function wrapper when torch.no_grad() / inference_mode
+    # is active. Saves ~6-10 μs of Python overhead per inference forward.
+    if not torch.is_grad_enabled():
+        needs_grad = False
+    else:
+        needs_grad = theta.requires_grad or x.requires_grad
+        if _needs_encoded_x or preacts_trainable:
+            needs_grad = (
+                needs_grad
+                or preacts_weight.requires_grad
+                or preacts_bias.requires_grad
+            )
 
     if needs_grad:
         return _CuTileFlashFunction.apply(

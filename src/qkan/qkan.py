@@ -308,6 +308,13 @@ class QKANLayer(nn.Module):
         if self.is_batchnorm:
             self.bn = nn.BatchNorm1d(self.in_dim, device=device, dtype=p_dtype)
 
+        # -- inference-mode cached effective weights --
+        # Populated when the module enters eval() mode; invalidated in train().
+        # Stored as plain attributes (not buffers) so state_dict isn't polluted.
+        self._eff_pw: Optional[torch.Tensor] = None
+        self._eff_base_w: Optional[torch.Tensor] = None
+        self._bias_sum: Optional[torch.Tensor] = None
+
         self._x0: Optional[torch.Tensor] = None
 
         try:
@@ -351,6 +358,23 @@ class QKANLayer(nn.Module):
                 param.data = param.to(device)
         return super(QKANLayer, self).to(*args, **kwargs)
 
+    def train(self, mode: bool = True):
+        ret = super().train(mode)
+        if mode:
+            # Invalidate inference caches (they become stale once params update)
+            self._eff_pw = None
+            self._eff_base_w = None
+            self._bias_sum = None
+        else:
+            # Fold mask into postact_weights and base_weight, and collapse the
+            # postact_bias contribution into a (O,) bias vector that can ride
+            # along with the base F.linear. Saves ~3 elementwise kernels/forward.
+            with torch.no_grad():
+                self._eff_pw = self.postact_weights * self.mask
+                self._eff_base_w = self.base_weight * self.mask
+                self._bias_sum = (self.postact_bias * self._eff_pw).sum(dim=1)
+        return ret
+
     @property
     def param_size(self):
         if hasattr(self, "_param_size"):
@@ -377,9 +401,10 @@ class QKANLayer(nn.Module):
 
         if self.is_batchnorm:
             x = self.bn(x)
-        base_output = torch.einsum(
-            "oi,bi->boi", self.base_weight, self.base_activation(x)
-        )
+        # Defer base contribution to the epilogue: avoids materializing the
+        # (B, O, I) outer product and lets cublas compute the base path via
+        # a single matmul (base_weight * mask already folds the pruning mask).
+        base_input = self.base_activation(x)
         if self.solver == "qml":
             postacts = torch.zeros(
                 batch, self.out_dim, self.in_dim, dtype=self.p_dtype
@@ -530,15 +555,19 @@ class QKANLayer(nn.Module):
             raise NotImplementedError()
         if postacts.shape[1] != self.out_dim:
             postacts = postacts.expand(-1, self.out_dim, -1)
-        x = torch.sum(
-            (
-                (postacts + self.postact_bias) * self.postact_weights[None, :, :]
-                + base_output
-            )
-            * self.mask[None, :, :],
-            dim=2,
-        )
-        return x
+        # Epilogue: sum_i( ((postacts + pb) * pw + base_w * silu_x) * mask )
+        #        = sum_i( postacts * (pw * mask) ) + sum_i( pb * pw * mask )
+        #          + F.linear(silu_x, base_w * mask)
+        # — one fused matmul replaces the (B, O, I) einsum + sum along i, and
+        #   the scalar bias_sum rides along as F.linear's bias arg.
+        if self._eff_pw is not None:
+            main = (postacts * self._eff_pw).sum(dim=2)
+            base = F.linear(base_input, self._eff_base_w, bias=self._bias_sum)
+        else:
+            eff_pw = self.postact_weights * self.mask
+            main = torch.sum((postacts + self.postact_bias) * eff_pw, dim=2)
+            base = F.linear(base_input, self.base_weight * self.mask)
+        return main + base
 
     def reset_parameters(self):
         """
