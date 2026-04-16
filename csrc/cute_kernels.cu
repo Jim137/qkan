@@ -22,6 +22,7 @@
 #include <torch/extension.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <ATen/cuda/CUDAContext.h>
 
 #include <cute/tensor.hpp>
 #include <cutlass/float8.h>
@@ -1164,26 +1165,31 @@ static int select_block_b(int n_oi, int batch, int base = 32) {
 }
 
 // Forward kernels: template<typename IOT, int BLOCK_B>
+// Launch on the current CUDA stream (at::cuda::getCurrentCUDAStream) so the
+// kernel is captured correctly by torch.cuda.CUDAGraph. Without the explicit
+// stream the launch lands on the null stream and CUDA graphs silently drop it.
 #define DISPATCH_FWD(block_b, IOT_TYPE, KERNEL, grid, smem, ...) \
     do { \
+        auto stream = at::cuda::getCurrentCUDAStream(); \
         switch (block_b) { \
-            case 32:  KERNEL<IOT_TYPE, 32> <<<grid, 32,  smem>>>(__VA_ARGS__); break; \
-            case 64:  KERNEL<IOT_TYPE, 64> <<<grid, 64,  smem>>>(__VA_ARGS__); break; \
-            case 128: KERNEL<IOT_TYPE, 128><<<grid, 128, smem>>>(__VA_ARGS__); break; \
-            case 256: KERNEL<IOT_TYPE, 256><<<grid, 256, smem>>>(__VA_ARGS__); break; \
-            default:  KERNEL<IOT_TYPE, 32> <<<grid, 32,  smem>>>(__VA_ARGS__); break; \
+            case 32:  KERNEL<IOT_TYPE, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
+            case 64:  KERNEL<IOT_TYPE, 64> <<<grid, 64,  smem, stream>>>(__VA_ARGS__); break; \
+            case 128: KERNEL<IOT_TYPE, 128><<<grid, 128, smem, stream>>>(__VA_ARGS__); break; \
+            case 256: KERNEL<IOT_TYPE, 256><<<grid, 256, smem, stream>>>(__VA_ARGS__); break; \
+            default:  KERNEL<IOT_TYPE, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
         } \
     } while(0)
 
 // Backward kernels: template<typename StateT, int BLOCK_B>
 #define DISPATCH_BWD(block_b, STATE_T, KERNEL, grid, smem, ...) \
     do { \
+        auto stream = at::cuda::getCurrentCUDAStream(); \
         switch (block_b) { \
-            case 32:  KERNEL<STATE_T, 32> <<<grid, 32,  smem>>>(__VA_ARGS__); break; \
-            case 64:  KERNEL<STATE_T, 64> <<<grid, 64,  smem>>>(__VA_ARGS__); break; \
-            case 128: KERNEL<STATE_T, 128><<<grid, 128, smem>>>(__VA_ARGS__); break; \
-            case 256: KERNEL<STATE_T, 256><<<grid, 256, smem>>>(__VA_ARGS__); break; \
-            default:  KERNEL<STATE_T, 32> <<<grid, 32,  smem>>>(__VA_ARGS__); break; \
+            case 32:  KERNEL<STATE_T, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
+            case 64:  KERNEL<STATE_T, 64> <<<grid, 64,  smem, stream>>>(__VA_ARGS__); break; \
+            case 128: KERNEL<STATE_T, 128><<<grid, 128, smem, stream>>>(__VA_ARGS__); break; \
+            case 256: KERNEL<STATE_T, 256><<<grid, 256, smem, stream>>>(__VA_ARGS__); break; \
+            default:  KERNEL<STATE_T, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
         } \
     } while(0)
 

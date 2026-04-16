@@ -224,16 +224,17 @@ def cute_exact_solver(
             ]
             preacts_bias = preacts_bias.repeat(repeat_out, repeat_in, 1)[:, :in_dim, :]
 
-    # Check if gradients are needed (training)
-    needs_grad = theta.requires_grad or x.requires_grad
-    if _needs_encoded_x:
-        needs_grad = (
-            needs_grad or preacts_weight.requires_grad or preacts_bias.requires_grad
-        )
-    elif preacts_trainable:
-        needs_grad = (
-            needs_grad or preacts_weight.requires_grad or preacts_bias.requires_grad
-        )
+    # Check if gradients are needed. Under torch.no_grad() / inference_mode,
+    # skip the autograd.Function wrapper to avoid its overhead even when
+    # parameter tensors still have requires_grad=True.
+    if not torch.is_grad_enabled():
+        needs_grad = False
+    else:
+        needs_grad = theta.requires_grad or x.requires_grad
+        if _needs_encoded_x or preacts_trainable:
+            needs_grad = (
+                needs_grad or preacts_weight.requires_grad or preacts_bias.requires_grad
+            )
 
     if needs_grad:
         return _CuTeFunction.apply(
