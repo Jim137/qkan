@@ -1,9 +1,3 @@
-/whl/index.html
-  Content-Type: text/html; charset=utf-8
-  Access-Control-Allow-Origin: *
-/whl/*/index.html
-  Content-Type: text/html; charset=utf-8
-  Access-Control-Allow-Origin: *
 /whl/*.whl
   Content-Type: application/octet-stream
   Access-Control-Allow-Origin: *
