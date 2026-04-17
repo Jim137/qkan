@@ -62,7 +62,11 @@ jobs:
           cuda: ${{ inputs.cuda-version }}
           linux-local-args: '["--toolkit"]'
           method: "network"
-          sub-packages: '["nvcc"]'
+          # CUDA 13 split the dev headers out of the nvcc sub-package.
+          # torch's ATen/cuda/CUDAContextLight.h includes cusparse.h etc.,
+          # so we need the math-library dev headers explicitly. CUDA 12
+          # keeps the minimal nvcc-only list (that's what was known to work).
+          sub-packages: ${{ startsWith(inputs.cuda-version, '13.') && '["nvcc", "cudart-dev", "cusparse-dev", "cublas-dev", "cufft-dev", "curand-dev", "cusolver-dev", "nvrtc-dev"]' || '["nvcc"]' }}
 
       - name: Install PyTorch ${{ inputs.torch-version }}
         run: |
