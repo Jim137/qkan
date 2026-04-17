@@ -62,16 +62,14 @@ jobs:
           cuda: ${{ inputs.cuda-version }}
           linux-local-args: '["--toolkit"]'
           method: "network"
-          # CUDA 13 split the math-library dev headers out of the nvcc
-          # sub-package. torch's ATen/cuda/CUDAContextLight.h includes
-          # cusparse.h etc., so we need them explicitly. NVIDIA packages them
-          # as libXXX-dev-13-0 (no cuda- prefix), which in Jimver's action
-          # maps to `non-cuda-sub-packages`. cudart-dev / nvrtc-dev keep the
-          # cuda- prefix so stay in sub-packages. CUDA 12 keeps the minimal
-          # nvcc-only list — nvcc there is a broader meta-package that
-          # already pulls in what torch needs.
-          sub-packages: ${{ startsWith(inputs.cuda-version, '13.') && '["nvcc", "cudart-dev", "nvrtc-dev"]' || '["nvcc"]' }}
-          non-cuda-sub-packages: ${{ startsWith(inputs.cuda-version, '13.') && '["libcusparse-dev", "libcublas-dev", "libcufft-dev", "libcurand-dev", "libcusolver-dev"]' || '[]' }}
+          # torch's ATen/cuda/CUDAContextLight.h includes cusparse.h / cublas.h
+          # etc., so the math-library dev headers must be on the include path.
+          # NVIDIA packages them as libXXX-dev-<ver> (no cuda- prefix) in both
+          # CUDA 12 and CUDA 13 repos, which in Jimver's action maps to
+          # `non-cuda-sub-packages`. cudart-dev / nvrtc-dev have the cuda-
+          # prefix and stay in sub-packages.
+          sub-packages: '["nvcc", "cudart-dev", "nvrtc-dev"]'
+          non-cuda-sub-packages: '["libcusparse-dev", "libcublas-dev", "libcufft-dev", "libcurand-dev", "libcusolver-dev"]'
 
       - name: Install PyTorch ${{ inputs.torch-version }}
         run: |
