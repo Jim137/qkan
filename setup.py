@@ -305,7 +305,12 @@ if not SKIP_CUDA_BUILD:
             BUILD_CUTE = False
 
     # Check for CUDA version mismatch (common in build-isolation environments
-    # where pip installs a torch with a different CUDA than the system nvcc)
+    # where pip installs a torch with a different CUDA than the system nvcc).
+    # Under QKAN_FORCE_BUILD=TRUE (CI), we trust the caller: a newer nvcc can
+    # target the architectures torch was built against. Only warn in that case,
+    # don't skip. Without FORCE_BUILD, skip → pure-Python fallback, which is
+    # the right behaviour for `pip install qkan` where torch's CUDA runtime
+    # and the system nvcc may legitimately differ.
     if BUILD_CUTE:
         try:
             import torch
@@ -314,10 +319,14 @@ if not SKIP_CUDA_BUILD:
                 torch_ver = int(torch_cuda.split(".")[0]) * 10 + int(torch_cuda.split(".")[1])
                 sys_ver = cuda_version[0] * 10 + cuda_version[1]
                 if torch_ver != sys_ver:
-                    print(f"[qkan] WARNING: System CUDA {cuda_version[0]}.{cuda_version[1]} "
-                          f"vs torch CUDA {torch_cuda} — skipping CuTe build "
-                          f"(use --no-build-isolation to match)")
-                    BUILD_CUTE = False
+                    msg = (f"[qkan] System CUDA {cuda_version[0]}.{cuda_version[1]} "
+                           f"vs torch CUDA {torch_cuda}")
+                    if FORCE_BUILD:
+                        print(f"{msg} — proceeding (QKAN_FORCE_BUILD=TRUE)")
+                    else:
+                        print(f"{msg} — skipping CuTe build "
+                              f"(use --no-build-isolation to match)")
+                        BUILD_CUTE = False
         except Exception:
             pass
 
