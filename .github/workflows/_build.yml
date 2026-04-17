@@ -92,12 +92,14 @@ jobs:
           export QKAN_FORCE_BUILD=TRUE
           export CUTLASS_PATH=""  # auto-download via setup.py
 
+          # Bake the local-version tag into the wheel metadata at build time
+          # so the filename and METADATA version match. pip >=22 rejects
+          # wheels whose filename version disagrees with the PKG-INFO version.
+          export QKAN_LOCAL_VERSION="cu${WHEEL_CUDA_VERSION}torch${MATRIX_TORCH_VERSION}cxx11abi${{ inputs.cxx11_abi }}"
+
           pip wheel --no-build-isolation --no-deps -w dist .
 
-          # Rename wheel with version tag
-          tmpname=cu${WHEEL_CUDA_VERSION}torch${MATRIX_TORCH_VERSION}cxx11abi${{ inputs.cxx11_abi }}
-          wheel_name=$(ls dist/*whl | xargs -n 1 basename | sed "s/-/+$tmpname-/2")
-          ls dist/*whl | xargs -I {} mv {} dist/${wheel_name}
+          wheel_name=$(ls dist/*whl | xargs -n 1 basename)
           echo "wheel_name=${wheel_name}" >> $GITHUB_ENV
           ls -lh dist/
 
