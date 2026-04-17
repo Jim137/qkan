@@ -138,9 +138,17 @@ jobs:
             [ -f "$whl" ] && echo "<a href=\"${whl}#sha256=$(sha256sum "$whl" | cut -d' ' -f1)\">${whl}</a><br>" >> index.html
           done
           echo '</body></html>' >> index.html
-          # Cloudflare headers
+          # Cloudflare headers: only override the wheels. Pip requests
+          # /whl/qkan/ (trailing slash, not index.html) so any broader rule
+          # like /whl/* also matches the directory and overrides its inferred
+          # text/html with octet-stream. Narrow the override to *.whl only
+          # and let Cloudflare auto-detect text/html from the .html extension.
           cd ../..
-          printf '/whl/*\n  Content-Type: application/octet-stream\n  Access-Control-Allow-Origin: *\n' > _headers
+          cat > _headers <<'EOF'
+          /whl/*.whl
+            Content-Type: application/octet-stream
+            Access-Control-Allow-Origin: *
+          EOF
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
