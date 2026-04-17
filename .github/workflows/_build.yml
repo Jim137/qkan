@@ -69,7 +69,9 @@ jobs:
           # `non-cuda-sub-packages`. cudart-dev / nvrtc-dev have the cuda-
           # prefix and stay in sub-packages.
           sub-packages: '["nvcc", "cudart-dev", "nvrtc-dev"]'
-          non-cuda-sub-packages: '["libcusparse-dev", "libcublas-dev", "libcufft-dev", "libcurand-dev", "libcusolver-dev"]'
+          # libnvjitlink-dev is needed at runtime: torch 2.7/2.8 arm64 wheels
+          # dynamically link libnvJitLink.so.12 but don't bundle or declare it.
+          non-cuda-sub-packages: '["libcusparse-dev", "libcublas-dev", "libcufft-dev", "libcurand-dev", "libcusolver-dev", "libnvjitlink-dev"]'
 
       - name: Install PyTorch ${{ inputs.torch-version }}
         run: |
@@ -89,11 +91,6 @@ jobs:
           )
           pip install --no-cache-dir torch==${{ inputs.torch-version }} \
             --index-url https://download.pytorch.org/whl/cu${TORCH_CUDA_VERSION}
-          # torch 2.7/2.8 arm64 wheels dynamically link libnvJitLink.so.12 at
-          # import time but don't declare nvidia-nvjitlink-cu12 as a Requires-
-          # Dist (only torch 2.9+ does). Install it explicitly from PyPI so
-          # `import torch` succeeds on arm64 runners.
-          pip install --no-cache-dir nvidia-nvjitlink-cu12 || true
           nvcc --version
           python -c "import torch; print('PyTorch:', torch.__version__, 'CUDA:', torch.version.cuda)"
 
