@@ -131,6 +131,92 @@ Key parameters:
 - ``fast_measure=False``: Required for real devices. Uses ``|alpha|^2 - |beta|^2`` (Born rule) instead of the quantum-inspired ``|alpha| - |beta|`` shortcut.
 - ``parallel_qubits``: Packs N independent single-qubit circuits onto N qubits of one multi-qubit job, reducing QPU submissions by ~Nx.
 - ``shots``: Number of measurement samples per circuit. More shots = less statistical noise.
+- ``initial_layout``: Controls which physical qubits receive the packed circuit (see below). Defaults to ``None`` (let the transpiler choose).
+
+
+Qubit-calibration layout
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Modern IBM devices have substantial per-qubit calibration variance — on
+a snapshot of ``FakeSherbrooke`` the best qubit has a readout error of
+1.1% and the worst 25.7%, a 23x spread. When the transpiler maps a
+packed N-qubit circuit onto physical qubits ``0..N-1`` (a common
+default), several poorly-calibrated qubits can end up in the mix. Per-edge
+variance dominates the QKAN fast-path output, and because ``rel MSE``
+scales as ``σ²``, a 6x higher mean noise across the selected set
+compounds to ~36x higher aggregate error.
+
+Fix: pin the packed circuit to the best-calibrated qubits via
+``initial_layout`` in ``solver_kwargs``.
+
+.. code-block:: python
+
+   from qkan.solver import best_qubits
+
+   layout = best_qubits(backend, 20)
+
+   model = QKAN(
+       [1, 2, 1], solver="qiskit", fast_measure=False,
+       solver_kwargs={
+           "backend": backend,
+           "shots": 1024,
+           "parallel_qubits": 20,
+           "initial_layout": layout,
+       },
+   )
+
+Alternatively, pass ``"auto"`` to let ``qiskit_solver`` compute the
+layout internally from the current backend calibration:
+
+.. code-block:: python
+
+   solver_kwargs={
+       "backend": backend,
+       "shots": 1024,
+       "parallel_qubits": 20,
+       "initial_layout": "auto",
+   }
+
+``best_qubits(backend, n)`` scores each physical qubit by
+
+.. math::
+
+   \mathrm{score}(q) = \mathrm{readout\_error}(q) +
+                        \mathrm{sx\_err}(q) +
+                        10^{-4} / \max(T_2(q)\,[\mu s],\, 1)
+
+and returns the ``n`` lowest-scoring qubit indices. Readout error
+dominates the sum; sx error breaks ties; short :math:`T_2` is penalised
+only slightly because QKAN's shallow single-qubit circuits aren't
+T2-sensitive.
+
+**Empirical impact.** Smoke test on ``FakeSherbrooke`` with a trained
+single-sample forecast, ``parallel_qubits=20``, ``shots=1024``:
+
++-----------------------------+--------------------------+
+| Layout                      | rel MSE vs noiseless ref |
++=============================+==========================+
+| ``parallel_qubits=1``       | 0.134%                   |
+| (single best qubit baseline)|                          |
++-----------------------------+--------------------------+
+| naive ``0..19``             | 5.218%                   |
++-----------------------------+--------------------------+
+| ``best_qubits(backend, 20)``| 0.127%                   |
++-----------------------------+--------------------------+
+
+The smart layout at ``parallel_qubits=20`` fully recovers the
+``parallel_qubits=1`` fidelity (a ~40x improvement over the naive
+layout) at identical QPU cost.
+
+**Caveats and scope.**
+
+- Real-backend calibration drifts over time; re-querying
+  ``best_qubits`` before each submission is cheap and recommended.
+- The helper assumes independent single-qubit circuits (the QKAN
+  ``parallel_qubits`` packing pattern). If you add 2-qubit gates, you
+  also need connectivity-aware routing.
+- Returning ``[]`` when ``backend.properties()`` is unavailable lets
+  callers keep ``initial_layout=None`` fallback semantics.
 
 
 Error Mitigation
