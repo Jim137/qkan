@@ -68,8 +68,11 @@ pip install qkan[gpu]
 To use the CuTe DSL solver (`solver="cute"`) with pre-built CUDA kernels:
 
 ```bash
-# Pre-built wheel (recommended — no compilation needed)
-pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/
+# Pre-built wheel (recommended — no compilation needed). Pick the CUDA
+# family matching the torch you already have installed:
+pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/cu12/
+# or, for CUDA 13:
+pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/cu13/
 
 # Or compile locally (auto-downloads CUTLASS headers if needed)
 pip install --no-build-isolation qkan[cute]
