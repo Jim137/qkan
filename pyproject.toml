@@ -33,8 +33,17 @@ cutile = [
     "cuda-tile",
 ]
 
+cutn-cu12 = [
+    "cuquantum-cu12",
+]
+
+cutn-cu13 = [
+    "cuquantum-cu13",
+]
+
+# Legacy alias — defaults to cu13 to match the [gpu] meta-extra.
 cutn = [
-    "cuquantum",
+    "qkan[cutn-cu13]",
 ]
 
 qml = [
@@ -75,12 +84,38 @@ doc = [
     "torchvision",
 ]
 
-cute = [
+# CuTe extras: pull NVIDIA runtime wheels matching the CUDA family the
+# pre-built `qkan._C` was linked against. The kernel itself only calls
+# cudart, but torch's ATen/cuda/CUDAContext.h transitively pulls in
+# cusparse / cublas, and torch 2.7/2.8 arm64 wheels dynamically link
+# libnvJitLink without bundling it — so we must declare these here.
+# Bare names: let pip pick the latest patch in the cu12/cu13 family.
+cute-cu12 = [
     "ninja",
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cuda-nvrtc-cu12",
+    "nvidia-cublas-cu12",
+    "nvidia-cusparse-cu12",
+    "nvidia-nvjitlink-cu12",
+]
+
+cute-cu13 = [
+    "ninja",
+    "nvidia-cuda-runtime-cu13",
+    "nvidia-cuda-nvrtc-cu13",
+    "nvidia-cublas-cu13",
+    "nvidia-cusparse-cu13",
+    "nvidia-nvjitlink-cu13",
+]
+
+# Legacy alias — defaults to cu13 to match the [gpu] meta-extra. Kept so
+# `pip install qkan[cute]` keeps working for older install scripts.
+cute = [
+    "qkan[cute-cu13]",
 ]
 
 gpu = [
-    "qkan[flash,cutile,cutn,cute]",
+    "qkan[flash,cutile,cutn-cu13,cute-cu13]",
 ]
 
 all = ["qkan[gpu,qml,dev,doc]"]

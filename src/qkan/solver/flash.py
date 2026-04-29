@@ -15,8 +15,9 @@
 
 import torch
 
+from ._base import QKANSolver, register
 from ._utils import _cast_grads_to_dtype
-from .torch_exact import torch_exact_solver
+from .exact import torch_exact_solver
 
 try:
     from ..fused_ops import (
@@ -281,3 +282,30 @@ def flash_exact_solver(
 # ---------------------------------------------------------------------------
 
 _SUPPORTED_CUTILE_ANSATZES = {"pz_encoding", "pz", "rpz_encoding", "rpz", "real"}
+
+
+class FlashSolver(QKANSolver):
+    """Triton-fused solver (registered as ``"flash"``)."""
+
+    name = "flash"
+
+    def __call__(
+        self,
+        x: torch.Tensor,
+        theta: torch.Tensor,
+        preacts_weight: torch.Tensor,
+        preacts_bias: torch.Tensor,
+        reps: int,
+        **kwargs,
+    ) -> torch.Tensor:
+        if not _FLASH_AVAILABLE:
+            raise ImportError(
+                "Triton is required for solver='flash'. "
+                "Install with: pip install triton"
+            )
+        return flash_exact_solver(
+            x, theta, preacts_weight, preacts_bias, reps, **kwargs
+        )
+
+
+register(FlashSolver())

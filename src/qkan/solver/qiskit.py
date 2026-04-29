@@ -22,6 +22,8 @@ from typing import Optional
 
 import torch
 
+from ._base import QKANSolver, register
+
 try:
     from qiskit import QuantumCircuit  # type: ignore
     from qiskit.quantum_info import SparsePauliOp  # type: ignore
@@ -717,3 +719,23 @@ def qiskit_solver(
         )
     else:
         return _qiskit_evaluate(x, theta, preacts_weight, preacts_bias, reps, config)
+
+
+class QiskitSolver(QKANSolver):
+    """Qiskit Runtime solver (registered as ``"qiskit"``)."""
+
+    name = "qiskit"
+
+    def __call__(
+        self,
+        x: torch.Tensor,
+        theta: torch.Tensor,
+        preacts_weight: torch.Tensor,
+        preacts_bias: torch.Tensor,
+        reps: int,
+        **kwargs,
+    ) -> torch.Tensor:
+        return qiskit_solver(x, theta, preacts_weight, preacts_bias, reps, **kwargs)
+
+
+register(QiskitSolver())

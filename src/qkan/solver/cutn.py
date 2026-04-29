@@ -18,7 +18,8 @@ import math
 import torch
 
 from ..torch_qc import TorchGates
-from .torch_exact import torch_exact_solver
+from ._base import QKANSolver, register
+from .exact import torch_exact_solver
 
 # cuQuantum / opt_einsum availability
 try:
@@ -425,3 +426,27 @@ def cutn_solver(
 # ---------------------------------------------------------------------------
 
 _SUPPORTED_FLASH_ANSATZES = {"pz_encoding", "pz", "rpz_encoding", "rpz", "real"}
+
+
+class CuTNSolver(QKANSolver):
+    """cuQuantum tensor-network solver (registered as ``"cutn"`` and ``"tn"``)."""
+
+    name = "cutn"
+
+    def __call__(
+        self,
+        x: torch.Tensor,
+        theta: torch.Tensor,
+        preacts_weight: torch.Tensor,
+        preacts_bias: torch.Tensor,
+        reps: int,
+        **kwargs,
+    ) -> torch.Tensor:
+        return cutn_solver(x, theta, preacts_weight, preacts_bias, reps, **kwargs)
+
+
+_cutn_solver_instance = CuTNSolver()
+register(_cutn_solver_instance)
+# "tn" is an alias for "cutn" — keep the legacy short key working
+_TN_ALIAS = type("CuTNSolverTn", (CuTNSolver,), {"name": "tn"})()
+register(_TN_ALIAS)

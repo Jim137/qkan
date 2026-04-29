@@ -15,8 +15,9 @@
 
 import torch
 
+from ._base import QKANSolver, register
 from ._utils import _cast_grads_to_dtype
-from .torch_exact import torch_exact_solver
+from .exact import torch_exact_solver
 
 try:
     from ..cutile_ops import (
@@ -274,3 +275,30 @@ def cutile_flash_exact_solver(
             )
         else:
             raise NotImplementedError
+
+
+class CuTileSolver(QKANSolver):
+    """cuTile (Tile Language) solver (registered as ``"cutile"``)."""
+
+    name = "cutile"
+
+    def __call__(
+        self,
+        x: torch.Tensor,
+        theta: torch.Tensor,
+        preacts_weight: torch.Tensor,
+        preacts_bias: torch.Tensor,
+        reps: int,
+        **kwargs,
+    ) -> torch.Tensor:
+        if not _CUTILE_AVAILABLE:
+            raise ImportError(
+                "cuda.tile is required for solver='cutile'. "
+                "Install with: pip install cuda-tile"
+            )
+        return cutile_flash_exact_solver(
+            x, theta, preacts_weight, preacts_bias, reps, **kwargs
+        )
+
+
+register(CuTileSolver())

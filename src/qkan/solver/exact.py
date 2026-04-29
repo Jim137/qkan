@@ -16,6 +16,7 @@
 import torch
 
 from ..torch_qc import StateVector, TorchGates
+from ._base import QKANSolver, register
 
 
 def torch_exact_solver(
@@ -262,3 +263,25 @@ def torch_exact_solver(
         raise NotImplementedError()
     x = circuit(theta)  # shape: (batch_size, out_dim, in_dim)
     return x
+
+
+class ExactTorchSolver(QKANSolver):
+    """Pure-PyTorch reference solver (registered as ``"exact"``)."""
+
+    name = "exact"
+
+    def __call__(
+        self,
+        x: torch.Tensor,
+        theta: torch.Tensor,
+        preacts_weight: torch.Tensor,
+        preacts_bias: torch.Tensor,
+        reps: int,
+        **kwargs,
+    ) -> torch.Tensor:
+        return torch_exact_solver(
+            x, theta, preacts_weight, preacts_bias, reps, **kwargs
+        )
+
+
+register(ExactTorchSolver())

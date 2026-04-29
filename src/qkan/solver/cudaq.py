@@ -22,6 +22,8 @@ import math
 
 import torch
 
+from ._base import QKANSolver, register
+
 try:
     import cudaq  # type: ignore
 
@@ -847,3 +849,23 @@ def cudaq_solver(
         )
     else:
         return _cudaq_evaluate(x, theta, preacts_weight, preacts_bias, reps, config)
+
+
+class CudaqSolver(QKANSolver):
+    """NVIDIA CUDA-Q solver (registered as ``"cudaq"``)."""
+
+    name = "cudaq"
+
+    def __call__(
+        self,
+        x: torch.Tensor,
+        theta: torch.Tensor,
+        preacts_weight: torch.Tensor,
+        preacts_bias: torch.Tensor,
+        reps: int,
+        **kwargs,
+    ) -> torch.Tensor:
+        return cudaq_solver(x, theta, preacts_weight, preacts_bias, reps, **kwargs)
+
+
+register(CudaqSolver())

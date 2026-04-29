@@ -449,10 +449,10 @@ class KAN(torch.nn.Module):
                             steps=sampling,
                             device=x0.device,
                         )
-                        for i in range(qkan_layer.in_dim)
+                        for i in range(qkan_layer.in_dim)  # type: ignore[arg-type]
                     ]
                 ).permute(1, 0)  # x.shape = (sampling, in_dim)
-            y = qkan_layer.forward_no_sum(x).transpose(
+            y = qkan_layer.forward_no_sum(x).transpose(  # type: ignore[operator]
                 1, 2
             )  # y.shape = (sampling, in_dim, out_dim)
             with torch.no_grad():

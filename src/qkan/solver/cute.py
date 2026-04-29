@@ -15,8 +15,9 @@
 
 import torch
 
+from ._base import QKANSolver, register
 from ._utils import _cast_grads_to_dtype
-from .torch_exact import torch_exact_solver
+from .exact import torch_exact_solver
 
 try:
     from ..cute_ops import (
@@ -281,3 +282,28 @@ def cute_exact_solver(
             )
         else:
             raise NotImplementedError
+
+
+class CuTeSolver(QKANSolver):
+    """CuTe DSL CUDA solver (registered as ``"cute"``)."""
+
+    name = "cute"
+
+    def __call__(
+        self,
+        x: torch.Tensor,
+        theta: torch.Tensor,
+        preacts_weight: torch.Tensor,
+        preacts_bias: torch.Tensor,
+        reps: int,
+        **kwargs,
+    ) -> torch.Tensor:
+        if not _CUTE_AVAILABLE:
+            raise ImportError(
+                "CuTe DSL solver requires CUTLASS headers. "
+                "Set CUTLASS_PATH env var or install CUTLASS."
+            )
+        return cute_exact_solver(x, theta, preacts_weight, preacts_bias, reps, **kwargs)
+
+
+register(CuTeSolver())

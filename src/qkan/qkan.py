@@ -37,19 +37,7 @@ import torch.nn.functional as F
 from tqdm import tqdm  # type: ignore
 
 from .info import get_dist_info, print0, print_version
-from .solver import (
-    _CUTE_AVAILABLE,
-    _CUTILE_AVAILABLE,
-    _FLASH_AVAILABLE,
-    cudaq_solver,
-    cute_exact_solver,
-    cutile_flash_exact_solver,
-    cutn_solver,
-    flash_exact_solver,
-    qiskit_solver,
-    qml_solver,
-    torch_exact_solver,
-)
+from .solver import get_registry, get_solver, qml_solver
 
 
 class QKANLayer(nn.Module):
@@ -418,114 +406,8 @@ class QKANLayer(nn.Module):
                         device=self.device,
                         qml_device=self.qml_device,
                     ).to(self.p_dtype)
-        elif self.solver == "exact":
-            postacts = torch_exact_solver(
-                x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
-                self.reps,
-                device=self.device,
-                ansatz=self.ansatz,
-                group=self.group,
-                preacts_trainable=self.preact_trainable,
-                fast_measure=self.fast_measure,
-                out_dim=self.out_dim,
-                dtype=self.c_dtype,
-            ).to(self.p_dtype)
-        elif self.solver == "flash":
-            if not _FLASH_AVAILABLE:
-                raise ImportError(
-                    "Triton is required for solver='flash'. "
-                    "Install with: pip install triton"
-                )
-            postacts = flash_exact_solver(
-                x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
-                self.reps,
-                device=self.device,
-                ansatz=self.ansatz,
-                group=self.group,
-                preacts_trainable=self.preact_trainable,
-                fast_measure=self.fast_measure,
-                out_dim=self.out_dim,
-                dtype=self.c_dtype,
-            ).to(self.p_dtype)
-        elif self.solver == "cutn" or self.solver == "tn":
-            postacts = cutn_solver(
-                x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
-                self.reps,
-                device=self.device,
-                ansatz=self.ansatz,
-                group=self.group,
-                preacts_trainable=self.preact_trainable,
-                fast_measure=self.fast_measure,
-                out_dim=self.out_dim,
-                dtype=self.c_dtype,
-            ).to(self.p_dtype)
-        elif self.solver == "cutile":
-            if not _CUTILE_AVAILABLE:
-                raise ImportError(
-                    "cuda.tile is required for solver='cutile'. "
-                    "Install with: pip install cuda-tile"
-                )
-            postacts = cutile_flash_exact_solver(
-                x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
-                self.reps,
-                device=self.device,
-                ansatz=self.ansatz,
-                group=self.group,
-                preacts_trainable=self.preact_trainable,
-                fast_measure=self.fast_measure,
-                out_dim=self.out_dim,
-                dtype=self.c_dtype,
-            ).to(self.p_dtype)
-        elif self.solver == "cute":
-            if not _CUTE_AVAILABLE:
-                raise ImportError(
-                    "CuTe DSL solver requires CUTLASS headers. "
-                    "Set CUTLASS_PATH env var or install CUTLASS."
-                )
-            postacts = cute_exact_solver(
-                x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
-                self.reps,
-                device=self.device,
-                ansatz=self.ansatz,
-                group=self.group,
-                preacts_trainable=self.preact_trainable,
-                fast_measure=self.fast_measure,
-                out_dim=self.out_dim,
-                dtype=self.c_dtype,
-            ).to(self.p_dtype)
-        elif self.solver == "qiskit":
-            postacts = qiskit_solver(
-                x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
-                self.reps,
-                device=self.device,
-                ansatz=self.ansatz,
-                group=self.group,
-                preacts_trainable=self.preact_trainable,
-                fast_measure=self.fast_measure,
-                out_dim=self.out_dim,
-                dtype=self.c_dtype,
-                **self.solver_kwargs,
-            ).to(self.p_dtype)
-        elif self.solver == "cudaq":
-            postacts = cudaq_solver(
+        elif isinstance(self.solver, str) and self.solver in get_registry():
+            postacts = get_solver(self.solver)(
                 x,
                 self.theta,
                 self.preacts_weight,
@@ -633,27 +515,8 @@ class QKANLayer(nn.Module):
                 ],
                 dim=1,
             ).to(self.p_dtype)
-        elif self.solver == "exact":
-            postacts = torch_exact_solver(
-                x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
-                self.reps,
-                device=self.device,
-                ansatz=self.ansatz,
-                group=self.group,
-                preacts_trainable=self.preact_trainable,
-                fast_measure=self.fast_measure,
-                dtype=self.c_dtype,
-            ).to(self.p_dtype)
-        elif self.solver == "flash":
-            if not _FLASH_AVAILABLE:
-                raise ImportError(
-                    "Triton is required for solver='flash'. "
-                    "Install with: pip install triton"
-                )
-            postacts = flash_exact_solver(
+        elif isinstance(self.solver, str) and self.solver in get_registry():
+            postacts = get_solver(self.solver)(
                 x,
                 self.theta,
                 self.preacts_weight,
@@ -666,41 +529,7 @@ class QKANLayer(nn.Module):
                 fast_measure=self.fast_measure,
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
-            ).to(self.p_dtype)
-        elif self.solver == "cutn":
-            postacts = cutn_solver(
-                x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
-                self.reps,
-                device=self.device,
-                ansatz=self.ansatz,
-                group=self.group,
-                preacts_trainable=self.preact_trainable,
-                fast_measure=self.fast_measure,
-                out_dim=self.out_dim,
-                dtype=self.c_dtype,
-            ).to(self.p_dtype)
-        elif self.solver == "cute":
-            if not _CUTE_AVAILABLE:
-                raise ImportError(
-                    "CuTe DSL solver requires CUTLASS headers. "
-                    "Set CUTLASS_PATH env var or install CUTLASS."
-                )
-            postacts = cute_exact_solver(
-                x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
-                self.reps,
-                device=self.device,
-                ansatz=self.ansatz,
-                group=self.group,
-                preacts_trainable=self.preact_trainable,
-                fast_measure=self.fast_measure,
-                out_dim=self.out_dim,
-                dtype=self.c_dtype,
+                **self.solver_kwargs,
             ).to(self.p_dtype)
         else:
             raise NotImplementedError()
