@@ -62,7 +62,16 @@ jobs:
           cuda: ${{ inputs.cuda-version }}
           linux-local-args: '["--toolkit"]'
           method: "network"
-          sub-packages: '["nvcc"]'
+          # torch's ATen/cuda/CUDAContextLight.h includes cusparse.h / cublas.h
+          # etc., so the math-library dev headers must be on the include path.
+          # NVIDIA packages them as libXXX-dev-<ver> (no cuda- prefix) in both
+          # CUDA 12 and CUDA 13 repos, which in Jimver's action maps to
+          # `non-cuda-sub-packages`. cudart-dev / nvrtc-dev have the cuda-
+          # prefix and stay in sub-packages.
+          sub-packages: '["nvcc", "cudart-dev", "nvrtc-dev"]'
+          # libnvjitlink-dev is needed at runtime: torch 2.7/2.8 arm64 wheels
+          # dynamically link libnvJitLink.so.12 but don't bundle or declare it.
+          non-cuda-sub-packages: '["libcusparse-dev", "libcublas-dev", "libcufft-dev", "libcurand-dev", "libcusolver-dev", "libnvjitlink-dev"]'
 
       - name: Install PyTorch ${{ inputs.torch-version }}
         run: |
@@ -92,12 +101,14 @@ jobs:
           export QKAN_FORCE_BUILD=TRUE
           export CUTLASS_PATH=""  # auto-download via setup.py
 
+          # Bake the local-version tag into the wheel metadata at build time
+          # so the filename and METADATA version match. pip >=22 rejects
+          # wheels whose filename version disagrees with the PKG-INFO version.
+          export QKAN_LOCAL_VERSION="cu${WHEEL_CUDA_VERSION}torch${MATRIX_TORCH_VERSION}cxx11abi${{ inputs.cxx11_abi }}"
+
           pip wheel --no-build-isolation --no-deps -w dist .
 
-          # Rename wheel with version tag
-          tmpname=cu${WHEEL_CUDA_VERSION}torch${MATRIX_TORCH_VERSION}cxx11abi${{ inputs.cxx11_abi }}
-          wheel_name=$(ls dist/*whl | xargs -n 1 basename | sed "s/-/+$tmpname-/2")
-          ls dist/*whl | xargs -I {} mv {} dist/${wheel_name}
+          wheel_name=$(ls dist/*whl | xargs -n 1 basename)
           echo "wheel_name=${wheel_name}" >> $GITHUB_ENV
           ls -lh dist/
 

@@ -88,8 +88,13 @@ all = ["qkan[gpu,qml,dev,doc]"]
 [project.urls]
 Homepage = "https://github.com/Jim137/qkan"
 
-[tool.setuptools.dynamic]
-version = {attr = "qkan.__version__"}
+# Version resolution: `dynamic = ["version"]` in [project] tells setuptools
+# the version is supplied elsewhere. setup.py's setup(version=...) then
+# provides it, and QKAN_LOCAL_VERSION is appended at build time.
+# We intentionally do NOT use `[tool.setuptools.dynamic] version.attr` here
+# because that path ignores QKAN_LOCAL_VERSION and bakes only the plain
+# __version__ string into wheel metadata, causing pip to reject wheels with
+# local-tagged filenames.
 
 [tool.ruff]
 lint.select = ["F", "I"]

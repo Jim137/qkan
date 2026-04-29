@@ -166,6 +166,24 @@ qkan = QKAN([10, 10], solver="cute", c_dtype=torch.float8_e4m3fn, p_dtype=torch.
 
 See [#12](https://github.com/Jim137/qkan/issues/12) for full benchmarks (GPT-2 HQKANsformer, isolated kernel timings, and dtype performance matrix).
 
+## Inference Acceleration
+
+Wrap any QKAN-based model with `compile_inference` for 2–3× faster inference via CUDA graph replay:
+
+```python
+import qkan
+
+model = qkan.compile_inference(model).eval()
+with torch.no_grad():
+    y = model(x)
+```
+
+For transformer stacks, wrap each MLP block instead of the full model:
+
+```python
+qkan.graph_submodules(transformer, sample, predicate=lambda m: isinstance(m, MyMLP))
+```
+
 ## Contributing
 
 We are very welcome to all kinds of contributions, including but not limited to bug reports, documentation improvements, and code contributions.

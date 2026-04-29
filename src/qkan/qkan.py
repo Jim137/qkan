@@ -561,6 +561,7 @@ class QKANLayer(nn.Module):
         # — one fused matmul replaces the (B, O, I) einsum + sum along i, and
         #   the scalar bias_sum rides along as F.linear's bias arg.
         if self._eff_pw is not None:
+            assert self._eff_base_w is not None and self._bias_sum is not None
             main = (postacts * self._eff_pw).sum(dim=2)
             base = F.linear(base_input, self._eff_base_w, bias=self._bias_sum)
         else:
