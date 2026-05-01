@@ -27,6 +27,7 @@ Each solver is implemented in its own module:
 - cudaq: NVIDIA CUDA-Q backends (GPU-accelerated simulation or QPU)
 """
 
+from ._activation import make_base_activation
 from ._base import QKANSolver, get_registry, get_solver, register
 from .cudaq import cudaq_solver
 from .cute import _CUTE_AVAILABLE, cute_exact_solver
@@ -49,6 +50,7 @@ __all__ = [
     "flash_exact_solver",
     "get_registry",
     "get_solver",
+    "make_base_activation",
     "qiskit_solver",
     "qml_solver",
     "register",

@@ -90,12 +90,15 @@ def _load_jit():
 
     from torch.utils.cpp_extension import load
 
-    cu_src = str(
-        pathlib.Path(__file__).resolve().parents[2] / "csrc" / "cute_kernels.cu"
-    )
+    csrc_dir = pathlib.Path(__file__).resolve().parents[2] / "csrc"
+    sources = [
+        str(csrc_dir / "cute_kernels.cu"),
+        str(csrc_dir / "cute_activations.cu"),
+        str(csrc_dir / "cute_linear.cu"),
+    ]
     _ext = load(
         name="qkan_cute_ops",
-        sources=[cu_src],
+        sources=sources,
         extra_include_paths=[cutlass_inc],
         extra_cflags=["-O3", "-std=c++17"],
         extra_cuda_cflags=[
@@ -311,6 +314,74 @@ def cute_real_backward(
         _state_bits(c_dtype),
     )
     return tuple(results)
+
+
+# ---------------------------------------------------------------------------
+# Pointwise activation kernels (used by QKANLayer's base path)
+# ---------------------------------------------------------------------------
+
+# Must match the ActKind enum in csrc/cute_activations.cu.
+_ACTIVATION_KIND_MAP: dict[str, int] = {
+    "silu": 0,
+    "gelu_exact": 1,
+    "gelu_tanh": 2,
+    "relu": 3,
+    "tanh": 4,
+    "sigmoid": 5,
+}
+
+
+def _activation_kind_int(kind: str) -> int:
+    try:
+        return _ACTIVATION_KIND_MAP[kind]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unknown CuTe activation kind '{kind}'. "
+            f"Supported: {sorted(_ACTIVATION_KIND_MAP)}"
+        ) from exc
+
+
+def cute_activation_forward(
+    x: torch.Tensor,
+    kind: str,
+    c_dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """CuTe pointwise activation forward.
+
+    Args:
+        x: input tensor (CUDA, contiguous-ish; will be made contiguous if not).
+            Computed in-kernel as f32; I/O in f32 or bf16 depending on ``x.dtype``.
+        kind: one of ``"silu"``, ``"gelu_exact"``, ``"gelu_tanh"``, ``"relu"``,
+            ``"tanh"``, ``"sigmoid"``.
+        c_dtype: compute dtype hint (kept for parity with the rest of cute_ops;
+            unused — the kernel always computes in f32 and matches I/O dtype to
+            ``x.dtype``).
+
+    Returns:
+        Tensor with the same shape and dtype as ``x``.
+    """
+    del c_dtype  # accepted for API parity; kernel computes in f32 internally
+    ext = _get_ext()
+    return ext.activation_forward(x, _activation_kind_int(kind))
+
+
+def cute_activation_backward(
+    grad_y: torch.Tensor,
+    x: torch.Tensor,
+    kind: str,
+    c_dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """CuTe pointwise activation backward (returns grad_x).
+
+    Args:
+        grad_y: upstream gradient with the same shape/dtype as ``x``.
+        x: forward input.
+        kind: see :func:`cute_activation_forward`.
+        c_dtype: compute dtype hint (unused, see :func:`cute_activation_forward`).
+    """
+    del c_dtype
+    ext = _get_ext()
+    return ext.activation_backward(grad_y, x, _activation_kind_int(kind))
 
 
 # ---------------------------------------------------------------------------

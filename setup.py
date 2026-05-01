@@ -352,7 +352,11 @@ if BUILD_CUTE:
     ext_modules.append(
         CUDAExtension(
             name="qkan._C",
-            sources=["csrc/cute_kernels.cu"],
+            sources=[
+                "csrc/cute_kernels.cu",
+                "csrc/cute_activations.cu",
+                "csrc/cute_linear.cu",
+            ],
             extra_compile_args={
                 "cxx": ["-O3", "-std=c++17"],
                 "nvcc": nvcc_flags + cc_flags,

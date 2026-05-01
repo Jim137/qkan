@@ -1588,8 +1588,23 @@ std::vector<torch::Tensor> cute_real_backward(
 #undef DISPATCH_BLOCK_B
 
 // ====================================================================
+// External launchers (defined in other .cu files)
+// ====================================================================
+
+// cute_linear.cu
+torch::Tensor cute_linear_forward(
+    torch::Tensor x, torch::Tensor weight, c10::optional<torch::Tensor> bias_opt);
+std::vector<torch::Tensor> cute_linear_backward(
+    torch::Tensor grad_y, torch::Tensor x, torch::Tensor weight, bool has_bias);
+
+// ====================================================================
 // pybind11 module
 // ====================================================================
+
+// Forward declarations from cute_activations.cu (compiled into the same
+// extension via setup.py's sources list).
+torch::Tensor cute_activation_forward(torch::Tensor x, int kind_int);
+torch::Tensor cute_activation_backward(torch::Tensor grad_y, torch::Tensor x, int kind_int);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("pz_forward",    &cute_pz_forward,    "CuTe PZ forward");
@@ -1598,4 +1613,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("rpz_backward",  &cute_rpz_backward,  "CuTe RPZ backward");
     m.def("real_forward",  &cute_real_forward,   "CuTe Real forward");
     m.def("real_backward", &cute_real_backward,  "CuTe Real backward");
+    m.def("activation_forward",  &cute_activation_forward,
+          "CuTe pointwise activation forward (silu/gelu/relu/tanh/sigmoid)");
+    m.def("activation_backward", &cute_activation_backward,
+          "CuTe pointwise activation backward (silu/gelu/relu/tanh/sigmoid)");
+    m.def("linear_forward",  &cute_linear_forward,  "CuTe Linear forward");
+    m.def("linear_backward", &cute_linear_backward, "CuTe Linear backward");
 }

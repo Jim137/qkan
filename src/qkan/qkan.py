@@ -37,7 +37,7 @@ import torch.nn.functional as F
 from tqdm import tqdm  # type: ignore
 
 from .info import get_dist_info, print0, print_version
-from .solver import get_registry, get_solver, qml_solver
+from .solver import get_registry, get_solver, make_base_activation, qml_solver
 
 
 class QKANLayer(nn.Module):
@@ -128,7 +128,7 @@ class QKANLayer(nn.Module):
         preact_init: bool = False,
         postact_weight_trainable: bool = False,
         postact_bias_trainable: bool = False,
-        base_activation=torch.nn.SiLU(),
+        base_activation: Union[str, nn.Module] = "silu",
         ba_trainable: bool = True,
         is_batchnorm: bool = False,
         fast_measure: bool = True,
@@ -139,6 +139,12 @@ class QKANLayer(nn.Module):
     ):
         super(QKANLayer, self).__init__()
         self.solver_kwargs = solver_kwargs or {}
+        # If base_activation is a string ("silu", "gelu", ...), pick the
+        # backend implementation matching the chosen solver — cute/flash/
+        # cutile get their fused kernel, others fall back to torch.nn.
+        # ``"gelu"`` resolves to gelu_exact (matches torch's default).
+        if isinstance(base_activation, str):
+            base_activation = make_base_activation(base_activation, solver)
 
         if seed is not None:
             torch.manual_seed(seed)
@@ -673,7 +679,7 @@ class QKAN(nn.Module):
         preact_init: bool = False,
         postact_weight_trainable: bool = False,
         postact_bias_trainable: bool = False,
-        base_activation=nn.SiLU(),
+        base_activation: Union[str, nn.Module] = "silu",
         ba_trainable: bool = False,
         fast_measure: bool = True,
         save_act: bool = False,
@@ -771,6 +777,8 @@ class QKAN(nn.Module):
         self.preact_trainable = preact_trainable
         self.preact_init = preact_init
         self.theta_size = theta_size
+        if isinstance(base_activation, str):
+            base_activation = make_base_activation(base_activation, solver)
         self.base_activation = base_activation
         self.ba_trainable = ba_trainable
         self.fast_measure = fast_measure
