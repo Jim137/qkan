@@ -136,8 +136,12 @@ class QKANLayer(nn.Module):
         p_dtype: torch.dtype = torch.float32,
         seed=None,
         solver_kwargs: Optional[dict] = None,
+        p_dim: Literal[2, 4] = 4,
     ):
         super(QKANLayer, self).__init__()
+        if p_dim not in (2, 4):
+            raise ValueError(f"p_dim must be 2 or 4, got {p_dim}")
+        self.p_dim: Literal[2, 4] = p_dim
         self.solver_kwargs = solver_kwargs or {}
         # If base_activation is a string ("silu", "gelu", ...), pick the
         # backend implementation matching the chosen solver — cute/flash/
@@ -227,45 +231,43 @@ class QKANLayer(nn.Module):
         device = self.device
         p_dtype = self.p_dtype
 
+        # group_count = prod(group_tuple): unifies (O,I) and (g,) cases.
+        self.group_count = 1
+        for _g in group:
+            self.group_count *= _g
+
         # -- theta --
+        # Determine natural-rank shape (what solvers / internal code see).
+        # Storage may be 2D under p_dim=2; we expose natural via _theta_natural().
         if callable(self.solver) or callable(self.ansatz):
             if not self.theta_size:
                 raise ValueError("theta_size is required for custom ansatz")
-            self.theta = nn.Parameter(
-                torch.empty(*self.theta_size, device=device, dtype=p_dtype)
-            )
-        elif self.ansatz in ("pz_encoding", "pz", "mix"):
-            self.theta = nn.Parameter(
-                torch.empty(*group, reps + 1, 2, device=device, dtype=p_dtype)
-            )
-        elif self.ansatz in ("rpz_encoding", "rpz"):
-            self.theta = nn.Parameter(
-                torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
-            )
-        elif self.ansatz in ("px_encoding", "px"):
-            self.theta = nn.Parameter(
-                torch.empty(*group, reps + 1, 1, device=device, dtype=p_dtype)
-            )
-        elif self.ansatz == "real":
-            self.theta = nn.Parameter(
-                torch.empty(*group, reps, 1, device=device, dtype=p_dtype)
-            )
-            self.c_dtype = torch.bfloat16
+            # Custom theta: respect literally; p_dim does NOT reshape it.
+            self._theta_natural_shape = tuple(self.theta_size)
+            self._theta_collapsible = False
+            storage_theta_shape: tuple[int, ...] = tuple(self.theta_size)
         else:
-            raise NotImplementedError()
+            if self.ansatz in ("pz_encoding", "pz", "mix"):
+                self._theta_natural_shape = (*group, reps + 1, 2)
+            elif self.ansatz in ("rpz_encoding", "rpz", "px_encoding", "px"):
+                self._theta_natural_shape = (*group, reps + 1, 1)
+            elif self.ansatz == "real":
+                self._theta_natural_shape = (*group, reps, 1)
+                self.c_dtype = torch.bfloat16
+            else:
+                raise NotImplementedError()
+            self._theta_collapsible = True
+            if self.p_dim == 2:
+                storage_theta_shape = (
+                    self.group_count,
+                    self._theta_natural_shape[-2] * self._theta_natural_shape[-1],
+                )
+            else:
+                storage_theta_shape = self._theta_natural_shape
 
-        # -- base_weight --
-        if self.ba_trainable:
-            self.base_weight = torch.nn.Parameter(
-                0.5
-                * torch.ones(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
-                requires_grad=self.ba_trainable,
-            )
-        else:
-            self.base_weight = torch.nn.Parameter(
-                torch.zeros(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
-                requires_grad=self.ba_trainable,
-            )
+        self.theta = nn.Parameter(
+            torch.empty(*storage_theta_shape, device=device, dtype=p_dtype)
+        )
 
         # -- preacts_weight / preacts_bias --
         # rpz_encoding always needs trainable bias (even when preact_trainable=False)
@@ -273,28 +275,51 @@ class QKANLayer(nn.Module):
             "rpz_encoding",
             "rpz",
         )
+        self._preacts_natural_shape: tuple[int, ...] = (*group, reps)
+        if self.p_dim == 2:
+            storage_preacts_shape: tuple[int, ...] = (self.group_count, reps)
+        else:
+            storage_preacts_shape = self._preacts_natural_shape
         self.preacts_weight = nn.Parameter(
-            torch.ones(*group, reps, device=device, dtype=p_dtype),
+            torch.ones(*storage_preacts_shape, device=device, dtype=p_dtype),
             requires_grad=self.preact_trainable,
         )
         self.preacts_bias = nn.Parameter(
-            torch.zeros(*group, reps, device=device, dtype=p_dtype),
+            torch.zeros(*storage_preacts_shape, device=device, dtype=p_dtype),
             requires_grad=_bias_trainable,
         )
 
+        # -- (O, I) params: base_weight, postact_weights, postact_bias, mask --
+        if self.p_dim == 2:
+            oi_shape: tuple[int, ...] = (self.out_dim * self.in_dim,)
+        else:
+            oi_shape = (self.out_dim, self.in_dim)
+
+        # -- base_weight --
+        if self.ba_trainable:
+            self.base_weight = torch.nn.Parameter(
+                0.5 * torch.ones(*oi_shape, device=device, dtype=p_dtype),
+                requires_grad=True,
+            )
+        else:
+            self.base_weight = torch.nn.Parameter(
+                torch.zeros(*oi_shape, device=device, dtype=p_dtype),
+                requires_grad=False,
+            )
+
         # -- postact_weights / postact_bias --
         self.postact_weights = nn.Parameter(
-            torch.ones(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
+            torch.ones(*oi_shape, device=device, dtype=p_dtype),
             requires_grad=self.postact_weight_trainable,
         )
         self.postact_bias = nn.Parameter(
-            torch.zeros(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
+            torch.zeros(*oi_shape, device=device, dtype=p_dtype),
             requires_grad=self.postact_bias_trainable,
         )
 
         # -- mask --
         self.mask = nn.Parameter(
-            torch.ones(self.out_dim, self.in_dim, device=device, dtype=p_dtype),
+            torch.ones(*oi_shape, device=device, dtype=p_dtype),
             requires_grad=False,
         )
 
@@ -308,6 +333,21 @@ class QKANLayer(nn.Module):
         self._eff_pw: Optional[torch.Tensor] = None
         self._eff_base_w: Optional[torch.Tensor] = None
         self._bias_sum: Optional[torch.Tensor] = None
+        # Pre-materialised views used in the train-mode hot path under
+        # p_dim=2. These are views of the underlying Parameter storage
+        # (NOT Parameters themselves — `.view()` returns a plain Tensor),
+        # so they don't leak into ``state_dict``. They share storage with
+        # the parent Parameter, so in-place optimizer updates remain
+        # visible without invalidation. ``.to()`` and ``reset_parameters``
+        # rebuild them via ``_init_view_caches``.
+        self._theta_natural_v: Optional[torch.Tensor] = None
+        self._preacts_w_natural_v: Optional[torch.Tensor] = None
+        self._preacts_b_natural_v: Optional[torch.Tensor] = None
+        self._pw_oi: Optional[torch.Tensor] = None
+        self._pb_oi: Optional[torch.Tensor] = None
+        self._bw_oi: Optional[torch.Tensor] = None
+        self._mask_oi: Optional[torch.Tensor] = None
+        self._init_view_caches()
 
         self._x0: Optional[torch.Tensor] = None
 
@@ -316,17 +356,126 @@ class QKANLayer(nn.Module):
         except Exception:
             warnings.warn("xavier_init failed, using default initialization")
 
+    # ------------------------------------------------------------------
+    # View helpers: bridge between storage rank (p_dim) and the natural
+    # rank consumed by solvers and the contraction epilogue.
+    #
+    # Under ``p_dim=2`` the heavy-use views (natural-rank theta/preacts,
+    # 2D (O,I) views of postact_*, base_weight, mask) are pre-materialised
+    # by ``_init_view_caches`` so the hot-path forward avoids per-call
+    # ``.view()`` overhead. The cached tensors share storage with their
+    # parent Parameter — in-place optimizer updates remain visible.
+    # ------------------------------------------------------------------
+    def _init_view_caches(self) -> None:
+        """Build / rebuild the cached natural-rank and (O,I) views.
+
+        No-op under ``p_dim=4`` (the params are already at natural rank).
+        Called from ``init_parameters`` and after ``.to()``/``reset_parameters``
+        in case the underlying storage was reallocated.
+        """
+        if self.p_dim != 2:
+            return
+        self._theta_natural_v = (
+            self.theta.view(*self._theta_natural_shape)
+            if self._theta_collapsible
+            else None
+        )
+        self._preacts_w_natural_v = self.preacts_weight.view(
+            *self._preacts_natural_shape
+        )
+        self._preacts_b_natural_v = self.preacts_bias.view(*self._preacts_natural_shape)
+        oi = (self.out_dim, self.in_dim)
+        self._pw_oi = self.postact_weights.view(*oi)
+        self._pb_oi = self.postact_bias.view(*oi)
+        self._bw_oi = self.base_weight.view(*oi)
+        self._mask_oi = self.mask.view(*oi)
+
+    def _theta_natural(self) -> torch.Tensor:
+        """Theta in its natural rank (4D for default group, 3D for group=(g,))."""
+        if self.p_dim == 4 or not self._theta_collapsible:
+            return self.theta
+        assert self._theta_natural_v is not None
+        return self._theta_natural_v
+
+    def _preacts_w_natural(self) -> torch.Tensor:
+        if self.p_dim == 4:
+            return self.preacts_weight
+        assert self._preacts_w_natural_v is not None
+        return self._preacts_w_natural_v
+
+    def _preacts_b_natural(self) -> torch.Tensor:
+        if self.p_dim == 4:
+            return self.preacts_bias
+        assert self._preacts_b_natural_v is not None
+        return self._preacts_b_natural_v
+
+    def _as_oi(self, t: torch.Tensor) -> torch.Tensor:
+        """Return a 2D ``(O, I)`` view of an (O,I) param (no-op when p_dim=4).
+
+        Cold-path helper for index/copy ops on arbitrary tensors. Hot-path
+        forward uses the pre-cached ``self._pw_oi`` etc. directly.
+        """
+        if self.p_dim == 4:
+            return t
+        return t.view(self.out_dim, self.in_dim)
+
     def xavier_init(self):
         """Apply Xavier normal initialization to theta and preacts.
 
-        Applies ``nn.init.xavier_normal_`` in-place to ``self.theta``.
-        When ``self.preact_init`` is set, also applies it to
-        ``self.preacts_weight`` and ``self.preacts_bias``.
+        Initialises through the natural-rank view so fan-in/fan-out are
+        identical regardless of storage rank (``p_dim``).
         """
-        nn.init.xavier_normal_(self.theta.data)
+        nn.init.xavier_normal_(self._theta_natural().data)
         if self.preact_init:
-            nn.init.xavier_normal_(self.preacts_weight.data)
-            nn.init.xavier_normal_(self.preacts_bias.data)
+            nn.init.xavier_normal_(self._preacts_w_natural().data)
+            nn.init.xavier_normal_(self._preacts_b_natural().data)
+
+    # Tensor names whose shape may differ between p_dim=2 and p_dim=4 storage.
+    # Restricting the load-time reshape to this set avoids masking genuine
+    # shape mismatches elsewhere in the state_dict.
+    _PDIM_RESHAPABLE_NAMES = (
+        "theta",
+        "preacts_weight",
+        "preacts_bias",
+        "base_weight",
+        "postact_weights",
+        "postact_bias",
+        "mask",
+    )
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        # Allow cross-p_dim checkpoint loading: when a known param's saved
+        # shape doesn't match the current storage but the element count
+        # agrees, reshape in place. Anything else falls through to PyTorch's
+        # default behaviour (which will error on mismatch as expected).
+        for name in self._PDIM_RESHAPABLE_NAMES:
+            key = prefix + name
+            if key not in state_dict:
+                continue
+            target = getattr(self, name, None)
+            if not isinstance(target, torch.Tensor):
+                continue
+            source = state_dict[key]
+            if source.shape != target.shape and source.numel() == target.numel():
+                state_dict[key] = source.reshape(target.shape)
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def to(self, *args, **kwargs):
         """
@@ -350,23 +499,37 @@ class QKANLayer(nn.Module):
             self.device = device
             for param in self.parameters():
                 param.data = param.to(device)
-        return super(QKANLayer, self).to(*args, **kwargs)
+        ret = super(QKANLayer, self).to(*args, **kwargs)
+        # Param storage may have moved — rebuild cached views over the new
+        # storage. No-op under p_dim=4.
+        self._init_view_caches()
+        return ret
 
     def train(self, mode: bool = True):
         ret = super().train(mode)
         if mode:
-            # Invalidate inference caches (they become stale once params update)
+            # Invalidate inference caches (stale once params start updating).
             self._eff_pw = None
             self._eff_base_w = None
             self._bias_sum = None
         else:
-            # Fold mask into postact_weights and base_weight, and collapse the
-            # postact_bias contribution into a (O,) bias vector that can ride
-            # along with the base F.linear. Saves ~3 elementwise kernels/forward.
+            # Fold mask into postact_weights/base_weight and collapse the
+            # postact_bias contribution into a (O,) bias term that rides
+            # along with F.linear's bias arg. Cache is always materialised
+            # as (O, I)/(O,) regardless of p_dim. Skip bias_sum when bias
+            # is untrainable (identically zero) — F.linear(bias=None) is
+            # cheaper than F.linear with a zero bias.
             with torch.no_grad():
-                self._eff_pw = self.postact_weights * self.mask
-                self._eff_base_w = self.base_weight * self.mask
-                self._bias_sum = (self.postact_bias * self._eff_pw).sum(dim=1)
+                pw_2d = self._as_oi(self.postact_weights)
+                bw_2d = self._as_oi(self.base_weight)
+                m_2d = self._as_oi(self.mask)
+                self._eff_pw = pw_2d * m_2d
+                self._eff_base_w = bw_2d * m_2d
+                if self.postact_bias_trainable:
+                    pb_2d = self._as_oi(self.postact_bias)
+                    self._bias_sum = (pb_2d * self._eff_pw).sum(dim=1)
+                else:
+                    self._bias_sum = None
         return ret
 
     @property
@@ -389,16 +552,25 @@ class QKANLayer(nn.Module):
         self._x0 = None
 
     def forward(self, x: torch.Tensor):
-        assert x.shape[1] == self.in_dim, "Invalid input dimension"
+        # Two-route dispatch: eval (cached) vs train (live). The eval route
+        # is the inference hot path and uses pre-folded weights + cached
+        # natural-view solver inputs. The train route reads parameters
+        # directly so autograd records grads on the live storage.
+        if self._eff_pw is not None:
+            return self._forward_eval(x)
+        return self._forward_train(x)
 
+    # ------------------------------------------------------------------
+    # Solver dispatch (shared by both routes)
+    # ------------------------------------------------------------------
+    def _run_solver(
+        self,
+        x: torch.Tensor,
+        theta_v: torch.Tensor,
+        pw_v: torch.Tensor,
+        pb_v: torch.Tensor,
+    ) -> torch.Tensor:
         batch = x.shape[0]
-
-        if self.is_batchnorm:
-            x = self.bn(x)
-        # Defer base contribution to the epilogue: avoids materializing the
-        # (B, O, I) outer product and lets cublas compute the base path via
-        # a single matmul (base_weight * mask already folds the pruning mask).
-        base_input = self.base_activation(x)
         if self.solver == "qml":
             postacts = torch.zeros(
                 batch, self.out_dim, self.in_dim, dtype=self.p_dtype
@@ -407,17 +579,18 @@ class QKANLayer(nn.Module):
                 for i in range(self.in_dim):
                     postacts[:, j, i] = qml_solver(
                         x=x[:, i],
-                        theta=self.theta[i, j],
+                        theta=theta_v[i, j],
                         reps=self.reps,
                         device=self.device,
                         qml_device=self.qml_device,
                     ).to(self.p_dtype)
-        elif isinstance(self.solver, str) and self.solver in get_registry():
-            postacts = get_solver(self.solver)(
+            return postacts
+        if isinstance(self.solver, str) and self.solver in get_registry():
+            return get_solver(self.solver)(
                 x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
+                theta_v,
+                pw_v,
+                pb_v,
                 self.reps,
                 device=self.device,
                 ansatz=self.ansatz,
@@ -428,34 +601,86 @@ class QKANLayer(nn.Module):
                 dtype=self.c_dtype,
                 **self.solver_kwargs,
             ).to(self.p_dtype)
-        elif callable(self.solver):
-            postacts = self.solver(
+        if callable(self.solver):
+            return self.solver(
                 x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
+                theta_v,
+                pw_v,
+                pb_v,
                 self.reps,
                 device=self.device,
                 ansatz=self.ansatz,
                 **self.solver_kwargs,
             )
-        else:
-            raise NotImplementedError()
+        raise NotImplementedError()
+
+    def _forward_eval(self, x: torch.Tensor) -> torch.Tensor:
+        """Inference path — uses pre-folded weights and cached views.
+
+        ``self._eff_pw``, ``self._eff_base_w``, ``self._bias_sum`` are
+        materialised by ``train(False)``. Theta / preacts views are cached
+        in ``_init_view_caches`` when ``p_dim=2``; under ``p_dim=4`` the
+        storage already matches natural rank so no view is needed.
+        """
+        assert x.shape[1] == self.in_dim, "Invalid input dimension"
+        if self.is_batchnorm:
+            x = self.bn(x)
+        base_input = self.base_activation(x)
+        theta_v = self._theta_natural()
+        pw_v = self._preacts_w_natural()
+        pb_v = self._preacts_b_natural()
+        postacts = self._run_solver(x, theta_v, pw_v, pb_v)
         if postacts.shape[1] != self.out_dim:
             postacts = postacts.expand(-1, self.out_dim, -1)
-        # Epilogue: sum_i( ((postacts + pb) * pw + base_w * silu_x) * mask )
-        #        = sum_i( postacts * (pw * mask) ) + sum_i( pb * pw * mask )
-        #          + F.linear(silu_x, base_w * mask)
-        # — one fused matmul replaces the (B, O, I) einsum + sum along i, and
-        #   the scalar bias_sum rides along as F.linear's bias arg.
-        if self._eff_pw is not None:
-            assert self._eff_base_w is not None and self._bias_sum is not None
-            main = (postacts * self._eff_pw).sum(dim=2)
-            base = F.linear(base_input, self._eff_base_w, bias=self._bias_sum)
+        # sum_i( postacts * (pw * mask) ) + F.linear(base_input, base_w * mask, +bias_sum)
+        eff_pw = self._eff_pw
+        eff_base_w = self._eff_base_w
+        assert eff_pw is not None and eff_base_w is not None
+        main = (postacts * eff_pw).sum(dim=2)
+        base = F.linear(base_input, eff_base_w, bias=self._bias_sum)
+        return main + base
+
+    def _forward_train(self, x: torch.Tensor) -> torch.Tensor:
+        """Training path — reads live parameters, no eval cache.
+
+        Uses cached ``(O,I)`` views of (O,I) params under ``p_dim=2`` so
+        per-forward ``.view()`` overhead is zero; under ``p_dim=4`` the
+        params already are 2D. The epilogue stays in the direct form
+        ``((postacts + pb) * eff_pw).sum(2)`` — bias-fold's extra
+        reduction does not pay off when run per-step.
+        """
+        assert x.shape[1] == self.in_dim, "Invalid input dimension"
+        if self.is_batchnorm:
+            x = self.bn(x)
+        base_input = self.base_activation(x)
+        theta_v = self._theta_natural()
+        pw_v = self._preacts_w_natural()
+        pb_v = self._preacts_b_natural()
+        postacts = self._run_solver(x, theta_v, pw_v, pb_v)
+        if postacts.shape[1] != self.out_dim:
+            postacts = postacts.expand(-1, self.out_dim, -1)
+        if self.p_dim == 2:
+            assert (
+                self._pw_oi is not None
+                and self._bw_oi is not None
+                and self._mask_oi is not None
+                and self._pb_oi is not None
+            )
+            pw_oi = self._pw_oi
+            bw_oi = self._bw_oi
+            mask_oi = self._mask_oi
+            pb_oi = self._pb_oi
         else:
-            eff_pw = self.postact_weights * self.mask
-            main = torch.sum((postacts + self.postact_bias) * eff_pw, dim=2)
-            base = F.linear(base_input, self.base_weight * self.mask)
+            pw_oi = self.postact_weights
+            bw_oi = self.base_weight
+            mask_oi = self.mask
+            pb_oi = self.postact_bias
+        eff_pw = pw_oi * mask_oi
+        if self.postact_bias_trainable:
+            main = torch.sum((postacts + pb_oi) * eff_pw, dim=2)
+        else:
+            main = (postacts * eff_pw).sum(dim=2)
+        base = F.linear(base_input, bw_oi * mask_oi)
         return main + base
 
     def reset_parameters(self):
@@ -496,10 +721,16 @@ class QKANLayer(nn.Module):
     def forward_no_sum(self, x: torch.Tensor):
         assert x.shape[1] == self.in_dim, "Invalid input dimension"
 
-        base_output = torch.einsum(
-            "oi,bi->boi", self.base_weight, self.base_activation(x)
-        )
+        bw_2d = self._as_oi(self.base_weight)
+        pw_2d = self._as_oi(self.postact_weights)
+        pb_2d = self._as_oi(self.postact_bias)
+        m_2d = self._as_oi(self.mask)
 
+        base_output = torch.einsum("oi,bi->boi", bw_2d, self.base_activation(x))
+
+        theta_v = self._theta_natural()
+        pw_solver_v = self._preacts_w_natural()
+        pb_solver_v = self._preacts_b_natural()
         if self.solver == "qml":
             postacts = torch.cat(
                 [
@@ -507,7 +738,7 @@ class QKANLayer(nn.Module):
                         [
                             qml_solver(
                                 x=x[:, i],
-                                theta=self.theta[i, j],
+                                theta=theta_v[i, j],
                                 reps=self.reps,
                                 device=self.device,
                                 qml_device=self.qml_device,
@@ -524,9 +755,9 @@ class QKANLayer(nn.Module):
         elif isinstance(self.solver, str) and self.solver in get_registry():
             postacts = get_solver(self.solver)(
                 x,
-                self.theta,
-                self.preacts_weight,
-                self.preacts_bias,
+                theta_v,
+                pw_solver_v,
+                pb_solver_v,
                 self.reps,
                 device=self.device,
                 ansatz=self.ansatz,
@@ -539,10 +770,9 @@ class QKANLayer(nn.Module):
             ).to(self.p_dtype)
         else:
             raise NotImplementedError()
-        x_new = (
-            (postacts + self.postact_bias) * self.postact_weights[None, :, :]
-            + base_output
-        ) * self.mask[None, :, :]
+        x_new = ((postacts + pb_2d) * pw_2d[None, :, :] + base_output) * m_2d[
+            None, :, :
+        ]
         return x_new
 
     def get_subset(self, in_id, out_id):
@@ -575,14 +805,40 @@ class QKANLayer(nn.Module):
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
             seed=self.seed,
+            p_dim=self.p_dim,
         )
-        spb.theta.data = self.theta[out_id][:, in_id]
-        spb.base_weight.data = self.base_weight[out_id][:, in_id]
-        spb.preacts_weight.data = self.preacts_weight[out_id][:, in_id]
-        spb.preacts_bias.data = self.preacts_bias[out_id][:, in_id]
-        spb.postact_weights.data = self.postact_weights[out_id][:, in_id]
-        spb.postact_bias.data = self.postact_bias[out_id][:, in_id]
-        spb.mask.data = self.mask[out_id][:, in_id]
+        # Slice through natural-rank views so the indexing semantics match
+        # today's behavior regardless of storage rank. For group != -1 the
+        # theta/preacts natural rank is < 4, and the (O,I)-style slice has
+        # always been ill-defined there — preserve that pre-existing behavior
+        # by copying as-is when the natural rank is too low to index by edge.
+        src_t = self._theta_natural()
+        dst_t = spb._theta_natural()
+        if src_t.dim() == 4:
+            dst_t.data.copy_(src_t.data[out_id][:, in_id])
+        else:
+            dst_t.data.copy_(src_t.data)
+        src_pw = self._preacts_w_natural()
+        dst_pw = spb._preacts_w_natural()
+        src_pb = self._preacts_b_natural()
+        dst_pb = spb._preacts_b_natural()
+        if src_pw.dim() == 3:
+            dst_pw.data.copy_(src_pw.data[out_id][:, in_id])
+            dst_pb.data.copy_(src_pb.data[out_id][:, in_id])
+        else:
+            dst_pw.data.copy_(src_pw.data)
+            dst_pb.data.copy_(src_pb.data)
+        # (O, I) params: slice in 2D, write back through the 2D view.
+        spb._as_oi(spb.base_weight).data.copy_(
+            self._as_oi(self.base_weight)[out_id][:, in_id]
+        )
+        spb._as_oi(spb.postact_weights).data.copy_(
+            self._as_oi(self.postact_weights)[out_id][:, in_id]
+        )
+        spb._as_oi(spb.postact_bias).data.copy_(
+            self._as_oi(self.postact_bias)[out_id][:, in_id]
+        )
+        spb._as_oi(spb.mask).data.copy_(self._as_oi(self.mask)[out_id][:, in_id])
         return spb
 
 
@@ -687,6 +943,7 @@ class QKAN(nn.Module):
         p_dtype: torch.dtype = torch.float32,
         seed=None,
         solver_kwargs: Optional[dict] = None,
+        p_dim: Literal[2, 4] = 4,
         **kwargs,
     ):
         """
@@ -787,6 +1044,9 @@ class QKAN(nn.Module):
         self.p_dtype = p_dtype
         self.seed = seed
         self.solver_kwargs = solver_kwargs or {}
+        if p_dim not in (2, 4):
+            raise ValueError(f"p_dim must be 2 or 4, got {p_dim}")
+        self.p_dim: Literal[2, 4] = p_dim
 
         self.layers = QKANModuleList()
         for l in range(self.depth):
@@ -813,6 +1073,7 @@ class QKAN(nn.Module):
                     p_dtype=p_dtype,
                     seed=seed,
                     solver_kwargs=self.solver_kwargs,
+                    p_dim=p_dim,
                 )
             )
 
@@ -944,27 +1205,32 @@ class QKAN(nn.Module):
         count = -2
         for l, layer in enumerate(self.layers):
             if isinstance(layer, QKANLayer):
+                src_layer = another_model.layers[l]
+                assert isinstance(src_layer, QKANLayer)
                 layer.reset_parameters()
-                for i in range(another_model.layers[l].reps):  # type: ignore
-                    layer.theta.data[:, :, i, :].copy_(
-                        another_model.layers[l].theta.data[:, :, i, :]  # type: ignore
-                    )
-                    layer.preacts_weight.data[:, :, i].copy_(
-                        another_model.layers[l].preacts_weight.data[:, :, i]  # type: ignore
-                    )
-                    layer.preacts_bias.data[:, :, i].copy_(
-                        another_model.layers[l].preacts_bias.data[:, :, i]  # type: ignore
-                    )
-                layer.theta.data[:, :, another_model.layers[l].reps, :].copy_(  # type: ignore
-                    another_model.layers[l].theta.data[
-                        :, :, another_model.layers[l].reps, :  # type: ignore
-                    ]
+                # Use natural-rank views so the slice indexing is identical
+                # regardless of p_dim on either side.
+                src_t = src_layer._theta_natural().data
+                dst_t = layer._theta_natural().data
+                src_pw = src_layer._preacts_w_natural().data
+                dst_pw = layer._preacts_w_natural().data
+                src_pb = src_layer._preacts_b_natural().data
+                dst_pb = layer._preacts_b_natural().data
+                for i in range(src_layer.reps):
+                    dst_t[..., i, :].copy_(src_t[..., i, :])
+                    dst_pw[..., i].copy_(src_pw[..., i])
+                    dst_pb[..., i].copy_(src_pb[..., i])
+                dst_t[..., src_layer.reps, :].copy_(src_t[..., src_layer.reps, :])
+                # (O, I) params: copy via 2D view to bridge p_dim differences.
+                layer._as_oi(layer.postact_weights).data.copy_(
+                    src_layer._as_oi(src_layer.postact_weights).data
                 )
-                layer.postact_weights.data.copy_(
-                    another_model.layers[l].postact_weights.data  # type: ignore
+                layer._as_oi(layer.postact_bias).data.copy_(
+                    src_layer._as_oi(src_layer.postact_bias).data
                 )
-                layer.postact_bias.data.copy_(another_model.layers[l].postact_bias.data)  # type: ignore
-                layer.base_weight.data.copy_(another_model.layers[l].base_weight.data)  # type: ignore
+                layer._as_oi(layer.base_weight).data.copy_(
+                    src_layer._as_oi(src_layer.base_weight).data
+                )
             if isinstance(layer, nn.Linear):
                 layer.weight.data.copy_(another_model.layers[count - 1].weight.data)  # type: ignore
                 layer.bias.data.copy_(another_model.layers[count - 1].bias.data)  # type: ignore
@@ -1026,6 +1292,7 @@ class QKAN(nn.Module):
             c_dtype=self.c_dtype,
             p_dtype=self.p_dtype,
             seed=self.seed,
+            p_dim=self.p_dim,
         )
         new_model.initialize_from_another_model(self)
         return new_model
@@ -1113,10 +1380,9 @@ class QKAN(nn.Module):
         for layer in self.layers:
             if not isinstance(layer, QKANLayer):
                 continue
-            coeff_l1 = torch.sum(torch.mean(torch.abs(layer.postact_weights), dim=1))
-            coeff_diff_l1 = torch.sum(
-                torch.mean(torch.abs(torch.diff(layer.postact_weights)), dim=1)
-            )
+            pw_2d = layer._as_oi(layer.postact_weights)
+            coeff_l1 = torch.sum(torch.mean(torch.abs(pw_2d), dim=1))
+            coeff_diff_l1 = torch.sum(torch.mean(torch.abs(torch.diff(pw_2d)), dim=1))
             reg_ += lamb_coef * coeff_l1 + lamb_coefdiff * coeff_diff_l1
 
         return reg_
@@ -1796,6 +2062,7 @@ class QKAN(nn.Module):
             ba_trainable=self.ba_trainable,
             save_act=self.save_act,
             seed=self.seed,
+            p_dim=self.p_dim,
         )
         model2.load_state_dict(self.state_dict())
         for i, layer in enumerate(model2.layers):
@@ -1824,10 +2091,11 @@ class QKAN(nn.Module):
             return None
 
         for i in range(len(self.width) - 1):
-            old_mask = self.layers[i].mask.data
-            self.layers[i].mask.data = (
-                (self.edge_scores[i] > threshold) * old_mask
-            ).float()
+            layer = self.layers[i]
+            assert isinstance(layer, QKANLayer)
+            mask_2d = layer._as_oi(layer.mask)
+            new_2d = (self.edge_scores[i] > threshold).to(mask_2d.dtype) * mask_2d.data
+            layer.mask.data.copy_(new_2d.reshape(layer.mask.shape))
 
     def prune(self, node_th: float = 1e-2, edge_th: float = 3e-2):
         """
@@ -1905,6 +2173,7 @@ class QKAN(nn.Module):
             ba_trainable=self.ba_trainable,
             save_act=self.save_act,
             seed=self.seed,
+            p_dim=self.p_dim,
         )
         model2.load_state_dict(self.state_dict())
 

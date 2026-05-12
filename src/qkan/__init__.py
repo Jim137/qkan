@@ -25,6 +25,7 @@ from .inference import (
 )
 from .info import print0, print_banner, print_version
 from .kan import KAN
+from .optim_utils import reshape_optimizer_state
 from .qkan import QKAN, QKANLayer
 from .torch_qc import StateVector, TorchGates
 from .utils import SYMBOLIC_LIB, create_dataset
@@ -51,4 +52,5 @@ __all__ = [
     "print0",
     "print_banner",
     "print_version",
+    "reshape_optimizer_state",
 ]
