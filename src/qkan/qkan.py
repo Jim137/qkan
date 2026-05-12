@@ -322,6 +322,10 @@ class QKANLayer(nn.Module):
             torch.ones(*oi_shape, device=device, dtype=p_dtype),
             requires_grad=False,
         )
+        # Track whether mask is still the all-ones identity so the forward
+        # hot path can skip the `* mask` multiplies. Flipped to False by
+        # ``prune_edge`` / ``reset_parameters`` restores it to True.
+        self._mask_is_identity: bool = True
 
         # -- batchnorm --
         if self.is_batchnorm:
@@ -333,21 +337,22 @@ class QKANLayer(nn.Module):
         self._eff_pw: Optional[torch.Tensor] = None
         self._eff_base_w: Optional[torch.Tensor] = None
         self._bias_sum: Optional[torch.Tensor] = None
-        # Pre-materialised views used in the train-mode hot path under
-        # p_dim=2. These are views of the underlying Parameter storage
-        # (NOT Parameters themselves — `.view()` returns a plain Tensor),
-        # so they don't leak into ``state_dict``. They share storage with
-        # the parent Parameter, so in-place optimizer updates remain
-        # visible without invalidation. ``.to()`` and ``reset_parameters``
-        # rebuild them via ``_init_view_caches``.
-        self._theta_natural_v: Optional[torch.Tensor] = None
-        self._preacts_w_natural_v: Optional[torch.Tensor] = None
-        self._preacts_b_natural_v: Optional[torch.Tensor] = None
-        self._pw_oi: Optional[torch.Tensor] = None
-        self._pb_oi: Optional[torch.Tensor] = None
-        self._bw_oi: Optional[torch.Tensor] = None
-        self._mask_oi: Optional[torch.Tensor] = None
+        # Tensor aliases for the forward hot path. Under p_dim=2 they are
+        # ``.view()`` results (plain Tensor, not Parameter — won't leak
+        # into state_dict); under p_dim=4 they alias the Parameters
+        # themselves via object.__setattr__ (also kept out of state_dict).
+        # ``_init_view_caches`` populates all seven attributes before any
+        # forward — they are non-None on every code path. ``.to()`` rebuilds
+        # them if param storage moved.
+        self._theta_natural_v: torch.Tensor = None  # type: ignore[assignment]
+        self._preacts_w_natural_v: torch.Tensor = None  # type: ignore[assignment]
+        self._preacts_b_natural_v: torch.Tensor = None  # type: ignore[assignment]
+        self._pw_oi: torch.Tensor = None  # type: ignore[assignment]
+        self._pb_oi: torch.Tensor = None  # type: ignore[assignment]
+        self._bw_oi: torch.Tensor = None  # type: ignore[assignment]
+        self._mask_oi: torch.Tensor = None  # type: ignore[assignment]
         self._init_view_caches()
+        self._resolve_solver_fn()
 
         self._x0: Optional[torch.Tensor] = None
 
@@ -367,47 +372,56 @@ class QKANLayer(nn.Module):
     # parent Parameter — in-place optimizer updates remain visible.
     # ------------------------------------------------------------------
     def _init_view_caches(self) -> None:
-        """Build / rebuild the cached natural-rank and (O,I) views.
+        """Build / rebuild the natural-rank and (O,I) tensor aliases.
 
-        No-op under ``p_dim=4`` (the params are already at natural rank).
-        Called from ``init_parameters`` and after ``.to()``/``reset_parameters``
-        in case the underlying storage was reallocated.
+        Under ``p_dim=2`` constructs proper ``.view()`` aliases that
+        share storage with the parent Parameter. Under ``p_dim=4`` the
+        parameters already match the natural rank, so the aliases are
+        the parameters themselves. Either way the aliases are written
+        via ``object.__setattr__`` to bypass ``nn.Module.__setattr__``'s
+        Parameter detection — keeps them out of ``state_dict`` and the
+        forward hot path can read a single attribute regardless of
+        ``p_dim`` with no Python-side dispatch.
         """
-        if self.p_dim != 2:
-            return
-        self._theta_natural_v = (
-            self.theta.view(*self._theta_natural_shape)
-            if self._theta_collapsible
-            else None
-        )
-        self._preacts_w_natural_v = self.preacts_weight.view(
-            *self._preacts_natural_shape
-        )
-        self._preacts_b_natural_v = self.preacts_bias.view(*self._preacts_natural_shape)
-        oi = (self.out_dim, self.in_dim)
-        self._pw_oi = self.postact_weights.view(*oi)
-        self._pb_oi = self.postact_bias.view(*oi)
-        self._bw_oi = self.base_weight.view(*oi)
-        self._mask_oi = self.mask.view(*oi)
+        if self.p_dim == 2:
+            theta_v = (
+                self.theta.view(*self._theta_natural_shape)
+                if self._theta_collapsible
+                else self.theta
+            )
+            pw_v = self.preacts_weight.view(*self._preacts_natural_shape)
+            pb_v = self.preacts_bias.view(*self._preacts_natural_shape)
+            oi = (self.out_dim, self.in_dim)
+            pw_oi = self.postact_weights.view(*oi)
+            pb_oi = self.postact_bias.view(*oi)
+            bw_oi = self.base_weight.view(*oi)
+            mask_oi = self.mask.view(*oi)
+        else:
+            theta_v = self.theta
+            pw_v = self.preacts_weight
+            pb_v = self.preacts_bias
+            pw_oi = self.postact_weights
+            pb_oi = self.postact_bias
+            bw_oi = self.base_weight
+            mask_oi = self.mask
+        # Bypass Module's Parameter detection so aliases don't show up
+        # in state_dict / named_parameters.
+        object.__setattr__(self, "_theta_natural_v", theta_v)
+        object.__setattr__(self, "_preacts_w_natural_v", pw_v)
+        object.__setattr__(self, "_preacts_b_natural_v", pb_v)
+        object.__setattr__(self, "_pw_oi", pw_oi)
+        object.__setattr__(self, "_pb_oi", pb_oi)
+        object.__setattr__(self, "_bw_oi", bw_oi)
+        object.__setattr__(self, "_mask_oi", mask_oi)
 
     def _theta_natural(self) -> torch.Tensor:
-        """Theta in its natural rank (4D for default group, 3D for group=(g,))."""
-        if self.p_dim == 4 or not self._theta_collapsible:
-            return self.theta
-        assert self._theta_natural_v is not None
-        return self._theta_natural_v
+        return self._theta_natural_v  # type: ignore[return-value]
 
     def _preacts_w_natural(self) -> torch.Tensor:
-        if self.p_dim == 4:
-            return self.preacts_weight
-        assert self._preacts_w_natural_v is not None
-        return self._preacts_w_natural_v
+        return self._preacts_w_natural_v  # type: ignore[return-value]
 
     def _preacts_b_natural(self) -> torch.Tensor:
-        if self.p_dim == 4:
-            return self.preacts_bias
-        assert self._preacts_b_natural_v is not None
-        return self._preacts_b_natural_v
+        return self._preacts_b_natural_v  # type: ignore[return-value]
 
     def _as_oi(self, t: torch.Tensor) -> torch.Tensor:
         """Return a 2D ``(O, I)`` view of an (O,I) param (no-op when p_dim=4).
@@ -518,13 +532,21 @@ class QKANLayer(nn.Module):
             # along with F.linear's bias arg. Cache is always materialised
             # as (O, I)/(O,) regardless of p_dim. Skip bias_sum when bias
             # is untrainable (identically zero) — F.linear(bias=None) is
-            # cheaper than F.linear with a zero bias.
+            # cheaper than F.linear with a zero bias. When mask is the
+            # all-ones identity (the default), skip the `* mask` multiplies
+            # — the cached weights then alias the underlying params.
             with torch.no_grad():
                 pw_2d = self._as_oi(self.postact_weights)
                 bw_2d = self._as_oi(self.base_weight)
-                m_2d = self._as_oi(self.mask)
-                self._eff_pw = pw_2d * m_2d
-                self._eff_base_w = bw_2d * m_2d
+                if self._mask_is_identity:
+                    # Alias the params (detach so nn.Module.__setattr__
+                    # doesn't re-register them as duplicate Parameters).
+                    self._eff_pw = pw_2d.detach()
+                    self._eff_base_w = bw_2d.detach()
+                else:
+                    m_2d = self._as_oi(self.mask)
+                    self._eff_pw = pw_2d * m_2d
+                    self._eff_base_w = bw_2d * m_2d
                 if self.postact_bias_trainable:
                     pb_2d = self._as_oi(self.postact_bias)
                     self._bias_sum = (pb_2d * self._eff_pw).sum(dim=1)
@@ -563,6 +585,23 @@ class QKANLayer(nn.Module):
     # ------------------------------------------------------------------
     # Solver dispatch (shared by both routes)
     # ------------------------------------------------------------------
+    def _resolve_solver_fn(self) -> None:
+        """Pre-resolve the solver callable + dtype-cast need.
+
+        Skips per-forward registry lookups and a no-op ``.to(p_dtype)``
+        cast when ``c_dtype == p_dtype``.
+        """
+        fn: Optional[Callable] = None
+        if self.solver == "qml":
+            fn = None  # qml has its own loop in _run_solver
+        elif isinstance(self.solver, str) and self.solver in get_registry():
+            fn = get_solver(self.solver)
+        elif callable(self.solver):
+            fn = self.solver
+        self._solver_fn: Optional[Callable] = fn
+        # Cast is a no-op when dtypes match — skip the `.to()` Python call.
+        self._needs_dtype_cast: bool = self.c_dtype != self.p_dtype
+
     def _run_solver(
         self,
         x: torch.Tensor,
@@ -570,8 +609,8 @@ class QKANLayer(nn.Module):
         pw_v: torch.Tensor,
         pb_v: torch.Tensor,
     ) -> torch.Tensor:
-        batch = x.shape[0]
         if self.solver == "qml":
+            batch = x.shape[0]
             postacts = torch.zeros(
                 batch, self.out_dim, self.in_dim, dtype=self.p_dtype
             ).to(self.device)
@@ -585,8 +624,11 @@ class QKANLayer(nn.Module):
                         qml_device=self.qml_device,
                     ).to(self.p_dtype)
             return postacts
-        if isinstance(self.solver, str) and self.solver in get_registry():
-            return get_solver(self.solver)(
+        fn = self._solver_fn
+        if fn is None:
+            raise NotImplementedError()
+        if isinstance(self.solver, str):
+            postacts = fn(
                 x,
                 theta_v,
                 pw_v,
@@ -600,39 +642,31 @@ class QKANLayer(nn.Module):
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
                 **self.solver_kwargs,
-            ).to(self.p_dtype)
-        if callable(self.solver):
-            return self.solver(
-                x,
-                theta_v,
-                pw_v,
-                pb_v,
-                self.reps,
-                device=self.device,
-                ansatz=self.ansatz,
-                **self.solver_kwargs,
             )
-        raise NotImplementedError()
+            return postacts.to(self.p_dtype) if self._needs_dtype_cast else postacts
+        return fn(
+            x,
+            theta_v,
+            pw_v,
+            pb_v,
+            self.reps,
+            device=self.device,
+            ansatz=self.ansatz,
+            **self.solver_kwargs,
+        )
 
     def _forward_eval(self, x: torch.Tensor) -> torch.Tensor:
-        """Inference path — uses pre-folded weights and cached views.
-
-        ``self._eff_pw``, ``self._eff_base_w``, ``self._bias_sum`` are
-        materialised by ``train(False)``. Theta / preacts views are cached
-        in ``_init_view_caches`` when ``p_dim=2``; under ``p_dim=4`` the
-        storage already matches natural rank so no view is needed.
-        """
+        """Inference path — uses pre-folded weights + aliased solver inputs."""
         assert x.shape[1] == self.in_dim, "Invalid input dimension"
         if self.is_batchnorm:
             x = self.bn(x)
         base_input = self.base_activation(x)
-        theta_v = self._theta_natural()
-        pw_v = self._preacts_w_natural()
-        pb_v = self._preacts_b_natural()
-        postacts = self._run_solver(x, theta_v, pw_v, pb_v)
-        if postacts.shape[1] != self.out_dim:
-            postacts = postacts.expand(-1, self.out_dim, -1)
-        # sum_i( postacts * (pw * mask) ) + F.linear(base_input, base_w * mask, +bias_sum)
+        postacts = self._run_solver(
+            x,
+            self._theta_natural_v,
+            self._preacts_w_natural_v,
+            self._preacts_b_natural_v,
+        )
         eff_pw = self._eff_pw
         eff_base_w = self._eff_base_w
         assert eff_pw is not None and eff_base_w is not None
@@ -641,46 +675,31 @@ class QKANLayer(nn.Module):
         return main + base
 
     def _forward_train(self, x: torch.Tensor) -> torch.Tensor:
-        """Training path — reads live parameters, no eval cache.
-
-        Uses cached ``(O,I)`` views of (O,I) params under ``p_dim=2`` so
-        per-forward ``.view()`` overhead is zero; under ``p_dim=4`` the
-        params already are 2D. The epilogue stays in the direct form
-        ``((postacts + pb) * eff_pw).sum(2)`` — bias-fold's extra
-        reduction does not pay off when run per-step.
-        """
+        """Training path — reads live params via aliased views, no eval cache."""
         assert x.shape[1] == self.in_dim, "Invalid input dimension"
         if self.is_batchnorm:
             x = self.bn(x)
         base_input = self.base_activation(x)
-        theta_v = self._theta_natural()
-        pw_v = self._preacts_w_natural()
-        pb_v = self._preacts_b_natural()
-        postacts = self._run_solver(x, theta_v, pw_v, pb_v)
-        if postacts.shape[1] != self.out_dim:
-            postacts = postacts.expand(-1, self.out_dim, -1)
-        if self.p_dim == 2:
-            assert (
-                self._pw_oi is not None
-                and self._bw_oi is not None
-                and self._mask_oi is not None
-                and self._pb_oi is not None
-            )
-            pw_oi = self._pw_oi
-            bw_oi = self._bw_oi
-            mask_oi = self._mask_oi
-            pb_oi = self._pb_oi
+        postacts = self._run_solver(
+            x,
+            self._theta_natural_v,
+            self._preacts_w_natural_v,
+            self._preacts_b_natural_v,
+        )
+        pw_oi = self._pw_oi
+        bw_oi = self._bw_oi
+        if self._mask_is_identity:
+            eff_pw = pw_oi
+            base_w = bw_oi
         else:
-            pw_oi = self.postact_weights
-            bw_oi = self.base_weight
-            mask_oi = self.mask
-            pb_oi = self.postact_bias
-        eff_pw = pw_oi * mask_oi
+            mask_oi = self._mask_oi
+            eff_pw = pw_oi * mask_oi
+            base_w = bw_oi * mask_oi
         if self.postact_bias_trainable:
-            main = torch.sum((postacts + pb_oi) * eff_pw, dim=2)
+            main = torch.sum((postacts + self._pb_oi) * eff_pw, dim=2)
         else:
             main = (postacts * eff_pw).sum(dim=2)
-        base = F.linear(base_input, bw_oi * mask_oi)
+        base = F.linear(base_input, base_w)
         return main + base
 
     def reset_parameters(self):
@@ -711,6 +730,7 @@ class QKANLayer(nn.Module):
         self.postact_bias.data.zero_()
 
         self.mask.data.fill_(1)
+        self._mask_is_identity = True
 
         if self.is_batchnorm:
             self.bn.reset_parameters()
@@ -2096,6 +2116,7 @@ class QKAN(nn.Module):
             mask_2d = layer._as_oi(layer.mask)
             new_2d = (self.edge_scores[i] > threshold).to(mask_2d.dtype) * mask_2d.data
             layer.mask.data.copy_(new_2d.reshape(layer.mask.shape))
+            layer._mask_is_identity = False
 
     def prune(self, node_th: float = 1e-2, edge_th: float = 3e-2):
         """
