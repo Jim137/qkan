@@ -53,6 +53,7 @@ from torch import nn
 
 __all__ = [
     "make_graphed_inference",
+    "make_graphed_train_step",
     "compile_inference",
     "CompiledInference",
     "graph_submodules",
@@ -126,6 +127,186 @@ def make_graphed_inference(
         return static_output
 
     return replay
+
+
+# ---------------------------------------------------------------------------
+# Low-level: train-mode graph capture (forward + loss + backward)
+# ---------------------------------------------------------------------------
+
+
+def _reallocate_params_on_stream(
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+) -> None:
+    """Clone every trainable Parameter onto the current CUDA stream.
+
+    CUDA-graph capture binds an autograd accumulator to whichever stream the
+    Parameter's storage was allocated on. When a model is constructed on the
+    default stream and capture is later attempted on a side stream, the
+    accumulator launches a kernel on the legacy stream and capture fails with
+    ``cudaErrorStreamCaptureImplicit``. Re-allocating the Parameters on the
+    capture stream re-creates the accumulators with the right affinity.
+
+    The optimizer's ``param_groups`` are rewired to the new Parameter objects;
+    any existing ``optimizer.state`` is re-keyed best-effort (state tensors
+    survive but are NOT migrated to a new stream — re-init momentum state if
+    you saw any training before).
+    """
+    old_to_new: dict[int, torch.nn.Parameter] = {}
+    for name, p in list(model.named_parameters()):
+        if not p.requires_grad:
+            continue
+        new_p = torch.nn.Parameter(p.data.clone(), requires_grad=True)
+        # Walk dotted name to find the parent module and the attribute.
+        parent: nn.Module = model
+        parts = name.split(".")
+        for part in parts[:-1]:
+            parent = getattr(parent, part)
+        setattr(parent, parts[-1], new_p)
+        old_to_new[id(p)] = new_p
+    # Rebuild any view/alias caches the model maintains over its Parameters.
+    for sub in model.modules():
+        init_fn = getattr(sub, "_init_view_caches", None)
+        if callable(init_fn):
+            init_fn()
+    # Update optimizer references.
+    new_state: dict = {}
+    for group in optimizer.param_groups:
+        new_params: list = []
+        for p in group["params"]:
+            new_p_opt = old_to_new.get(id(p))
+            if new_p_opt is None:
+                new_params.append(p)
+            else:
+                new_params.append(new_p_opt)
+                if p in optimizer.state:
+                    new_state[new_p_opt] = optimizer.state.pop(p)
+        group["params"] = new_params
+    if new_state:
+        optimizer.state.update(new_state)
+
+
+def make_graphed_train_step(
+    model: nn.Module,
+    sample_input: torch.Tensor,
+    sample_target: torch.Tensor,
+    loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    optimizer: torch.optim.Optimizer,
+    warmup: int = 3,
+) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
+    """Capture forward + loss + backward into a CUDA graph for one train step.
+
+    The captured region is everything up to (but excluding) ``optimizer.step``:
+    ``optimizer.zero_grad(set_to_none=False)``, ``forward``, ``loss_fn``,
+    ``loss.backward()``. The optimizer step is left to the caller because
+    optimisers like Adam contain host-side scalar work that breaks capture.
+
+    The returned callable accepts ``(input, target)``, copies them into the
+    static buffers, replays the graph, and returns the loss tensor (a view
+    into a static buffer — clone before mutating). After replay, every
+    parameter's ``.grad`` holds the captured-step gradient and ``optimizer
+    .step()`` can be called as usual.
+
+    Side effects on ``model`` and ``optimizer``:
+        - Every trainable Parameter is re-allocated on the capture stream so
+          the autograd accumulator gets the right stream affinity. References
+          held by the caller (e.g. ``my_layer.theta``) ARE updated; references
+          taken BEFORE calling this function go stale. Re-fetch
+          ``model.parameters()`` if you cached anything.
+        - ``optimizer.param_groups`` is rewired to point at the new
+          Parameters; ``optimizer.state`` is re-keyed best-effort but state
+          tensors are NOT migrated across streams. Adam users running this on
+          a freshly-built optimizer (no momentum yet) are unaffected.
+
+    Constraints:
+        - ``sample_input`` / ``sample_target`` fix the shapes and dtypes
+          of subsequent calls; new shapes require a fresh capture.
+        - All parameters of ``model`` must be on CUDA. ``set_to_none=False``
+          inside the graph zeroes grads in-place — never swap ``.grad`` for a
+          new tensor outside the graph (e.g. don't call
+          ``optimizer.zero_grad(set_to_none=True)`` between replays).
+        - ``loss_fn`` must produce a scalar tensor.
+
+    Args:
+        model: a module in train() mode with CUDA parameters.
+        sample_input: representative input tensor.
+        sample_target: representative target tensor.
+        loss_fn: ``loss_fn(output, target) -> scalar`` (e.g. ``nn.MSELoss()``).
+        optimizer: the optimiser whose grads will be zeroed inside the graph.
+            ``optimizer.step()`` is NOT captured — call it after each replay.
+        warmup: warmup forward/backward passes on a side stream before capture.
+
+    Returns:
+        A callable ``train_step(x, y) -> loss``. Loss is a view into a
+        static buffer; clone it if you need to retain past the next replay.
+    """
+    if not sample_input.is_cuda or not sample_target.is_cuda:
+        raise ValueError("make_graphed_train_step requires CUDA input/target")
+
+    model.train()
+
+    # Static buffers for I/O — copy_'d on each replay.
+    static_input = torch.empty_like(sample_input)
+    static_input.copy_(sample_input)
+    static_target = torch.empty_like(sample_target)
+    static_target.copy_(sample_target)
+
+    # Side stream for warmup + capture. Everything stream-bound below (param
+    # reallocation, .grad allocation via first backward, capture itself) must
+    # happen here.
+    side = torch.cuda.Stream()
+    side.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(side):
+        # Re-allocate trainable Parameters on the side stream so their grad
+        # accumulators bind to the capture stream rather than the legacy
+        # default. Required for any model that aliases Parameters via views
+        # at __init__ (e.g. QKANLayer p_dim=2).
+        _reallocate_params_on_stream(model, optimizer)
+        # Warmup: run a full train step (incl. backward) so all .grad
+        # buffers are allocated on the side stream, and any lazy state in
+        # the model is materialised.
+        for _ in range(max(1, warmup)):
+            optimizer.zero_grad(set_to_none=True)
+            out = model(static_input)
+            loss = loss_fn(out, static_target)
+            loss.backward()
+    torch.cuda.current_stream().wait_stream(side)
+    torch.cuda.synchronize()
+
+    # Capture: zero_grad(set_to_none=False) keeps grad tensors allocated and
+    # zeros them in-place, so the graph sees the same .grad pointers on
+    # every replay. Capture stream MUST be the same one we warmed up on.
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph, stream=side):
+        optimizer.zero_grad(set_to_none=False)
+        static_output = model(static_input)
+        static_loss = loss_fn(static_output, static_target)
+        static_loss.backward()
+
+    sample_in_shape = sample_input.shape
+    sample_in_dtype = sample_input.dtype
+    sample_tgt_shape = sample_target.shape
+    sample_tgt_dtype = sample_target.dtype
+
+    def train_step(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        if x.shape != sample_in_shape or x.dtype != sample_in_dtype:
+            raise ValueError(
+                f"Graphed train_step requires input shape {tuple(sample_in_shape)} "
+                f"dtype {sample_in_dtype}; got shape {tuple(x.shape)} "
+                f"dtype {x.dtype}"
+            )
+        if y.shape != sample_tgt_shape or y.dtype != sample_tgt_dtype:
+            raise ValueError(
+                f"Graphed train_step requires target shape {tuple(sample_tgt_shape)} "
+                f"dtype {sample_tgt_dtype}; got shape {tuple(y.shape)} "
+                f"dtype {y.dtype}"
+            )
+        static_input.copy_(x)
+        static_target.copy_(y)
+        graph.replay()
+        return static_loss
+
+    return train_step
 
 
 # ---------------------------------------------------------------------------

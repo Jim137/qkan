@@ -22,6 +22,7 @@ from .inference import (
     compile_inference,
     graph_submodules,
     make_graphed_inference,
+    make_graphed_train_step,
 )
 from .info import print0, print_banner, print_version
 from .kan import KAN
@@ -49,6 +50,7 @@ __all__ = [
     "get_feynman_dataset",
     "graph_submodules",
     "make_graphed_inference",
+    "make_graphed_train_step",
     "print0",
     "print_banner",
     "print_version",
