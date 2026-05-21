@@ -26,7 +26,16 @@ from .inference import (
 )
 from .info import print0, print_banner, print_version
 from .kan import KAN
-from .optim_utils import reshape_optimizer_state
+from .optim import (
+    AdaBelief,
+    LBFGSFinisher,
+    QKANAdamMini,
+    QKANBeliefMini,
+    QKANSpectralMini,
+    TritonAdaBelief,
+    adam_then_lbfgs,
+    reshape_optimizer_state,
+)
 from .qkan import QKAN, QKANLayer
 from .torch_qc import StateVector, TorchGates
 from .utils import SYMBOLIC_LIB, create_dataset
@@ -39,11 +48,18 @@ __all__ = [
     "FourierKAN",
     "KAN",
     "QKAN",
+    "AdaBelief",
+    "QKANAdamMini",
+    "QKANBeliefMini",
     "QKANLayer",
+    "QKANSpectralMini",
     "StateVector",
     "SYMBOLIC_LIB",
     "TorchGates",
     "CompiledInference",
+    "LBFGSFinisher",
+    "TritonAdaBelief",
+    "adam_then_lbfgs",
     "compile_inference",
     "create_dataset",
     "dataset_range",

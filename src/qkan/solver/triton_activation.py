@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 
 try:
-    from ..triton_activations import (
+    from .triton_activations import (
         SUPPORTED_KINDS,
         triton_activation_backward,
         triton_activation_forward,

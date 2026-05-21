@@ -38,7 +38,7 @@ from torch import nn
 # We probe availability eagerly (without compiling) by reusing cute_ops's
 # detection logic, then load the extension lazily on first call.
 try:
-    from .cute_ops import _CUTE_KERNELS_AVAILABLE, _get_ext
+    from ..cute_ops import _CUTE_KERNELS_AVAILABLE, _get_ext
 
     _CUTE_LINEAR_AVAILABLE: bool = bool(_CUTE_KERNELS_AVAILABLE)
 except ImportError:

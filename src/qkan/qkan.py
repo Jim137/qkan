@@ -37,6 +37,7 @@ import torch.nn.functional as F
 from tqdm import tqdm  # type: ignore
 
 from .info import get_dist_info, print0, print_version
+from .qkan_epilogue import QKANEpilogue, qkan_epilogue_forward
 from .solver import get_registry, get_solver, make_base_activation, qml_solver
 
 
@@ -208,6 +209,14 @@ class QKANLayer(nn.Module):
         self.preact_init = preact_init
         self.postact_weight_trainable = postact_weight_trainable
         self.postact_bias_trainable = postact_bias_trainable
+
+        # Fused-epilogue feature flag. When True the (postacts+pb)*eff_pw sum
+        # and the base linear term are collapsed into a single Triton kernel.
+        # Default OFF for parity; opt-in via constructor arg, env var, or
+        # ``layer.set_fused_epilogue(True)`` post-construction.
+        self._use_fused_epilogue: bool = (
+            os.environ.get("QKAN_FUSED_EPILOGUE", "0") == "1"
+        )
 
         self.init_parameters()
 
@@ -413,6 +422,21 @@ class QKANLayer(nn.Module):
         object.__setattr__(self, "_pb_oi", pb_oi)
         object.__setattr__(self, "_bw_oi", bw_oi)
         object.__setattr__(self, "_mask_oi", mask_oi)
+        # Stash natural-rank shape on each Parameter so optimisers (e.g.
+        # QKANAdamMini) can partition by the natural shape even when
+        # storage is p_dim=2-collapsed.
+        oi = (self.out_dim, self.in_dim)
+        object.__setattr__(self.theta, "_qkan_natural_shape", self._theta_natural_shape)
+        object.__setattr__(
+            self.preacts_weight, "_qkan_natural_shape", self._preacts_natural_shape
+        )
+        object.__setattr__(
+            self.preacts_bias, "_qkan_natural_shape", self._preacts_natural_shape
+        )
+        object.__setattr__(self.postact_weights, "_qkan_natural_shape", oi)
+        object.__setattr__(self.postact_bias, "_qkan_natural_shape", oi)
+        object.__setattr__(self.base_weight, "_qkan_natural_shape", oi)
+        object.__setattr__(self.mask, "_qkan_natural_shape", oi)
 
     def _theta_natural(self) -> torch.Tensor:
         return self._theta_natural_v  # type: ignore[return-value]
@@ -670,6 +694,10 @@ class QKANLayer(nn.Module):
         eff_pw = self._eff_pw
         eff_base_w = self._eff_base_w
         assert eff_pw is not None and eff_base_w is not None
+        if self._use_fused_epilogue and postacts.is_cuda:
+            return qkan_epilogue_forward(
+                postacts, eff_pw, None, base_input, eff_base_w, self._bias_sum
+            )
         main = (postacts * eff_pw).sum(dim=2)
         base = F.linear(base_input, eff_base_w, bias=self._bias_sum)
         return main + base
@@ -695,12 +723,31 @@ class QKANLayer(nn.Module):
             mask_oi = self._mask_oi
             eff_pw = pw_oi * mask_oi
             base_w = bw_oi * mask_oi
+        # Fused-epilogue train path: only beneficial when the eager backward
+        # is dominated by dispatch overhead. Empirically (B=128, O=64, I=128
+        # on H100) the backward overhead cancels the fwd win — keep it gated
+        # behind the same flag but the recommendation is to leave it OFF for
+        # training. ``set_fused_epilogue(True)`` enables it for both paths
+        # for users who want the eval-time speed without re-toggling.
+        if self._use_fused_epilogue and postacts.is_cuda:
+            pb = self._pb_oi if self.postact_bias_trainable else None
+            return QKANEpilogue.apply(postacts, eff_pw, pb, base_input, base_w)
         if self.postact_bias_trainable:
             main = torch.sum((postacts + self._pb_oi) * eff_pw, dim=2)
         else:
             main = (postacts * eff_pw).sum(dim=2)
         base = F.linear(base_input, base_w)
         return main + base
+
+    def set_fused_epilogue(self, enabled: bool = True) -> None:
+        """Toggle the fused Triton epilogue path (forward only; backward stays eager).
+
+        Off by default. When on, ``_forward_train`` / ``_forward_eval`` collapse
+        the (postacts + pb)·eff_pw sum and the base linear term into a single
+        kernel launch. CPU tensors and non-CUDA paths transparently fall back
+        to the eager chain.
+        """
+        self._use_fused_epilogue = bool(enabled)
 
     def reset_parameters(self):
         """

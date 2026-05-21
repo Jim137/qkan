@@ -20,7 +20,7 @@ import torch
 import torch.nn as nn
 
 try:
-    from ..cutile_activations import (
+    from .cutile_activations import (
         _VALID_KINDS,
         cutile_activation_backward,
         cutile_activation_forward,
