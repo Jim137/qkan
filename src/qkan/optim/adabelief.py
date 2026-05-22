@@ -189,6 +189,21 @@ class QKANBeliefMini(Optimizer):
 
     Pass ``model.named_parameters()`` (with names) to get the QKAN
     detection; bare ``model.parameters()`` falls back to per-tensor.
+
+    Args:
+        params: iterable of parameters (or ``(name, param)`` tuples).
+        lr: learning rate.
+        betas: ``(β₁, β₂)``.
+        eps: numerical floor on the denominator.
+        weight_decay: decoupled (AdamW-style) weight decay.
+        state_dtype: dtype for ``m`` and the block-reduced ``s``.
+            ``None`` (default) inherits the param dtype. Pass
+            ``torch.bfloat16`` to halve state memory; compute stays
+            native (torch's add/mul handle bf16 correctly enough for
+            these tiny accumulators). Note: when the params themselves
+            are bf16 and ``state_dtype=None``, ``s`` will accumulate
+            squared residuals in bf16 and may underflow on long runs —
+            pass ``state_dtype=torch.float32`` explicitly to be safe.
     """
 
     def __init__(
@@ -198,6 +213,7 @@ class QKANBeliefMini(Optimizer):
         betas: tuple[float, float] = (0.9, 0.999),
         eps: float = 1e-16,
         weight_decay: float = 0.0,
+        state_dtype: Optional[torch.dtype] = None,
     ) -> None:
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
@@ -221,7 +237,14 @@ class QKANBeliefMini(Optimizer):
             else:
                 normalised.append(item)
         super().__init__(
-            normalised, dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
+            normalised,
+            dict(
+                lr=lr,
+                betas=betas,
+                eps=eps,
+                weight_decay=weight_decay,
+                state_dtype=state_dtype,
+            ),
         )
 
     def _get_name(self, p: torch.Tensor) -> str:
@@ -241,6 +264,7 @@ class QKANBeliefMini(Optimizer):
             b1, b2 = group["betas"]
             eps = group["eps"]
             wd = group["weight_decay"]
+            state_dtype = group["state_dtype"]
 
             for p in group["params"]:
                 if p.grad is None:
@@ -255,14 +279,15 @@ class QKANBeliefMini(Optimizer):
                     nat = getattr(p, "_qkan_natural_shape", None)
                     view_shape = nat if nat is not None else tuple(p.shape)
                     bn = _infer_block_ndim(name, view_shape)
+                    sd = state_dtype if state_dtype is not None else p.dtype
                     state["step"] = 0
                     state["block_ndim"] = bn
                     state["view_shape"] = view_shape
                     state["exp_avg"] = torch.zeros_like(
-                        p, memory_format=torch.preserve_format
+                        p, dtype=sd, memory_format=torch.preserve_format
                     )
                     state["exp_avg_var_block"] = torch.zeros(
-                        _block_v_shape(view_shape, bn), dtype=p.dtype, device=p.device
+                        _block_v_shape(view_shape, bn), dtype=sd, device=p.device
                     )
 
                 state["step"] += 1
@@ -276,7 +301,10 @@ class QKANBeliefMini(Optimizer):
                 if wd != 0.0:
                     p.mul_(1.0 - lr * wd)
 
-                m.lerp_(g, 1.0 - b1)
+                # lerp_ requires matching dtypes; when state is bf16 but params
+                # are fp32, cast g down for the EMA update.
+                g_for_m = g.to(m.dtype) if g.dtype != m.dtype else g
+                m.lerp_(g_for_m, 1.0 - b1)
                 resid = g - m
                 resid_view = (
                     resid.view(*view_shape)

@@ -138,12 +138,17 @@ class QKANLayer(nn.Module):
         seed=None,
         solver_kwargs: Optional[dict] = None,
         p_dim: Literal[2, 4] = 4,
+        checkpoint_reps: bool = False,
     ):
         super(QKANLayer, self).__init__()
         if p_dim not in (2, 4):
             raise ValueError(f"p_dim must be 2 or 4, got {p_dim}")
         self.p_dim: Literal[2, 4] = p_dim
         self.solver_kwargs = solver_kwargs or {}
+        # Activation checkpointing for the rep loop (exact solver only).
+        # Trades ~1 extra forward pass for reps× less rep-state memory.
+        # Non-exact solvers ignore this kwarg.
+        self.checkpoint_reps = checkpoint_reps
         # If base_activation is a string ("silu", "gelu", ...), pick the
         # backend implementation matching the chosen solver — cute/flash/
         # cutile get their fused kernel, others fall back to torch.nn.
@@ -665,6 +670,7 @@ class QKANLayer(nn.Module):
                 fast_measure=self.fast_measure,
                 out_dim=self.out_dim,
                 dtype=self.c_dtype,
+                checkpoint_reps=self.checkpoint_reps,
                 **self.solver_kwargs,
             )
             return postacts.to(self.p_dtype) if self._needs_dtype_cast else postacts
@@ -723,12 +729,11 @@ class QKANLayer(nn.Module):
             mask_oi = self._mask_oi
             eff_pw = pw_oi * mask_oi
             base_w = bw_oi * mask_oi
-        # Fused-epilogue train path: only beneficial when the eager backward
-        # is dominated by dispatch overhead. Empirically (B=128, O=64, I=128
-        # on H100) the backward overhead cancels the fwd win — keep it gated
-        # behind the same flag but the recommendation is to leave it OFF for
-        # training. ``set_fused_epilogue(True)`` enables it for both paths
-        # for users who want the eval-time speed without re-toggling.
+        # Fused-epilogue train path: forward is a single Triton kernel; the
+        # backward fuses grad_postacts / grad_eff_pw / grad_pb into one Triton
+        # kernel and keeps the two matmul-shaped gradients on cuBLAS (~4
+        # launches vs ~7 eager dispatches).
+
         if self._use_fused_epilogue and postacts.is_cuda:
             pb = self._pb_oi if self.postact_bias_trainable else None
             return QKANEpilogue.apply(postacts, eff_pw, pb, base_input, base_w)
@@ -740,12 +745,14 @@ class QKANLayer(nn.Module):
         return main + base
 
     def set_fused_epilogue(self, enabled: bool = True) -> None:
-        """Toggle the fused Triton epilogue path (forward only; backward stays eager).
+        """Toggle the fused Triton epilogue path (forward + backward).
 
         Off by default. When on, ``_forward_train`` / ``_forward_eval`` collapse
         the (postacts + pb)·eff_pw sum and the base linear term into a single
-        kernel launch. CPU tensors and non-CUDA paths transparently fall back
-        to the eager chain.
+        kernel launch; the backward fuses grad_postacts / grad_eff_pw / grad_pb
+        into one Triton kernel and keeps the matmul-shaped gradients on cuBLAS.
+        CPU tensors and non-CUDA paths transparently fall back to the eager
+        chain.
         """
         self._use_fused_epilogue = bool(enabled)
 
@@ -1011,6 +1018,7 @@ class QKAN(nn.Module):
         seed=None,
         solver_kwargs: Optional[dict] = None,
         p_dim: Literal[2, 4] = 4,
+        checkpoint_reps: bool = False,
         **kwargs,
     ):
         """
@@ -1114,6 +1122,7 @@ class QKAN(nn.Module):
         if p_dim not in (2, 4):
             raise ValueError(f"p_dim must be 2 or 4, got {p_dim}")
         self.p_dim: Literal[2, 4] = p_dim
+        self.checkpoint_reps = checkpoint_reps
 
         self.layers = QKANModuleList()
         for l in range(self.depth):
@@ -1141,6 +1150,7 @@ class QKAN(nn.Module):
                     seed=seed,
                     solver_kwargs=self.solver_kwargs,
                     p_dim=p_dim,
+                    checkpoint_reps=checkpoint_reps,
                 )
             )
 
