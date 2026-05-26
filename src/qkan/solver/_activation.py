@@ -69,21 +69,21 @@ def make_base_activation(kind: str, solver: object) -> nn.Module:
 
     if solver == "cute":
         try:
-            from .cute_activation import CuTeActivation
+            from .cute.cute_activation import CuTeActivation
 
             return CuTeActivation(k)
         except ImportError:
             pass
     elif solver == "flash":
         try:
-            from .triton_activation import TritonActivation
+            from .flash.triton_activation import TritonActivation
 
             return TritonActivation(k)
         except ImportError:
             pass
     elif solver == "cutile":
         try:
-            from .cutile_activation import CuTileActivation
+            from .cutile.cutile_activation import CuTileActivation
 
             return CuTileActivation(k)
         except ImportError:

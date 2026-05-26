@@ -33,9 +33,9 @@ __all__: list[str] = []
 # isn't installed get skipped silently — the user only sees an error when
 # they construct the missing class through some other code path.
 _BACKENDS: list[tuple[str, str, tuple[type[BaseException], ...]]] = [
-    (".cute_linear", "CuTeLinear", (ImportError,)),
-    (".triton_linear", "TritonLinear", (ImportError,)),
-    (".cutile_linear", "CuTileLinear", (ImportError,)),
+    (".cute.cute_linear", "CuTeLinear", (ImportError,)),
+    (".flash.triton_linear", "TritonLinear", (ImportError,)),
+    (".cutile.cutile_linear", "CuTileLinear", (ImportError,)),
     (".fp8", "Fp8Linear", (ImportError, RuntimeError)),
     (".fp8", "Fp8Activation", (ImportError, RuntimeError)),
 ]

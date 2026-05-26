@@ -87,7 +87,7 @@ class TritonActivation(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not _TRITON_ACT_AVAILABLE or not x.is_cuda:
-            from ._activation import _TORCH_ACTIVATIONS
+            from .._activation import _TORCH_ACTIVATIONS
 
             return cast(torch.Tensor, _TORCH_ACTIVATIONS[self.kind]()(x))
         return cast(torch.Tensor, _TritonActivation.apply(x, self.kind))

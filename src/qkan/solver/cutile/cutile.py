@@ -15,34 +15,34 @@
 
 import torch
 
-from ._base import QKANSolver, register
-from ._utils import _cast_grads_to_dtype
-from .exact import torch_exact_solver
+from .._base import QKANSolver, register
+from .._utils import _cast_grads_to_dtype
+from ..exact import torch_exact_solver
 
 try:
-    from ..fused_ops import (
-        triton_pz_backward,
-        triton_pz_forward,
-        triton_real_backward,
-        triton_real_forward,
-        triton_rpz_backward,
-        triton_rpz_forward,
+    from .cutile_ops import (
+        cutile_pz_backward,
+        cutile_pz_forward,
+        cutile_real_backward,
+        cutile_real_forward,
+        cutile_rpz_backward,
+        cutile_rpz_forward,
     )
 
-    _FLASH_AVAILABLE = True
+    _CUTILE_AVAILABLE = True
 except ImportError:
-    _FLASH_AVAILABLE = False
+    _CUTILE_AVAILABLE = False
 
 
-_SUPPORTED_FLASH_ANSATZES = {"pz_encoding", "pz", "rpz_encoding", "rpz", "real"}
+_SUPPORTED_CUTILE_ANSATZES = {"pz_encoding", "pz", "rpz_encoding", "rpz", "real"}
 
 
-class _FlashFunction(torch.autograd.Function):
+class _CuTileFlashFunction(torch.autograd.Function):
     """
-    Custom autograd function: Triton forward and backward.
+    Custom autograd function: cuTile forward and backward.
 
-    Forward dispatches to the appropriate Triton kernel based on ansatz.
-    Backward uses direct Triton kernels with forward recomputation.
+    Forward dispatches to the appropriate cuTile kernel based on ansatz.
+    Backward uses direct cuTile kernels with forward recomputation.
     """
 
     @staticmethod
@@ -68,7 +68,7 @@ class _FlashFunction(torch.autograd.Function):
         ctx.ansatz = ansatz
 
         if ansatz in ("pz_encoding", "pz"):
-            return triton_pz_forward(
+            return cutile_pz_forward(
                 x,
                 theta,
                 preacts_w,
@@ -78,7 +78,7 @@ class _FlashFunction(torch.autograd.Function):
                 c_dtype=c_dtype,
             )
         elif ansatz in ("rpz_encoding", "rpz"):
-            return triton_rpz_forward(
+            return cutile_rpz_forward(
                 x,
                 theta,
                 preacts_w,
@@ -87,7 +87,7 @@ class _FlashFunction(torch.autograd.Function):
                 c_dtype=c_dtype,
             )
         elif ansatz == "real":
-            return triton_real_forward(
+            return cutile_real_forward(
                 x,
                 theta,
                 preacts_w,
@@ -97,7 +97,7 @@ class _FlashFunction(torch.autograd.Function):
                 c_dtype=c_dtype,
             )
         else:
-            raise ValueError(f"Unsupported ansatz for flash: {ansatz}")
+            raise ValueError(f"Unsupported ansatz for cutile: {ansatz}")
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -105,7 +105,7 @@ class _FlashFunction(torch.autograd.Function):
         ansatz = ctx.ansatz
 
         if ansatz in ("pz_encoding", "pz"):
-            grad_x, grad_theta, grad_pw, grad_pb = triton_pz_backward(
+            grad_x, grad_theta, grad_pw, grad_pb = cutile_pz_backward(
                 x,
                 theta,
                 preacts_w,
@@ -116,7 +116,7 @@ class _FlashFunction(torch.autograd.Function):
                 c_dtype=ctx.c_dtype,
             )
         elif ansatz in ("rpz_encoding", "rpz"):
-            grad_x, grad_theta, grad_pw, grad_pb = triton_rpz_backward(
+            grad_x, grad_theta, grad_pw, grad_pb = cutile_rpz_backward(
                 x,
                 theta,
                 preacts_w,
@@ -126,7 +126,7 @@ class _FlashFunction(torch.autograd.Function):
                 c_dtype=ctx.c_dtype,
             )
         elif ansatz == "real":
-            grad_x, grad_theta, grad_pw, grad_pb = triton_real_backward(
+            grad_x, grad_theta, grad_pw, grad_pb = cutile_real_backward(
                 x,
                 theta,
                 preacts_w,
@@ -137,7 +137,7 @@ class _FlashFunction(torch.autograd.Function):
                 c_dtype=ctx.c_dtype,
             )
         else:
-            raise ValueError(f"Unsupported ansatz for flash backward: {ansatz}")
+            raise ValueError(f"Unsupported ansatz for cutile backward: {ansatz}")
 
         if ctx.c_dtype in (torch.bfloat16, torch.float8_e4m3fn):
             grad_x, grad_theta, grad_pw, grad_pb = _cast_grads_to_dtype(
@@ -158,7 +158,7 @@ class _FlashFunction(torch.autograd.Function):
         )
 
 
-def flash_exact_solver(
+def cutile_flash_exact_solver(
     x: torch.Tensor,
     theta: torch.Tensor,
     preacts_weight: torch.Tensor,
@@ -167,9 +167,9 @@ def flash_exact_solver(
     **kwargs,
 ) -> torch.Tensor:
     """
-    Triton-accelerated exact solver. Drop-in replacement for torch_exact_solver.
+    cuTile-accelerated exact solver. Drop-in replacement for flash_exact_solver.
 
-    Uses fused Triton kernels for pz_encoding, rpz_encoding, and real ansatzes.
+    Uses fused cuTile kernels for pz_encoding, rpz_encoding, and real ansatzes.
     Falls back to torch_exact_solver for unsupported ansatzes.
 
     Args:
@@ -178,9 +178,9 @@ def flash_exact_solver(
     Returns:
         torch.Tensor, shape: (batch_size, out_dim, in_dim)
     """
-    if not _FLASH_AVAILABLE:
+    if not _CUTILE_AVAILABLE:
         raise ImportError(
-            "Triton fused kernels not available. Install triton to use flash solver."
+            "cuTile fused kernels not available. Install cuda-tile to use cutile solver."
         )
 
     ansatz = kwargs.get("ansatz", "pz_encoding")
@@ -191,7 +191,7 @@ def flash_exact_solver(
     batch, in_dim = x.shape
 
     # Fallback for unsupported ansatzes
-    if ansatz not in _SUPPORTED_FLASH_ANSATZES:
+    if ansatz not in _SUPPORTED_CUTILE_ANSATZES:
         return torch_exact_solver(
             x, theta, preacts_weight, preacts_bias, reps, **kwargs
         )
@@ -218,9 +218,9 @@ def flash_exact_solver(
             ]
             preacts_bias = preacts_bias.repeat(repeat_out, repeat_in, 1)[:, :in_dim, :]
 
-    # Check if gradients are needed. Under torch.no_grad() / inference_mode,
-    # skip the autograd.Function wrapper to avoid its overhead even when
-    # parameter tensors still have requires_grad=True.
+    # Check if gradients are needed (training)
+    # Bypass autograd.Function wrapper when torch.no_grad() / inference_mode
+    # is active. Saves ~6-10 μs of Python overhead per inference forward.
     if not torch.is_grad_enabled():
         needs_grad = False
     else:
@@ -231,7 +231,7 @@ def flash_exact_solver(
             )
 
     if needs_grad:
-        return _FlashFunction.apply(
+        return _CuTileFlashFunction.apply(
             x,
             theta,
             preacts_weight,
@@ -245,7 +245,7 @@ def flash_exact_solver(
         )
     else:
         if ansatz in ("pz_encoding", "pz"):
-            return triton_pz_forward(
+            return cutile_pz_forward(
                 x,
                 theta,
                 preacts_weight,
@@ -255,7 +255,7 @@ def flash_exact_solver(
                 c_dtype=c_dtype,
             )
         elif ansatz in ("rpz_encoding", "rpz"):
-            return triton_rpz_forward(
+            return cutile_rpz_forward(
                 x,
                 theta,
                 preacts_weight,
@@ -264,7 +264,7 @@ def flash_exact_solver(
                 c_dtype=c_dtype,
             )
         elif ansatz == "real":
-            return triton_real_forward(
+            return cutile_real_forward(
                 x,
                 theta,
                 preacts_weight,
@@ -277,17 +277,10 @@ def flash_exact_solver(
             raise NotImplementedError
 
 
-# ---------------------------------------------------------------------------
-# cuTile-accelerated solver
-# ---------------------------------------------------------------------------
+class CuTileSolver(QKANSolver):
+    """cuTile (Tile Language) solver (registered as ``"cutile"``)."""
 
-_SUPPORTED_CUTILE_ANSATZES = {"pz_encoding", "pz", "rpz_encoding", "rpz", "real"}
-
-
-class FlashSolver(QKANSolver):
-    """Triton-fused solver (registered as ``"flash"``)."""
-
-    name = "flash"
+    name = "cutile"
 
     def __call__(
         self,
@@ -298,14 +291,14 @@ class FlashSolver(QKANSolver):
         reps: int,
         **kwargs,
     ) -> torch.Tensor:
-        if not _FLASH_AVAILABLE:
+        if not _CUTILE_AVAILABLE:
             raise ImportError(
-                "Triton is required for solver='flash'. "
-                "Install with: pip install triton"
+                "cuda.tile is required for solver='cutile'. "
+                "Install with: pip install cuda-tile"
             )
-        return flash_exact_solver(
+        return cutile_flash_exact_solver(
             x, theta, preacts_weight, preacts_bias, reps, **kwargs
         )
 
 
-register(FlashSolver())
+register(CuTileSolver())

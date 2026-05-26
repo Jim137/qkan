@@ -45,8 +45,8 @@ _CUTE_KERNELS_AVAILABLE = False
 
 def _find_cutlass_include() -> str | None:
     """Locate CUTLASS include/ directory."""
-    # Project root: src/qkan/cute_ops.py → parents[2] = project root
-    project_root = pathlib.Path(__file__).resolve().parents[2]
+    # Project root: src/qkan/solver/cute/cute_ops.py → parents[4] = project root
+    project_root = pathlib.Path(__file__).resolve().parents[4]
     candidates = [
         os.environ.get("CUTLASS_PATH", ""),
         str(project_root.parent / "cutlass"),  # sibling checkout
@@ -90,7 +90,7 @@ def _load_jit():
 
     from torch.utils.cpp_extension import load
 
-    csrc_dir = pathlib.Path(__file__).resolve().parents[2] / "csrc"
+    csrc_dir = pathlib.Path(__file__).resolve().parents[4] / "csrc"
     sources = [
         str(csrc_dir / "cute_kernels.cu"),
         str(csrc_dir / "cute_activations.cu"),

@@ -15,12 +15,12 @@
 
 import torch
 
-from ._base import QKANSolver, register
-from ._utils import _cast_grads_to_dtype
-from .exact import torch_exact_solver
+from .._base import QKANSolver, register
+from .._utils import _cast_grads_to_dtype
+from ..exact import torch_exact_solver
 
 try:
-    from ..cute_ops import (
+    from .cute_ops import (
         _CUTE_KERNELS_AVAILABLE,
         cute_pz_backward,
         cute_pz_forward,

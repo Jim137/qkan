@@ -22,7 +22,7 @@ torch ops. f32 and bf16 I/O are both supported; compute is always f32.
 
 Usage::
 
-    from qkan.solver.cute_activation import CuTeActivation
+    from qkan.solver.cute.cute_activation import CuTeActivation
     base = CuTeActivation("silu")
     y = base(x)  # autograd-aware
 """
@@ -35,7 +35,7 @@ import torch
 import torch.nn as nn
 
 try:
-    from ..cute_ops import (
+    from .cute_ops import (
         _ACTIVATION_KIND_MAP,
         _CUTE_KERNELS_AVAILABLE,
         cute_activation_backward,
