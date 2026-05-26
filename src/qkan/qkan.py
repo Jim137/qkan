@@ -22,6 +22,7 @@ Supported solvers:
     - Custom solvers api
 """
 
+import math
 import os
 import random
 import warnings
@@ -139,6 +140,7 @@ class QKANLayer(nn.Module):
         solver_kwargs: Optional[dict] = None,
         p_dim: Literal[2, 4] = 4,
         checkpoint_reps: bool = False,
+        theta_init: Literal["small_gaussian", "xavier"] = "xavier",
     ):
         super(QKANLayer, self).__init__()
         if p_dim not in (2, 4):
@@ -214,6 +216,7 @@ class QKANLayer(nn.Module):
         self.preact_init = preact_init
         self.postact_weight_trainable = postact_weight_trainable
         self.postact_bias_trainable = postact_bias_trainable
+        self.theta_init = theta_init
 
         # Fused-epilogue feature flag. When True the (postacts+pb)*eff_pw sum
         # and the base linear term are collapsed into a single Triton kernel.
@@ -463,12 +466,29 @@ class QKANLayer(nn.Module):
         return t.view(self.out_dim, self.in_dim)
 
     def xavier_init(self):
-        """Apply Xavier normal initialization to theta and preacts.
+        """Initialise theta and (optionally) preacts.
 
-        Initialises through the natural-rank view so fan-in/fan-out are
-        identical regardless of storage rank (``p_dim``).
+        Theta init follows ``self.theta_init``:
+
+        - ``"xavier"`` (default): Xavier-normal init (fan-in/fan-out aware).
+        - ``"small_gaussian"``: ``theta ~ N(0, sigma^2)`` with
+          ``sigma = 1/sqrt(reps)``. Mitigates the barren-plateau regime in
+          deep parametric quantum circuits (Zhang+ 2022 arXiv:2203.09376).
+          Opt-in for ``reps >= 8``; underperforms xavier at small reps.
+
+        Preacts (when ``preact_init`` is True) keep Xavier — they are
+        amplitude-scaled so fan-in/out are meaningful.
         """
-        nn.init.xavier_normal_(self._theta_natural().data)
+        if self.theta_init == "small_gaussian":
+            nn.init.normal_(
+                self._theta_natural().data,
+                mean=0.0,
+                std=1.0 / math.sqrt(max(self.reps, 1)),
+            )
+        elif self.theta_init == "xavier":
+            nn.init.xavier_normal_(self._theta_natural().data)
+        else:
+            raise ValueError(f"Unknown theta_init: {self.theta_init!r}")
         if self.preact_init:
             nn.init.xavier_normal_(self._preacts_w_natural().data)
             nn.init.xavier_normal_(self._preacts_b_natural().data)
@@ -1019,6 +1039,7 @@ class QKAN(nn.Module):
         solver_kwargs: Optional[dict] = None,
         p_dim: Literal[2, 4] = 4,
         checkpoint_reps: bool = False,
+        theta_init: Literal["small_gaussian", "xavier"] = "xavier",
         **kwargs,
     ):
         """
@@ -1123,6 +1144,7 @@ class QKAN(nn.Module):
             raise ValueError(f"p_dim must be 2 or 4, got {p_dim}")
         self.p_dim: Literal[2, 4] = p_dim
         self.checkpoint_reps = checkpoint_reps
+        self.theta_init = theta_init
 
         self.layers = QKANModuleList()
         for l in range(self.depth):
@@ -1151,6 +1173,7 @@ class QKAN(nn.Module):
                     solver_kwargs=self.solver_kwargs,
                     p_dim=p_dim,
                     checkpoint_reps=checkpoint_reps,
+                    theta_init=theta_init,
                 )
             )
 
@@ -1298,6 +1321,11 @@ class QKAN(nn.Module):
                     dst_pw[..., i].copy_(src_pw[..., i])
                     dst_pb[..., i].copy_(src_pb[..., i])
                 dst_t[..., src_layer.reps, :].copy_(src_t[..., src_layer.reps, :])
+                # Added reps stay at zero from reset_parameters; for
+                # pz/rpz/px this is identity, so refine() is function-
+                # preserving at step 0. For "real" ansatz, theta=0 gives
+                # X·Z (not identity), so the refine boundary is
+                # discontinuous for that ansatz.
                 # (O, I) params: copy via 2D view to bridge p_dim differences.
                 layer._as_oi(layer.postact_weights).data.copy_(
                     src_layer._as_oi(src_layer.postact_weights).data
@@ -1370,6 +1398,7 @@ class QKAN(nn.Module):
             p_dtype=self.p_dtype,
             seed=self.seed,
             p_dim=self.p_dim,
+            theta_init=self.theta_init,
         )
         new_model.initialize_from_another_model(self)
         return new_model
@@ -1620,6 +1649,10 @@ class QKAN(nn.Module):
         lamb_coefdiff=0.0,
         reg_metric="edge_forward_dr_n",
         verbose=True,
+        clip_theta_grad_norm: Optional[float] = None,
+        lamb_theta_l1: float = 0.0,
+        prune_every: int = 0,
+        prune_threshold: float = 1e-3,
     ):
         """
         Train the model
@@ -1657,6 +1690,25 @@ class QKAN(nn.Module):
                 'edge_forward_dr_n', 'edge_forward_dr_u', 'edge_forward_sum', 'edge_backward', 'node_backward'
             verbose : bool
                 Verbose mode, default: True
+            clip_theta_grad_norm : float | None
+                If not None, apply ``torch.nn.utils.clip_grad_norm_`` to the
+                concatenation of all ``QKANLayer.theta`` parameters (only)
+                with this max_norm. Useful at high reps / bf16 where theta
+                gradients occasionally explode near saddle points. Default
+                None (no clipping).
+            lamb_theta_l1 : float
+                Weight for an additional ``sum(|theta|)`` penalty added to
+                the training objective. Pushes low-contribution rotations
+                toward zero so periodic mask pruning can zero them out.
+                Default 0.0 (no penalty).
+            prune_every : int
+                If > 0, every ``prune_every`` steps, set ``mask[o,i]=0``
+                wherever ``theta[o,i].abs().sum() < prune_threshold`` and
+                flip ``_mask_is_identity=False`` on affected layers. Default
+                0 (no auto-pruning).
+            prune_threshold : float
+                Threshold for the per-edge theta-magnitude check used by
+                ``prune_every``. Default 1e-3.
 
         Returns
         -------
@@ -1697,6 +1749,21 @@ class QKAN(nn.Module):
             batch_size = batch
             batch_size_test = batch
 
+        qkan_layers = [layer for layer in self.layers if isinstance(layer, QKANLayer)]
+        theta_params = [layer.theta for layer in qkan_layers]
+
+        def _theta_l1_term() -> torch.Tensor:
+            """Sum of |theta| across all QKANLayer's (zero if no layers)."""
+            term = torch.tensor(0.0, device=self.device)
+            for t in theta_params:
+                term = term + torch.sum(torch.abs(t))
+            return term
+
+        def _clip_theta_grads() -> None:
+            if clip_theta_grad_norm is None or not theta_params:
+                return
+            torch.nn.utils.clip_grad_norm_(theta_params, max_norm=clip_theta_grad_norm)
+
         def _closure():
             nonlocal train_loss, reg_
             optimizer.zero_grad()
@@ -1713,7 +1780,10 @@ class QKAN(nn.Module):
             else:
                 reg_ = torch.tensor(0.0, device=self.device)
             objective = train_loss + lamb * reg_
+            if lamb_theta_l1 > 0.0:
+                objective = objective + lamb_theta_l1 * _theta_l1_term()
             objective.backward()
+            _clip_theta_grads()
             return objective
 
         if closure is None and isinstance(optimizer, torch.optim.LBFGS):
@@ -1747,8 +1817,28 @@ class QKAN(nn.Module):
                 else:
                     reg_ = torch.tensor(0.0, device=self.device)
                 loss = train_loss + lamb * reg_
+                if lamb_theta_l1 > 0.0:
+                    loss = loss + lamb_theta_l1 * _theta_l1_term()
                 loss.backward()
+                _clip_theta_grads()
                 optimizer.step(closure)
+
+            if prune_every > 0 and ((_ + 1) % prune_every == 0):
+                with torch.no_grad():
+                    for layer in qkan_layers:
+                        # Natural shape is (*group, reps+1, k); reduce
+                        # trailing (reps+1, k) axes to per-edge magnitude.
+                        edge_mag = torch.sum(
+                            torch.abs(layer._theta_natural()), dim=(-2, -1)
+                        )
+                        kill = edge_mag < prune_threshold
+                        if not bool(kill.any()):
+                            continue
+                        mask_2d = layer._as_oi(layer.mask).data
+                        if kill.shape != mask_2d.shape:
+                            kill = kill.reshape(mask_2d.shape)
+                        mask_2d[kill] = 0.0
+                        layer._mask_is_identity = False
 
             self.eval()
             test_loss = loss_fn_eval(
