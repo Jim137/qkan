@@ -12,16 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""nn.Linear drop-in backed by a cuTe DSL CUDA kernel.
+"""nn.Linear drop-in for QKAN's CuTe solver family.
 
-Mirrors ``torch.nn.Linear`` semantics (init, bias handling, leading-dim
-preservation) but routes the matmul through the cuTe forward kernel in
-``csrc/cute_linear.cu``.  Backward delegates to cuBLAS via torch APIs.
+The forward in ``csrc/cute_linear.cu`` deliberately delegates to
+``at::addmm`` / ``at::matmul`` (cuBLAS) rather than reimplementing a tuned
+bf16/f32 GEMM with MMA atoms.  That means the cuTe kernel wrapper offers
+zero kernel-level benefit over ``torch.nn.functional.linear`` — and on tiny
+HQKAN shapes (out ~ els ~ 10) the Python wrapper overhead around it
+(extension lookup, autograd.Function dispatch, reshape branch) makes the
+"backend" 1.3-1.4x slower than ``nn.Linear``.
 
-Use this when you want a CUDA-graph-friendly Linear that lives on the same
-stream as QKAN's cuTe solver (``solver="cute"``).  For inference under
-``torch.no_grad()`` / ``torch.inference_mode()`` we bypass autograd.Function
-entirely to skip its overhead.
+So this class is now a thin wrapper that calls ``F.linear`` directly.  It
+exists for API symmetry with ``TritonLinear`` / ``CuTileLinear`` (so users
+of the ``cute`` solver can write ``CuTeLinear(...)`` next to their solver
+choice without thinking) and to match ``nn.Linear`` initialization exactly.
+Numerically and graph-wise it is identical to ``nn.Linear``.
 """
 
 from __future__ import annotations
@@ -29,84 +34,16 @@ from __future__ import annotations
 import math
 
 import torch
+import torch.nn.functional as F
 from torch import nn
-
-# ---------------------------------------------------------------------------
-# Extension loading (mirrors cute_ops.py: pre-built → JIT fallback)
-# ---------------------------------------------------------------------------
-
-# We probe availability eagerly (without compiling) by reusing cute_ops's
-# detection logic, then load the extension lazily on first call.
-try:
-    from .cute_ops import _CUTE_KERNELS_AVAILABLE, _get_ext
-
-    _CUTE_LINEAR_AVAILABLE: bool = bool(_CUTE_KERNELS_AVAILABLE)
-except ImportError:
-    _get_ext = None  # type: ignore[assignment]
-    _CUTE_LINEAR_AVAILABLE = False
-
-
-def _require_ext():
-    """Resolve the CuTe extension, raising ImportError if unavailable."""
-    if not _CUTE_LINEAR_AVAILABLE or _get_ext is None:
-        raise ImportError(
-            "CuTeLinear requires the qkan CuTe extension.  Build it with:\n"
-            "  CUTLASS_PATH=/path/to/cutlass pip install --no-build-isolation -e .[cute]\n"
-            "or pick a different Linear backend (Triton, cuTile, torch)."
-        )
-    ext = _get_ext()
-    if not (hasattr(ext, "linear_forward") and hasattr(ext, "linear_backward")):
-        raise ImportError(
-            "qkan._C is loaded but does not expose linear_forward/linear_backward. "
-            "Rebuild the extension after pulling the latest source."
-        )
-    return ext
-
-
-# ---------------------------------------------------------------------------
-# autograd.Function
-# ---------------------------------------------------------------------------
-
-
-class _CuTeLinearFunction(torch.autograd.Function):
-    """y = x @ W^T + b, computed via the cuTe forward kernel."""
-
-    @staticmethod
-    def forward(
-        ctx, x_2d: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None
-    ):
-        ext = _require_ext()
-        y = ext.linear_forward(x_2d, weight, bias)
-        ctx.save_for_backward(x_2d, weight)
-        ctx.has_bias = bias is not None
-        return y
-
-    @staticmethod
-    def backward(ctx, grad_y: torch.Tensor):
-        ext = _require_ext()
-        x_2d, weight = ctx.saved_tensors
-        grad_x, grad_w, grad_b = ext.linear_backward(
-            grad_y.contiguous(), x_2d, weight, ctx.has_bias
-        )
-        if not ctx.has_bias:
-            grad_b = None
-        return grad_x, grad_w, grad_b
-
-
-# ---------------------------------------------------------------------------
-# nn.Module
-# ---------------------------------------------------------------------------
 
 
 class CuTeLinear(nn.Module):
-    """``nn.Linear`` drop-in computing ``y = x @ W^T + b`` via a cuTe DSL kernel.
+    """``nn.Linear`` drop-in for the CuTe solver family.
 
     Matches ``torch.nn.Linear`` initialization (``kaiming_uniform_(a=sqrt(5))``
     for the weight, ``uniform_`` within ``1/sqrt(fan_in)`` for the bias) and
-    preserves leading batch dims.
-
-    Supports float32 and bfloat16 I/O; compute is performed in f32 internally.
-    Backward delegates to cuBLAS via ``torch.matmul`` for simplicity.
+    delegates forward + backward to ``F.linear`` (cuBLAS).
     """
 
     __constants__ = ["in_features", "out_features"]
@@ -144,33 +81,7 @@ class CuTeLinear(nn.Module):
             nn.init.uniform_(self.bias, -bound, bound)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Flatten leading dims, run kernel, then restore.
-        if x.dim() < 2:
-            raise ValueError(
-                f"CuTeLinear expects input with at least 2 dims, got {x.dim()}"
-            )
-        leading = x.shape[:-1]
-        K = x.shape[-1]
-        if K != self.in_features:
-            raise ValueError(
-                f"CuTeLinear: input last dim {K} != in_features {self.in_features}"
-            )
-
-        x_2d = x.reshape(-1, K).contiguous()
-
-        # Inference fast path: skip autograd.Function overhead under no_grad /
-        # inference_mode where backward is never called.
-        if not torch.is_grad_enabled() or not (
-            x_2d.requires_grad
-            or self.weight.requires_grad
-            or (self.bias is not None and self.bias.requires_grad)
-        ):
-            ext = _require_ext()
-            y_2d = ext.linear_forward(x_2d, self.weight, self.bias)
-        else:
-            y_2d = _CuTeLinearFunction.apply(x_2d, self.weight, self.bias)
-
-        return y_2d.reshape(*leading, self.out_features)
+        return F.linear(x, self.weight, self.bias)
 
     def extra_repr(self) -> str:
         return (

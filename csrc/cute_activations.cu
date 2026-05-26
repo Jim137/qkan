@@ -50,6 +50,12 @@ enum class ActKind : int {
 
 namespace {
 constexpr int BLOCK_B = 256;
+// Vectorized I/O: each thread loads/stores a 128-bit (int4) chunk. That is
+// 8 bf16 elements or 4 f32 elements per thread, which keeps this
+// bandwidth-bound kernel close to peak HBM throughput.
+template <typename T> struct vec_traits;
+template <> struct vec_traits<bf16_t> { static constexpr int VEC = 8; };
+template <> struct vec_traits<float>  { static constexpr int VEC = 4; };
 // gelu_tanh constants: y = 0.5 x (1 + tanh(SQRT_2_OVER_PI (x + GELU_C * x^3)))
 constexpr float SQRT_2_OVER_PI = 0.7978845608028654f;
 constexpr float GELU_C         = 0.044715f;
@@ -134,68 +140,112 @@ __device__ __forceinline__ float sigmoid_bwd(float x, float gy) {
 }
 
 // ====================================================================
+// Pointwise math dispatch (compile-time)
+// ====================================================================
+
+template <ActKind KIND>
+__device__ __forceinline__ float act_fwd(float x) {
+    if      constexpr (KIND == ActKind::Silu)      return silu_fwd(x);
+    else if constexpr (KIND == ActKind::GeluExact) return gelu_exact_fwd(x);
+    else if constexpr (KIND == ActKind::GeluTanh)  return gelu_tanh_fwd(x);
+    else if constexpr (KIND == ActKind::Relu)      return relu_fwd(x);
+    else if constexpr (KIND == ActKind::Tanh)      return tanh_fwd(x);
+    else /* Sigmoid */                             return sigmoid_fwd(x);
+}
+
+template <ActKind KIND>
+__device__ __forceinline__ float act_bwd(float x, float gy) {
+    if      constexpr (KIND == ActKind::Silu)      return silu_bwd(x, gy);
+    else if constexpr (KIND == ActKind::GeluExact) return gelu_exact_bwd(x, gy);
+    else if constexpr (KIND == ActKind::GeluTanh)  return gelu_tanh_bwd(x, gy);
+    else if constexpr (KIND == ActKind::Relu)      return relu_bwd(x, gy);
+    else if constexpr (KIND == ActKind::Tanh)      return tanh_bwd(x, gy);
+    else /* Sigmoid */                             return sigmoid_bwd(x, gy);
+}
+
+// ====================================================================
 // Templated 1D forward / backward kernels
 // ====================================================================
 //
 // One kernel per (kind × direction). IOT is the I/O dtype (float or bf16_t);
-// compute is always f32. CuTe DSL is used here purely for tensor view helpers
-// (make_tensor + make_layout for the 1D contiguous range) — the math itself
-// is bog-standard pointwise.
+// compute is always f32. The fast path uses vectorized 128-bit (int4) I/O —
+// 8 bf16 or 4 f32 elements per thread — to saturate HBM bandwidth on the
+// large-tensor case. A scalar tail kernel handles the remainder.
 
 template <typename IOT, ActKind KIND>
-__global__ void cute_act_fwd_kernel(
+__global__ void cute_act_fwd_kernel_vec(
     const IOT* __restrict__ x_ptr,
     IOT* __restrict__ y_ptr,
-    int n)
+    int n_vec)
 {
+    // n_vec = floor(n / VEC); each thread handles one VEC-wide chunk.
+    constexpr int VEC = vec_traits<IOT>::VEC;
     int idx = blockIdx.x * BLOCK_B + threadIdx.x;
-    if (idx >= n) return;
+    if (idx >= n_vec) return;
 
-    // CuTe 1D contiguous views; explicit unit stride for clarity / parity
-    // with cute_kernels.cu's row-major layout convention.
-    auto gX = make_tensor(make_gmem_ptr(x_ptr),
-                          make_layout(make_shape(n), make_stride(_1{})));
-    auto gY = make_tensor(make_gmem_ptr(y_ptr),
-                          make_layout(make_shape(n), make_stride(_1{})));
+    // 128-bit aligned load (PyTorch CUDA allocations are 256-byte aligned).
+    const int4* xv4 = reinterpret_cast<const int4*>(x_ptr) + idx;
+    int4*       yv4 = reinterpret_cast<int4*>(y_ptr)       + idx;
 
-    float xv = float(gX(idx));
-    float yv;
-    if constexpr (KIND == ActKind::Silu)        yv = silu_fwd(xv);
-    else if constexpr (KIND == ActKind::GeluExact) yv = gelu_exact_fwd(xv);
-    else if constexpr (KIND == ActKind::GeluTanh)  yv = gelu_tanh_fwd(xv);
-    else if constexpr (KIND == ActKind::Relu)      yv = relu_fwd(xv);
-    else if constexpr (KIND == ActKind::Tanh)      yv = tanh_fwd(xv);
-    else /* Sigmoid */                              yv = sigmoid_fwd(xv);
-    gY(idx) = IOT(yv);
+    int4 packed = __ldg(xv4);
+    IOT xs[VEC];
+    IOT ys[VEC];
+    *reinterpret_cast<int4*>(xs) = packed;
+    #pragma unroll
+    for (int i = 0; i < VEC; ++i) {
+        ys[i] = IOT(act_fwd<KIND>(float(xs[i])));
+    }
+    *yv4 = *reinterpret_cast<int4*>(ys);
 }
 
 template <typename IOT, ActKind KIND>
-__global__ void cute_act_bwd_kernel(
+__global__ void cute_act_fwd_kernel_tail(
+    const IOT* __restrict__ x_ptr,
+    IOT* __restrict__ y_ptr,
+    int n_start, int n)
+{
+    int idx = n_start + blockIdx.x * BLOCK_B + threadIdx.x;
+    if (idx >= n) return;
+    y_ptr[idx] = IOT(act_fwd<KIND>(float(x_ptr[idx])));
+}
+
+template <typename IOT, ActKind KIND>
+__global__ void cute_act_bwd_kernel_vec(
     const IOT* __restrict__ x_ptr,
     const IOT* __restrict__ grad_y_ptr,
     IOT* __restrict__ grad_x_ptr,
-    int n)
+    int n_vec)
 {
+    constexpr int VEC = vec_traits<IOT>::VEC;
     int idx = blockIdx.x * BLOCK_B + threadIdx.x;
+    if (idx >= n_vec) return;
+
+    const int4* xv4  = reinterpret_cast<const int4*>(x_ptr)      + idx;
+    const int4* gyv4 = reinterpret_cast<const int4*>(grad_y_ptr) + idx;
+    int4*       gxv4 = reinterpret_cast<int4*>(grad_x_ptr)       + idx;
+
+    int4 xp  = __ldg(xv4);
+    int4 gyp = __ldg(gyv4);
+    IOT xs[VEC], gys[VEC], gxs[VEC];
+    *reinterpret_cast<int4*>(xs)  = xp;
+    *reinterpret_cast<int4*>(gys) = gyp;
+    #pragma unroll
+    for (int i = 0; i < VEC; ++i) {
+        gxs[i] = IOT(act_bwd<KIND>(float(xs[i]), float(gys[i])));
+    }
+    *gxv4 = *reinterpret_cast<int4*>(gxs);
+}
+
+template <typename IOT, ActKind KIND>
+__global__ void cute_act_bwd_kernel_tail(
+    const IOT* __restrict__ x_ptr,
+    const IOT* __restrict__ grad_y_ptr,
+    IOT* __restrict__ grad_x_ptr,
+    int n_start, int n)
+{
+    int idx = n_start + blockIdx.x * BLOCK_B + threadIdx.x;
     if (idx >= n) return;
-
-    auto gX  = make_tensor(make_gmem_ptr(x_ptr),
-                           make_layout(make_shape(n), make_stride(_1{})));
-    auto gGy = make_tensor(make_gmem_ptr(grad_y_ptr),
-                           make_layout(make_shape(n), make_stride(_1{})));
-    auto gGx = make_tensor(make_gmem_ptr(grad_x_ptr),
-                           make_layout(make_shape(n), make_stride(_1{})));
-
-    float xv  = float(gX(idx));
-    float gyv = float(gGy(idx));
-    float gxv;
-    if constexpr (KIND == ActKind::Silu)        gxv = silu_bwd(xv, gyv);
-    else if constexpr (KIND == ActKind::GeluExact) gxv = gelu_exact_bwd(xv, gyv);
-    else if constexpr (KIND == ActKind::GeluTanh)  gxv = gelu_tanh_bwd(xv, gyv);
-    else if constexpr (KIND == ActKind::Relu)      gxv = relu_bwd(xv, gyv);
-    else if constexpr (KIND == ActKind::Tanh)      gxv = tanh_bwd(xv, gyv);
-    else /* Sigmoid */                              gxv = sigmoid_bwd(xv, gyv);
-    gGx(idx) = IOT(gxv);
+    grad_x_ptr[idx] = IOT(act_bwd<KIND>(float(x_ptr[idx]), float(grad_y_ptr[idx])));
 }
 
 // ====================================================================
@@ -206,7 +256,6 @@ __global__ void cute_act_bwd_kernel(
 // `if constexpr` cannot operate on a runtime value, so we expand a switch.
 #define DISPATCH_KIND(kind, IOT, KERNEL, grid, n, ...) \
     do { \
-        auto stream = at::cuda::getCurrentCUDAStream(); \
         switch (kind) { \
             case ActKind::Silu: \
                 KERNEL<IOT, ActKind::Silu>     <<<grid, BLOCK_B, 0, stream>>>(__VA_ARGS__); break; \
@@ -240,6 +289,42 @@ static inline ActKind to_act_kind(int kind_int) {
 // Python-facing launchers (bound from cute_kernels.cu's PYBIND11_MODULE)
 // ====================================================================
 
+// Launch vec kernel for the aligned prefix and a scalar tail kernel for the
+// remainder (if any). Both kernels are no-ops when their grid is 0.
+template <typename IOT>
+static inline void launch_fwd(ActKind kind, const IOT* x, IOT* y, int n,
+                              cudaStream_t stream) {
+    constexpr int VEC = vec_traits<IOT>::VEC;
+    int n_vec = n / VEC;
+    int n_aligned = n_vec * VEC;
+    if (n_vec > 0) {
+        dim3 grid((n_vec + BLOCK_B - 1) / BLOCK_B);
+        DISPATCH_KIND(kind, IOT, cute_act_fwd_kernel_vec, grid, n_vec, x, y, n_vec);
+    }
+    if (n_aligned < n) {
+        dim3 grid((n - n_aligned + BLOCK_B - 1) / BLOCK_B);
+        DISPATCH_KIND(kind, IOT, cute_act_fwd_kernel_tail, grid, n, x, y, n_aligned, n);
+    }
+}
+
+template <typename IOT>
+static inline void launch_bwd(ActKind kind, const IOT* x, const IOT* gy,
+                              IOT* gx, int n, cudaStream_t stream) {
+    constexpr int VEC = vec_traits<IOT>::VEC;
+    int n_vec = n / VEC;
+    int n_aligned = n_vec * VEC;
+    if (n_vec > 0) {
+        dim3 grid((n_vec + BLOCK_B - 1) / BLOCK_B);
+        DISPATCH_KIND(kind, IOT, cute_act_bwd_kernel_vec, grid, n_vec,
+                      x, gy, gx, n_vec);
+    }
+    if (n_aligned < n) {
+        dim3 grid((n - n_aligned + BLOCK_B - 1) / BLOCK_B);
+        DISPATCH_KIND(kind, IOT, cute_act_bwd_kernel_tail, grid, n,
+                      x, gy, gx, n_aligned, n);
+    }
+}
+
 torch::Tensor cute_activation_forward(torch::Tensor x, int kind_int) {
     TORCH_CHECK(x.is_cuda(), "x must be CUDA");
     auto x_c = x.is_contiguous() ? x : x.contiguous();
@@ -248,17 +333,17 @@ torch::Tensor cute_activation_forward(torch::Tensor x, int kind_int) {
     if (n == 0) return y;
 
     ActKind kind = to_act_kind(kind_int);
-    dim3 grid((n + BLOCK_B - 1) / BLOCK_B);
+    auto stream = at::cuda::getCurrentCUDAStream();
 
     auto dt = x_c.scalar_type();
     if (dt == torch::kBFloat16) {
-        DISPATCH_KIND(kind, bf16_t, cute_act_fwd_kernel, grid, n,
+        launch_fwd<bf16_t>(kind,
             reinterpret_cast<const bf16_t*>(x_c.data_ptr()),
             reinterpret_cast<bf16_t*>(y.data_ptr()),
-            n);
+            n, stream);
     } else if (dt == torch::kFloat32) {
-        DISPATCH_KIND(kind, float, cute_act_fwd_kernel, grid, n,
-            x_c.data_ptr<float>(), y.data_ptr<float>(), n);
+        launch_fwd<float>(kind,
+            x_c.data_ptr<float>(), y.data_ptr<float>(), n, stream);
     } else {
         TORCH_CHECK(false, "CuTe activation forward: unsupported dtype ", dt);
     }
@@ -276,19 +361,19 @@ torch::Tensor cute_activation_backward(torch::Tensor grad_y, torch::Tensor x, in
     if (n == 0) return gx;
 
     ActKind kind = to_act_kind(kind_int);
-    dim3 grid((n + BLOCK_B - 1) / BLOCK_B);
+    auto stream = at::cuda::getCurrentCUDAStream();
 
     auto dt = x_c.scalar_type();
     if (dt == torch::kBFloat16) {
-        DISPATCH_KIND(kind, bf16_t, cute_act_bwd_kernel, grid, n,
+        launch_bwd<bf16_t>(kind,
             reinterpret_cast<const bf16_t*>(x_c.data_ptr()),
             reinterpret_cast<const bf16_t*>(gy_c.data_ptr()),
             reinterpret_cast<bf16_t*>(gx.data_ptr()),
-            n);
+            n, stream);
     } else if (dt == torch::kFloat32) {
-        DISPATCH_KIND(kind, float, cute_act_bwd_kernel, grid, n,
+        launch_bwd<float>(kind,
             x_c.data_ptr<float>(), gy_c.data_ptr<float>(),
-            gx.data_ptr<float>(), n);
+            gx.data_ptr<float>(), n, stream);
     } else {
         TORCH_CHECK(false, "CuTe activation backward: unsupported dtype ", dt);
     }

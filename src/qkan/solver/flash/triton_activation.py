@@ -19,10 +19,11 @@ runs on the same backend as ``solver="flash"`` (and benefits from the same
 fused-kernel launch profile).
 """
 
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 try:
     from .triton_activations import (
@@ -42,6 +43,23 @@ except ImportError:
         "tanh",
         "sigmoid",
     )
+
+# Element-count threshold below which the inference-time path falls back to
+# the torch built-in. Picked from `_bench_activation_backends.py` on bf16,
+# RTX 5090: Triton's ~6 us launch overhead loses to torch up to ~1M elements
+# (4096 x 256). Above this the Triton kernel starts catching up.
+_TRITON_FAST_PATH_NUMEL = 1 << 20  # 1,048,576
+
+# Direct functional refs for the inference fast path. Caching the function
+# object avoids ~2 us per call vs constructing a fresh nn.Module each time.
+_TORCH_FUNCTIONAL: dict[str, Callable[[torch.Tensor], torch.Tensor]] = {
+    "silu": F.silu,
+    "gelu_exact": lambda x: F.gelu(x, approximate="none"),
+    "gelu_tanh": lambda x: F.gelu(x, approximate="tanh"),
+    "relu": F.relu,
+    "tanh": torch.tanh,
+    "sigmoid": torch.sigmoid,
+}
 
 
 class _TritonActivation(torch.autograd.Function):
@@ -87,9 +105,16 @@ class TritonActivation(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not _TRITON_ACT_AVAILABLE or not x.is_cuda:
-            from .._activation import _TORCH_ACTIVATIONS
-
-            return cast(torch.Tensor, _TORCH_ACTIVATIONS[self.kind]()(x))
+            return _TORCH_FUNCTIONAL[self.kind](x)
+        # Small-shape forward-only fast path: the Triton kernel carries a
+        # ~6 us fixed launch overhead that loses to torch's pointwise op for
+        # all bf16/f32 sizes typical in QKAN per-edge activations (up to
+        # ~1M elements on a 5090). Only kicks in during inference, since
+        # training needs the autograd-aware path.
+        if (
+            not torch.is_grad_enabled() or not x.requires_grad
+        ) and x.numel() < _TRITON_FAST_PATH_NUMEL:
+            return _TORCH_FUNCTIONAL[self.kind](x)
         return cast(torch.Tensor, _TritonActivation.apply(x, self.kind))
 
 

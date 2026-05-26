@@ -131,9 +131,19 @@ class Fp8Linear(nn.Module):
         bias: bool = True,
         activation_dtype: torch.dtype = torch.bfloat16,
         device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None,
     ) -> None:
         _check_fp8_supported()
         super().__init__()
+        # ``dtype`` is accepted for ``nn.Linear`` drop-in compatibility; it
+        # selects the bias / output dtype (same role as ``activation_dtype``).
+        # Pass either, not both — they refer to the same thing.
+        if dtype is not None:
+            if activation_dtype is not torch.bfloat16 and activation_dtype is not dtype:
+                raise ValueError(
+                    "Fp8Linear: pass either 'dtype' or 'activation_dtype', not both"
+                )
+            activation_dtype = dtype
         self.in_features = in_features
         self.out_features = out_features
         self.activation_dtype = activation_dtype
@@ -150,6 +160,20 @@ class Fp8Linear(nn.Module):
         w_fp8, w_scale = quantize_to_fp8(w_f32)
         self.weight = nn.Parameter(w_fp8, requires_grad=False)
         self.register_buffer("weight_scale", w_scale)
+
+        # Fallback-path cache. When ``_fp8_capable`` is False the forward
+        # dequantises the e4m3 weight to ``activation_dtype`` and runs
+        # ``F.linear``; doing that per-call costs ~10us and dominates the
+        # tiny GEMMs HQKAN feeds this layer. We cache the dequantised
+        # weight lazily on the first fallback call. The cache is a
+        # non-persistent buffer so checkpoints stay e4m3-only;
+        # ``_load_from_state_dict`` invalidates it.
+        # Trade-off: when ``_fp8_capable=False`` this layer uses ~2x the
+        # weight memory of a pure-fp8 layer (e4m3 + bf16 copy). The bf16
+        # copy is still smaller than f32 and these fallback shapes are by
+        # construction the narrow inner projections, so the absolute cost
+        # is small.
+        self.register_buffer("_weight_dequant_cache", None, persistent=False)
 
         if bias:
             b_f32 = torch.empty(out_features, device=device, dtype=torch.float32)
@@ -171,8 +195,9 @@ class Fp8Linear(nn.Module):
         leading_shape = x.shape[:-1]
 
         if not self._fp8_capable:
-            # Dequantise weight to bf16 once and run a normal F.linear.
-            # Inputs may be either fp8 (with scale) or bf16/f32.
+            # Dequantise weight to ``activation_dtype`` once and reuse via
+            # cache; run a normal F.linear. Inputs may be either fp8 (with
+            # scale) or bf16/f32.
             if x.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
                 if input_scale is None:
                     raise ValueError(
@@ -181,9 +206,12 @@ class Fp8Linear(nn.Module):
                 x = dequantize_from_fp8(x, input_scale, dtype=self.activation_dtype)
             elif x.dtype != self.activation_dtype:
                 x = x.to(self.activation_dtype)
-            w = dequantize_from_fp8(
-                self.weight, weight_scale, dtype=self.activation_dtype
-            )
+            w: Optional[torch.Tensor] = self._weight_dequant_cache  # type: ignore[has-type]
+            if w is None:
+                w = dequantize_from_fp8(
+                    self.weight, weight_scale, dtype=self.activation_dtype
+                )
+                self._weight_dequant_cache = w
             y = torch.nn.functional.linear(x, w, self.bias)
             return y.reshape(*leading_shape, self.out_features)
 
@@ -209,6 +237,12 @@ class Fp8Linear(nn.Module):
             out_dtype=self.activation_dtype,
         )
         return y.reshape(*leading_shape, self.out_features)
+
+    def _load_from_state_dict(self, *args, **kwargs) -> None:  # type: ignore[override]
+        # Invalidate the lazy dequant cache when weights are reloaded so
+        # subsequent forwards see the updated e4m3 weight / scale.
+        super()._load_from_state_dict(*args, **kwargs)
+        self._weight_dequant_cache = None  # type: ignore[assignment]
 
     def extra_repr(self) -> str:
         return (

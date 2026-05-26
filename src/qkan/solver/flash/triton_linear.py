@@ -32,6 +32,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 try:
     import triton  # type: ignore
@@ -131,6 +132,13 @@ if _TRITON_AVAILABLE:
 # --------------------------------------------------------------------------- #
 # Python launchers
 # --------------------------------------------------------------------------- #
+
+
+# Fast-path threshold: below this many FMAs (M*N*K) the Triton kernel's ~16 us
+# launch overhead dominates and F.linear (cuBLAS) is faster. Calibrated on
+# RTX 5090 bf16: triton wins reliably at >=5e8 (e.g. 4096x256x768 ~ 8e8 is the
+# first clear win); below ~5e8 cuBLAS is faster or ties. See _bench_crossover.py.
+_TRITON_FASTPATH_WORK_THRESHOLD = 5 * 10**8
 
 
 def _check_triton() -> None:
@@ -329,6 +337,12 @@ class TritonLinear(nn.Module):
             nn.init.uniform_(self.bias, -bound, bound)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Fast-path: cuBLAS beats Triton when M*N*K is below the launch-overhead
+        # crossover (see _TRITON_FASTPATH_WORK_THRESHOLD). F.linear handles N-D
+        # inputs natively, so we can skip the flatten/reshape entirely here.
+        if x.numel() * self.out_features < _TRITON_FASTPATH_WORK_THRESHOLD:
+            return F.linear(x, self.weight, self.bias)
+
         if x.dim() < 2:
             raise ValueError(
                 f"TritonLinear expects >=2D input, got shape {tuple(x.shape)}"
