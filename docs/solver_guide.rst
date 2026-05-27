@@ -80,6 +80,127 @@ Performance (from `#12 <https://github.com/Jim137/qkan/issues/12>`_):
    Use FP8 only for ``c_dtype``.
 
 
+Performance Tuning
+------------------
+
+Three opt-in features trade compute or accuracy for memory. All default to off,
+so behavior matches earlier releases unless you enable them.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 20 26 26
+
+   * - Feature
+     - Scope
+     - Saves
+     - Costs
+   * - ``checkpoint_reps``
+     - exact solver
+     - ~1/reps rep-state memory
+     - +1 forward pass
+   * - ``fused_epilogue``
+     - flash / cute / cutile epilogue
+     - 2 intermediate buffers, ~3 launches
+     - CUDA-only fast path
+   * - bf16 optimizer state
+     - ``QKANBeliefMini`` / ``TritonAdaBelief``
+     - 50% of optimizer state
+     - bf16 storage for ``m``, ``s``
+
+Activation Checkpointing the Rep Loop
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``checkpoint_reps`` flag on ``QKANLayer`` / ``QKAN`` wraps each iteration of
+the inner rep loop with ``torch.utils.checkpoint.checkpoint(use_reentrant=False)``.
+Intermediate state tensors are recomputed in the backward pass instead of being
+stashed for autograd, removing ~1/reps of the saved-for-backward memory.
+
+.. code-block:: python
+
+   qkan = QKAN(
+       [10, 10],
+       reps=8,
+       solver="exact",
+       checkpoint_reps=True,   # rep states recomputed on backward
+       device="cuda",
+   )
+
+When to use:
+
+- Training the ``exact`` solver near OOM (large ``batch × reps × group``).
+- ``reps`` is high enough that the extra forward is cheaper than swapping.
+
+Tradeoff: ~33% saved-tensor memory reduction at the cost of one extra forward
+pass per step. Numerics are bit-identical to the unflagged path. Non-``exact``
+solvers ignore this kwarg; they manage rep memory in fused kernels.
+
+Fused Triton Epilogue
+~~~~~~~~~~~~~~~~~~~~~
+
+``QKANLayer`` ends every forward with
+``(postacts + postact_bias) * postact_weights`` summed across the rep dim, plus
+``base_weight @ base_input``. By default this is about five eager ops. Enabling
+the fused epilogue collapses it into a single Triton kernel
+(``qkan_epilogue_forward`` / ``qkan_epilogue_backward``), skipping two
+intermediate buffers and ~3 kernel launches per layer.
+
+Enable per layer:
+
+.. code-block:: python
+
+   qkan = QKAN([10, 10], solver="flash", device="cuda")
+   for layer in qkan.qkan_layers:
+       layer.set_fused_epilogue(True)
+
+Or enable it process-wide before model construction:
+
+.. code-block:: bash
+
+   QKAN_FUSED_EPILOGUE=1 python train.py
+
+When to use:
+
+- CUDA training/inference where the post-activation epilogue is a measurable
+  fraction of step time (deep stacks, small ``out_dim``, or after the quantum
+  kernel itself has been fused).
+
+Tradeoff: CUDA-only fast path; CPU tensors fall back to the eager chain
+transparently. Numerics match eager within bf16/f32 rounding; gradients are
+fused into one backward kernel and the matmul-shaped grads stay on cuBLAS.
+
+BF16 Optimizer Mini-State
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The QKAN-aware optimizers ``QKANBeliefMini`` (pure-PyTorch) and
+``TritonAdaBelief`` (fused Triton) accept a ``state_dtype`` kwarg. Setting it
+to ``torch.bfloat16`` stores the first/second moment buffers (``m`` and the
+block-reduced ``s``) in bf16, halving optimizer-state memory. Compute remains
+fp32 — the Triton kernel upcasts on load; the eager path uses torch's
+bf16-aware add/mul.
+
+.. code-block:: python
+
+   from qkan.optim import TritonAdaBelief
+
+   opt = TritonAdaBelief(
+       qkan.parameters(),
+       lr=1e-3,
+       state_dtype=torch.bfloat16,   # halves optimizer memory
+   )
+
+When to use:
+
+- Optimizer state dominates GPU memory (millions of params, small batch).
+- You are already comfortable with bf16 training.
+
+Tradeoff: ~2x reduction in optimizer-state memory. Bit-exact convergence is
+not guaranteed against fp32 state, but tracks closely in practice. If your
+params are themselves bf16 and you pass ``state_dtype=None``, ``s`` accumulates
+squared residuals in bf16 and may underflow on long runs — pass
+``state_dtype=torch.float32`` explicitly to be safe. See :doc:`optim_guide` for
+the full optimizer API.
+
+
 Real Quantum Device Deployment
 ------------------------------
 
