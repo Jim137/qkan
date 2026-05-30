@@ -39,6 +39,7 @@ import math
 from typing import Any, Callable, Iterable, Optional
 
 import torch
+import torch.distributed as dist
 from torch.optim.optimizer import Optimizer
 
 __all__ = ["QKANMuon"]
@@ -101,6 +102,29 @@ class QKANMuon(Optimizer):
         AdamW hyperparameters (defaults match ``torch.optim.AdamW``).
     muon_filter : optional callable ``(name, shape) -> bool``
         Overrides the default routing (used for ablations and tests).
+    rank, world_size : int, optional
+        Distributed rank and world size. If omitted, auto-detected from
+        ``torch.distributed`` when initialized, else single-process ``(0, 1)``.
+    process_group : optional
+        Process group for the collective; defaults to the world group. Its ranks
+        are assumed to be ``0..world_size-1`` (the standard DDP layout).
+
+    Notes
+    -----
+    Distributed (``world_size > 1``) follows the nanochat / Keller-Jordan sharding
+    pattern: gradients are assumed already all-reduced across ranks (e.g. via DDP),
+    then the Muon matrices are round-robined across ranks so each rank runs the
+    expensive Newton-Schulz on only ``1/world_size`` of them; each updated matrix
+    is then broadcast from its owner. The broadcasts are synchronous (not
+    overlapped with compute). Momentum buffers live only on the owning rank
+    (sharded optimizer state), while the AdamW-fallback params stay replicated
+    (every rank applies the identical update on the all-reduced grad).
+    ``world_size == 1`` issues no collective and is byte-identical to the
+    single-process path.
+
+    Because Muon momentum is rank-sharded, ``state_dict()`` holds only this rank's
+    shard: checkpoint/restore requires every rank to save and load its own
+    ``state_dict``, and resuming requires the same ``world_size``.
     """
 
     def __init__(
@@ -116,6 +140,9 @@ class QKANMuon(Optimizer):
         adamw_betas: tuple[float, float] = (0.9, 0.999),
         adamw_eps: float = 1e-8,
         muon_filter: Optional[Callable[[str, tuple[int, ...]], bool]] = None,
+        rank: Optional[int] = None,
+        world_size: Optional[int] = None,
+        process_group: Any = None,
     ) -> None:
         if lr < 0.0 or adamw_lr < 0.0:
             raise ValueError(f"Invalid lr={lr}, adamw_lr={adamw_lr}")
@@ -130,6 +157,19 @@ class QKANMuon(Optimizer):
 
         self._param_names: dict[int, str] = {}
         self._muon_filter = muon_filter
+
+        # Distributed topology: explicit args win, else auto-detect, else single.
+        self._pg = process_group
+        if rank is not None and world_size is not None:
+            self.rank, self.world_size = rank, world_size
+        elif dist.is_available() and dist.is_initialized():
+            self.rank = dist.get_rank(process_group)
+            self.world_size = dist.get_world_size(process_group)
+        else:
+            self.rank, self.world_size = 0, 1
+        # Muon/AdamW routing is immutable, so cache the per-group partition.
+        self._partition_cache: dict[int, tuple[list[Any], list[Any]]] = {}
+
         normalised: list[Any] = []
         for item in params:
             if isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], str):
@@ -187,6 +227,74 @@ class QKANMuon(Optimizer):
                 out.append((self._get_name(p), tuple(p.shape), path))
         return out
 
+    def _partition(self, group: dict[str, Any]) -> tuple[list[Any], list[Any]]:
+        """Split a group's params into ``(muon, adamw)`` lists.
+
+        Routing is immutable, so the partition is computed once per group and
+        cached — this also keeps per-step name/shape routing off the hot path.
+        """
+        key = id(group)
+        cached = self._partition_cache.get(key)
+        if cached is None:
+            muon: list[Any] = []
+            adamw: list[Any] = []
+            for p in group["params"]:
+                (muon if self._use_muon(p) else adamw).append(p)
+            cached = (muon, adamw)
+            self._partition_cache[key] = cached
+        return cached
+
+    def _muon_update_(
+        self, p: torch.Tensor, g: torch.Tensor, group: dict[str, Any]
+    ) -> None:
+        """In-place Muon update for one matrix param (run only by its owner rank)."""
+        if g.is_sparse:
+            raise RuntimeError("QKANMuon does not support sparse grads")
+        state = self.state[p]
+        if "momentum_buffer" not in state:
+            state["momentum_buffer"] = torch.zeros_like(p)
+            state["scale"] = (
+                0.2 * math.sqrt(max(p.shape[0], p.shape[1]))
+                if group["match_adamw_rms"]
+                else max(1.0, p.shape[0] / p.shape[1]) ** 0.5
+            )
+        momentum = group["momentum"]
+        buf = state["momentum_buffer"]
+        buf.mul_(momentum).add_(g)
+        g_eff = g.add(buf, alpha=momentum) if group["nesterov"] else buf
+        o = _zeropower_via_newtonschulz5(g_eff, steps=group["ns_steps"])
+        lr, wd = group["lr"], group["weight_decay"]
+        if wd != 0.0:
+            p.mul_(1.0 - lr * wd)
+        p.add_(o, alpha=-lr * state["scale"])
+
+    def _adamw_update_(
+        self, p: torch.Tensor, g: torch.Tensor, group: dict[str, Any]
+    ) -> None:
+        """In-place AdamW update for one param (replicates ``torch.optim.AdamW``)."""
+        if g.is_sparse:
+            raise RuntimeError("QKANMuon does not support sparse grads")
+        state = self.state[p]
+        if "exp_avg" not in state:
+            state["step"] = 0
+            state["exp_avg"] = torch.zeros_like(p)
+            state["exp_avg_sq"] = torch.zeros_like(p)
+        state["step"] += 1
+        t = state["step"]
+        beta1, beta2 = group["adamw_betas"]
+        adamw_lr, eps, wd = group["adamw_lr"], group["adamw_eps"], group["weight_decay"]
+        exp_avg = state["exp_avg"]
+        exp_avg_sq = state["exp_avg_sq"]
+        if wd != 0.0:
+            p.mul_(1.0 - adamw_lr * wd)
+        exp_avg.mul_(beta1).add_(g, alpha=1.0 - beta1)
+        exp_avg_sq.mul_(beta2).addcmul_(g, g, value=1.0 - beta2)
+        bc1 = 1.0 - beta1**t
+        bc2 = 1.0 - beta2**t
+        step_size = adamw_lr / bc1
+        denom = (exp_avg_sq.sqrt() / math.sqrt(bc2)).add_(eps)
+        p.addcdiv_(exp_avg, denom, value=-step_size)
+
     @torch.no_grad()
     def step(self, closure: Optional[Callable[[], float]] = None) -> Optional[float]:  # type: ignore[override]
         loss: Optional[float] = None
@@ -194,65 +302,31 @@ class QKANMuon(Optimizer):
             with torch.enable_grad():
                 loss = closure()
 
+        ws, rk = self.world_size, self.rank
         for group in self.param_groups:
-            lr = group["lr"]
-            adamw_lr = group["adamw_lr"]
-            momentum = group["momentum"]
-            nesterov = group["nesterov"]
-            ns_steps = group["ns_steps"]
-            wd = group["weight_decay"]
-            match_rms = group["match_adamw_rms"]
-            beta1, beta2 = group["adamw_betas"]
-            eps = group["adamw_eps"]
+            muon_params, adamw_params = self._partition(group)
 
-            for p in group["params"]:
-                if p.grad is None:
-                    continue
+            # AdamW fallback: every rank applies it locally. Under all-reduced
+            # grads the updates are identical across ranks, so replicas stay in sync.
+            for p in adamw_params:
                 g = p.grad
-                if g.is_sparse:
-                    raise RuntimeError("QKANMuon does not support sparse grads")
-                state = self.state[p]
+                if g is not None:
+                    self._adamw_update_(p, g, group)
 
-                # First touch: decide the (immutable) route once and init state.
-                # Routing + RMS scale depend only on name/shape, so caching them
-                # here avoids re-deriving them every step for every parameter.
-                if len(state) == 0:
-                    state["is_muon"] = self._use_muon(p)
-                    if state["is_muon"]:
-                        state["momentum_buffer"] = torch.zeros_like(p)
-                        state["scale"] = (
-                            0.2 * math.sqrt(max(p.shape[0], p.shape[1]))
-                            if match_rms
-                            else max(1.0, p.shape[0] / p.shape[1]) ** 0.5
-                        )
-                    else:
-                        state["step"] = 0
-                        state["exp_avg"] = torch.zeros_like(p)
-                        state["exp_avg_sq"] = torch.zeros_like(p)
-
-                if state["is_muon"]:
-                    # ----- Muon path: state = momentum buffer only -----
-                    buf = state["momentum_buffer"]
-                    buf.mul_(momentum).add_(g)
-                    g_eff = g.add(buf, alpha=momentum) if nesterov else buf
-                    o = _zeropower_via_newtonschulz5(g_eff, steps=ns_steps)
-                    if wd != 0.0:
-                        p.mul_(1.0 - lr * wd)
-                    p.add_(o, alpha=-lr * state["scale"])
-                else:
-                    # ----- AdamW path: replicates torch.optim.AdamW exactly -----
-                    state["step"] += 1
-                    t = state["step"]
-                    exp_avg = state["exp_avg"]
-                    exp_avg_sq = state["exp_avg_sq"]
-                    if wd != 0.0:
-                        p.mul_(1.0 - adamw_lr * wd)
-                    exp_avg.mul_(beta1).add_(g, alpha=1.0 - beta1)
-                    exp_avg_sq.mul_(beta2).addcmul_(g, g, value=1.0 - beta2)
-                    bc1 = 1.0 - beta1**t
-                    bc2 = 1.0 - beta2**t
-                    step_size = adamw_lr / bc1
-                    denom = (exp_avg_sq.sqrt() / math.sqrt(bc2)).add_(eps)
-                    p.addcdiv_(exp_avg, denom, value=-step_size)
+            # Muon: round-robin the matrices so each rank runs Newton-Schulz on
+            # only 1/world_size of them (rank rk owns indices rk, rk+ws, ...),
+            # then broadcast each updated matrix from its owner. world_size == 1
+            # issues no collective, so the single-process path is unchanged.
+            for owned in range(rk, len(muon_params), ws):
+                g = muon_params[owned].grad
+                if g is not None:
+                    self._muon_update_(muon_params[owned], g, group)
+            if ws > 1:
+                for k in range(len(muon_params)):
+                    # group_src (not src) keeps the index group-local, matching
+                    # rk = get_rank(pg) — correct for sub-groups, not just world.
+                    dist.broadcast(
+                        muon_params[k].data, group_src=k % ws, group=self._pg
+                    )
 
         return loss
