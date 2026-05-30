@@ -17,6 +17,7 @@
 from .adabelief import AdaBelief, QKANBeliefMini
 from .adamini import QKANAdamMini
 from .lbfgs import LBFGSFinisher, adam_then_lbfgs
+from .muon import QKANMuon
 from .spectral_mini import QKANSpectralMini
 from .triton_adabelief import TritonAdaBelief
 from .utils import reshape_optimizer_state
@@ -25,6 +26,7 @@ __all__ = [
     "AdaBelief",
     "QKANAdamMini",
     "QKANBeliefMini",
+    "QKANMuon",
     "QKANSpectralMini",
     "LBFGSFinisher",
     "TritonAdaBelief",
