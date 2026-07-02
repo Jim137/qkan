@@ -38,6 +38,14 @@ from .optim import (
     reshape_optimizer_state,
 )
 from .qkan import QKAN, QKANLayer
+from .solver import (
+    DeviceProfile,
+    PackedCircuit,
+    PackedKernel,
+    pack_circuit,
+    pack_kernel,
+    tile_disjoint,
+)
 from .torch_qc import StateVector, TorchGates
 from .utils import SYMBOLIC_LIB, create_dataset
 
@@ -59,6 +67,9 @@ __all__ = [
     "SYMBOLIC_LIB",
     "TorchGates",
     "CompiledInference",
+    "DeviceProfile",
+    "PackedCircuit",
+    "PackedKernel",
     "LBFGSFinisher",
     "TritonAdaBelief",
     "adam_then_lbfgs",
@@ -66,7 +77,10 @@ __all__ = [
     "create_dataset",
     "dataset_range",
     "get_feynman_dataset",
+    "tile_disjoint",
     "graph_submodules",
+    "pack_circuit",
+    "pack_kernel",
     "make_graphed_inference",
     "make_graphed_train_step",
     "print0",

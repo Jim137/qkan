@@ -740,6 +740,7 @@ def tile_disjoint(
     strict: bool = True,
     call_limit: Optional[int] = 50_000,
     max_trials: int = 500,
+    n_logical: Optional[int] = None,
 ) -> list[list[int]]:
     """Tile the chip with disjoint calibration-aware copies of one circuit.
 
@@ -753,6 +754,10 @@ def tile_disjoint(
     one circuit copy. For a merged qiskit job, concatenate them tile-major:
     ``flat = [q for tile in tiles for q in tile]``.
 
+    ``n_logical`` widens each tile beyond the interaction's edge span:
+    logical qubits without interaction edges (single-qubit-gate-only or
+    idle wires) are assigned best-effort to the best remaining qubits.
+
     With integer ``k`` and ``strict=True``, raises ``ValueError`` when
     fewer than ``k`` tiles fit; ``strict=False`` returns what fits.
     """
@@ -760,7 +765,14 @@ def tile_disjoint(
         raise ValueError(f"tile_disjoint: k must be 'max' or a positive int, got {k!r}")
     if buffer_hops < 0:
         raise ValueError(f"tile_disjoint: buffer_hops must be >= 0, got {buffer_hops}")
-    edges, n_logical, _mult = _interaction_edges(interaction)
+    edges, n_logical_span, _mult = _interaction_edges(interaction)
+    if n_logical is None:
+        n_logical = n_logical_span
+    elif n_logical < n_logical_span:
+        raise ValueError(
+            f"tile_disjoint: n_logical={n_logical} is smaller than the "
+            f"interaction's span of {n_logical_span} logical qubits"
+        )
     if edges and not _RUSTWORKX_AVAILABLE:
         raise ImportError(
             "tile_disjoint requires rustworkx (installed with qiskit): "
