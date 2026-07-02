@@ -35,6 +35,13 @@ from .cutile import _CUTILE_AVAILABLE, cutile_flash_exact_solver
 from .cutn import cutn_solver
 from .exact import torch_exact_solver
 from .flash import _FLASH_AVAILABLE, flash_exact_solver
+from .layout import (
+    DeviceProfile,
+    best_subgraph,
+    rank_qubits,
+    score_layout,
+    tile_disjoint,
+)
 from .qiskit import best_qubits, qiskit_solver
 from .qml import qml_solver
 
@@ -42,8 +49,10 @@ __all__ = [
     "_CUTE_AVAILABLE",
     "_CUTILE_AVAILABLE",
     "_FLASH_AVAILABLE",
+    "DeviceProfile",
     "QKANSolver",
     "best_qubits",
+    "best_subgraph",
     "cudaq_solver",
     "cute_exact_solver",
     "cutile_flash_exact_solver",
@@ -54,6 +63,9 @@ __all__ = [
     "make_base_activation",
     "qiskit_solver",
     "qml_solver",
+    "rank_qubits",
     "register",
+    "score_layout",
+    "tile_disjoint",
     "torch_exact_solver",
 ]

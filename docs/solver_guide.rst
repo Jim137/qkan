@@ -240,12 +240,19 @@ AWS Braket via CUDA-Q
        [1, 2, 1], solver="cudaq", fast_measure=False,
        solver_kwargs={
            "target": "braket",
-           "machine": "arn:aws:braket:us-west-1::device/qpu/rigetti/Ankaa-3",
+           "machine": "arn:aws:braket:us-west-1::device/qpu/rigetti/Cepheus-1-108Q",
            "shots": 1000,
            "parallel_qubits": 20,
+           "initial_layout": "auto",
        },
    )
    qpu_model.initialize_from_another_model(trained_model)
+
+The CUDA-Q solver supports the same ``initial_layout`` option (``None``, ``"auto"``, or ``list[int]``) on its packed ``parallel_qubits`` path.
+Because CUDA-Q has no transpiler-level layout control, the layout is applied by construction: circuit slot ``j`` runs on register index ``layout[j]``, and every idle register qubit receives zero-angle padding gates so that compiler dead-code elimination cannot renumber the indices.
+With ``"auto"``, calibration comes from a ``DeviceProfile`` (see below) — pass one via ``device_profile=...``, or let a ``braket`` target fetch it from the machine ARN (requires ``amazon-braket-sdk`` and AWS credentials; the snapshot is cached per ARN for the process lifetime); ``max_readout_error`` / ``qubit_error_threshold`` filter the ranking.
+Whether the requested physical indices are honored end-to-end depends on the target: CUDA-Q's native ``iqm`` / ``oqc`` / ``anyon`` targets preserve them (identity placement, no SWAPs for 1-qubit-gate circuits), while Braket's vendor compiler may rewire them — CUDA-Q currently offers no way to disable Braket's qubit rewiring, so a warning is emitted on ``braket`` targets.
+Simulator and emulated targets ignore ``initial_layout`` with a warning (there is no calibration to exploit).
 
 Key parameters:
 
@@ -349,6 +356,44 @@ The smart layout at ``parallel_qubits=20`` fully recovers the ``parallel_qubits=
 - ``best_qubits`` returns ``[]`` when ``backend.properties()`` is unavailable (e.g. ``AerSimulator`` or ``GenericBackendV2``, which lack the legacy calibration API); the solver treats an empty layout as ``None`` and warns before falling back to the transpiler default.
 - A layout longer than a packed chunk is truncated to the chunk's width (keeping the best-ranked qubits), so ragged final chunks are handled; a layout *shorter* than the packed width raises ``ValueError``.
 - ``initial_layout`` applies only when executing through a ``backend``; a user-supplied ``estimator`` receives circuits without qkan-side transpilation (a warning is emitted).
+
+
+Multi-qubit layouts and disjoint tiling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``qkan.solver.layout`` generalizes calibration-aware selection beyond independent single-qubit circuits, in a provider-neutral way.
+Calibration enters through ``DeviceProfile`` — build one with ``DeviceProfile.from_qiskit(backend)`` or ``DeviceProfile.from_braket(device)`` (experimental), or construct it directly from your own data — and layouts come out as plain physical-qubit index lists.
+
+- ``rank_qubits(profile, n, ...)``: device-independent top-``n`` qubit ranking with the same inputs and NaN/threshold/``strict`` semantics as ``best_qubits``, using a fidelity-product objective (rankings can differ marginally from ``best_qubits``' additive score).
+- ``best_subgraph(profile, interaction, ...)``: best-calibrated connected placement for one multi-qubit circuit, where ``interaction`` is the circuit's 2-qubit-gate edge list.
+  Note qiskit's own transpiler already does this well at ``optimization_level`` 2-3 (VF2 placement); use this function for explicit thresholds, level-1 pipelines, custom objectives, or non-qiskit stacks.
+- ``tile_disjoint(profile, interaction, k, ...)``: tile the chip with ``k`` (or ``"max"``) *disjoint* calibration-aware copies of one circuit, for running independent circuits in parallel on one QPU — a capability no transpiler currently offers.
+
+.. code-block:: python
+
+   from qkan.solver import DeviceProfile, tile_disjoint
+
+   profile = DeviceProfile.from_qiskit(backend)
+   tiles = tile_disjoint(profile, [(0, 1)], k=8, max_readout_error=0.05)
+
+   # Pack 8 independent 2-qubit circuits into one job:
+   flat_layout = [q for tile in tiles for q in tile]
+   packed = QuantumCircuit(16)
+   for i, sub in enumerate(subcircuits):
+       packed.compose(sub, qubits=[2 * i, 2 * i + 1], inplace=True)
+   pm = generate_preset_pass_manager(
+       backend=backend, optimization_level=1, initial_layout=flat_layout
+   )
+   isa = pm.run(packed)   # transpiles SWAP-free: tiles are coupled pairs
+
+On a ``FakeSherbrooke`` snapshot, ``tile_disjoint`` places 8 Bell pairs with a summed error cost of 0.180 versus 0.409 for merged-circuit level-3 transpilation, and tiles up to 52 disjoint pairs chip-wide.
+Tiles are returned best-first, so truncating to fewer circuits keeps the best-calibrated ones.
+
+**Caveats.**
+
+- The interaction graph must be connected and embed in the coupling map without routing; pre-transpile and extract the routed interaction graph for circuits that need SWAPs.
+- Crosstalk between neighboring tiles is not modeled by public calibration data; ``buffer_hops=1`` leaves a one-qubit shell between tiles at the cost of fewer tiles (52 -> 31 pairs on ``FakeSherbrooke``).
+- ``DeviceProfile`` is a snapshot: refresh it (``from_qiskit(backend, refresh=True)``) before long runs, as with ``best_qubits``.
 
 
 Error Mitigation
