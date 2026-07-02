@@ -34,6 +34,26 @@ Selection API
 
 Layouts are positional (``layout[i]`` hosts logical qubit ``i``) and tiles are returned best-first.
 
+Selection is stack-neutral, and CUDA-Q kernels reach it through the same :func:`~qkan.solver.packing.pack_circuit` entry point: ``k=1`` reduces packing to single-circuit placement (``best_subgraph`` semantics).
+
+.. code-block:: python
+
+   import cudaq
+   from qkan import pack_circuit
+
+   @cudaq.kernel
+   def ghz20():
+       q = cudaq.qvector(20)
+       h(q[0])
+       for i in range(19):
+           x.ctrl(q[i], q[i + 1])
+
+   placed = pack_circuit(profile, ghz20, k=1)   # one copy on the best-calibrated path
+   result = cudaq.sample(placed.kernel, shots_count=1000)
+   zz = [placed.z_parity(result, [i, i + 1], 0) for i in range(19)]
+
+The QKAN CUDA-Q solver applies the same selection to its own packed single-qubit jobs via ``initial_layout="auto"`` (see the solver guide).
+
 Packing with qiskit
 -------------------
 
