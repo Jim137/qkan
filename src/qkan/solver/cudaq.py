@@ -544,6 +544,18 @@ def _build_cudaq_parallel_rpz_kernel(
     return kernel
 
 
+def _sample_z_marginals(result, positions, shots_count):
+    """Per-qubit <Z> from sampled bitstring counts at the given positions."""
+    acc = [0.0] * len(positions)
+    total = 0
+    for bits, count in result.items():
+        total += count
+        for i, pos in enumerate(positions):
+            acc[i] += count if bits[pos] == "0" else -count
+    total = total or shots_count
+    return [a / total for a in acc]
+
+
 def _cudaq_run_parallel(
     all_args,
     ansatz,
@@ -553,6 +565,7 @@ def _cudaq_run_parallel(
     shots_count,
     scale_factor=1,
     initial_layout=None,
+    expectation_via_sample=False,
 ):
     """
     Pack independent single-qubit circuits onto an N-qubit QPU.
@@ -673,6 +686,14 @@ def _cudaq_run_parallel(
                     all_thetas.extend([0.0] * (reps + 1))
             args = (encoded_xs, all_thetas)
 
+        if expectation_via_sample:
+            # Some REST targets (quantum_machines) mis-handle multi-term
+            # observe; sample once and read per-qubit <Z> marginals instead.
+            result = cudaq.sample(par_kernel, *args, shots_count=shots_count)
+            expvals.extend(
+                _sample_z_marginals(result, layout[:chunk_size], shots_count)
+            )
+            continue
         if shots_count is not None:
             result = cudaq.observe(par_kernel, spin_sum, *args, shots_count=shots_count)
         else:
@@ -752,6 +773,7 @@ def _cudaq_evaluate(
                     all_args.append((x_py[b][i], t))
 
     mitigation = config.get("mitigation", {})
+    expectation_via_sample = config.get("expectation_via_sample", False)
 
     def _run_cudaq(scale_factor=1):
         if parallel_qubits and parallel_qubits > 1:
@@ -764,12 +786,17 @@ def _cudaq_evaluate(
                 shots_count,
                 scale_factor=scale_factor,
                 initial_layout=initial_layout,
+                expectation_via_sample=expectation_via_sample,
             )
         else:
             kernel = _get_cudaq_kernel(ansatz, reps, preacts_trainable, scale_factor)
             spin_z = cudaq.spin.z(0)
             ev = []
             for args in all_args:
+                if expectation_via_sample:
+                    result = cudaq.sample(kernel, *args, shots_count=shots_count)
+                    ev.extend(_sample_z_marginals(result, [0], shots_count))
+                    continue
                 if shots_count is not None:
                     result = cudaq.observe(
                         kernel, spin_z, *args, shots_count=shots_count
@@ -929,10 +956,21 @@ def cudaq_solver(
         preacts_trainable : bool
         out_dim : int
         target : str, optional
-            CUDA-Q target (e.g., "nvidia", "nvidia-mqpu", "qpp-cpu").
+            CUDA-Q target (e.g., "nvidia", "nvidia-mqpu", "qpp-cpu",
+            "braket", "iqm", "quantum_machines").
             Set before calling via cudaq.set_target().
+        url / executor / api_key : optional
+            Forwarded to cudaq.set_target for REST hardware targets. For
+            "quantum_machines" these select the Qoperator server URL, the
+            executor name, and the X-API-Key credential (the
+            QUANTUM_MACHINES_API_KEY env var also works).
         shots : int, optional
             Number of shots. None for exact statevector expectation.
+            Required for the quantum_machines target.
+        expectation_via_sample : bool, optional
+            Compute <Z> from sampled bitstring marginals instead of
+            cudaq.observe. Defaults to True on the quantum_machines target,
+            whose REST helper mis-handles multi-term observe.
         initial_layout : optional
             None (default), "auto", or a list of physical qubit indices for
             the packed `parallel_qubits` path on hardware targets. "auto"
@@ -969,8 +1007,11 @@ def cudaq_solver(
 
     if target is not None:
         target_kwargs = {}
-        if machine is not None:
-            target_kwargs["machine"] = machine
+        # Forward the target options CUDA-Q hardware backends accept:
+        # machine (braket/ionq/...), url/executor/api_key (quantum_machines).
+        for key in ("machine", "url", "executor", "api_key"):
+            if kwargs.get(key) is not None:
+                target_kwargs[key] = kwargs[key]
         cudaq.set_target(target, **target_kwargs)
 
     # Resolve initial_layout (device-independent):
@@ -1071,10 +1112,31 @@ def cudaq_solver(
         if target == "braket":
             warnings.warn(
                 "CUDA-Q does not disable Braket's qubit rewiring: the vendor "
-                "compiler may remap the requested layout on braket targets. "
-                "Native iqm/oqc/anyon targets preserve it.",
+                "compiler may remap the requested layout on braket targets "
+                "(verified on Rigetti). Native iqm/oqc/anyon targets "
+                "preserve it.",
                 stacklevel=2,
             )
+        elif target == "quantum_machines":
+            warnings.warn(
+                "the requested physical indices are baked into the submitted "
+                "OpenQASM, but qubit mapping on quantum_machines is decided "
+                "by the Qoperator server; verify with your operator "
+                "configuration.",
+                stacklevel=2,
+            )
+
+    # quantum_machines executes via physical sampling and its REST helper
+    # mis-handles multi-term observe (first Z term returns full-register
+    # parity); route expectations through sample() marginals instead.
+    expectation_via_sample = kwargs.get(
+        "expectation_via_sample", target == "quantum_machines"
+    )
+    if target == "quantum_machines" and shots is None:
+        raise ValueError(
+            "the quantum_machines target requires explicit shots (results "
+            "come from physical sampling); pass shots=... in solver_kwargs."
+        )
 
     config = {
         "ansatz": ansatz,
@@ -1083,6 +1145,7 @@ def cudaq_solver(
         "shots": shots,
         "parallel_qubits": parallel_qubits,
         "initial_layout": initial_layout,
+        "expectation_via_sample": expectation_via_sample,
         "mitigation": kwargs.get("mitigation", {}),
     }
 

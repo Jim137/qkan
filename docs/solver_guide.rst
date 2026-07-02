@@ -251,8 +251,33 @@ AWS Braket via CUDA-Q
 The CUDA-Q solver supports the same ``initial_layout`` option (``None``, ``"auto"``, or ``list[int]``) on its packed ``parallel_qubits`` path.
 Because CUDA-Q has no transpiler-level layout control, the layout is applied by construction: circuit slot ``j`` runs on register index ``layout[j]``, and every idle register qubit receives zero-angle padding gates so that compiler dead-code elimination cannot renumber the indices.
 With ``"auto"``, calibration comes from a ``DeviceProfile`` (see below) — pass one via ``device_profile=...``, or let a ``braket`` target fetch it from the machine ARN (requires ``amazon-braket-sdk`` and AWS credentials; the snapshot is cached per ARN for the process lifetime); ``max_readout_error`` / ``qubit_error_threshold`` filter the ranking.
-Whether the requested physical indices are honored end-to-end depends on the target: CUDA-Q's native ``iqm`` / ``oqc`` / ``anyon`` targets preserve them (identity placement, no SWAPs for 1-qubit-gate circuits), while Braket's vendor compiler may rewire them — CUDA-Q currently offers no way to disable Braket's qubit rewiring, so a warning is emitted on ``braket`` targets.
+Whether the requested physical indices are honored end-to-end depends on the target: CUDA-Q's native ``iqm`` / ``oqc`` / ``anyon`` targets preserve them (identity placement, no SWAPs for 1-qubit-gate circuits), while Braket's vendor compiler may rewire them — CUDA-Q currently offers no way to disable Braket's qubit rewiring, so a warning is emitted on ``braket`` targets (verified on Rigetti: the compiler chose its own placement).
 Simulator and emulated targets ignore ``initial_layout`` with a warning (there is no calibration to exploit).
+
+Quantum Machines (QUA / OPX)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+CUDA-Q ships a built-in ``quantum_machines`` hardware target (contributed upstream by Quantum Machines) that lowers kernels to OpenQASM 2.0 and submits them to a QM *Qoperator* REST server — the gate-level entry point to OPX-controlled hardware, including DGX Quantum systems.
+qkan supports it directly:
+
+.. code-block:: python
+
+   qpu_model = QKAN(
+       [1, 2, 1], solver="cudaq", fast_measure=False,
+       solver_kwargs={
+           "target": "quantum_machines",
+           "url": "http://qoperator-host:8080",
+           "executor": "opx-1000",
+           "api_key": "...",          # or QUANTUM_MACHINES_API_KEY env var
+           "shots": 1024,
+           "parallel_qubits": 8,
+       },
+   )
+
+- ``shots`` is required: results come from physical sampling.
+- Expectation values are computed from sampled bitstring marginals (``expectation_via_sample``, on by default for this target) because the 0.15.0 REST helper mis-handles multi-term ``observe``.
+- ``initial_layout`` indices are baked into the submitted OpenQASM; final qubit mapping is decided by the Qoperator server, so verify against your operator configuration (a warning is emitted).
+- Access requires a QM-provisioned Qoperator endpoint (on-prem Docker deployment or a hosted service such as IQCC); there is no public endpoint.
 
 Key parameters:
 
