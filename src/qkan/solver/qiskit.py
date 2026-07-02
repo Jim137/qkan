@@ -387,7 +387,14 @@ def _submit_and_collect(est, all_pubs, all_chunk_sizes, max_pubs):
 _MAX_PUBS_CACHE: dict = {}
 
 
-def best_qubits(backend, n: int) -> list:
+def best_qubits(
+    backend,
+    n: int,
+    *,
+    max_readout_error: float | None = None,
+    qubit_error_threshold: float | None = None,
+    strict: bool = True,
+) -> list[int]:
     """Return the ``n`` best-calibrated qubit indices on ``backend``.
 
     When packing ``n`` independent single-qubit QKAN circuits onto ``n``
@@ -423,15 +430,32 @@ def best_qubits(backend, n: int) -> list:
     ----------
     backend : qiskit Backend
         Backend with a ``properties()`` method (FakeProvider or real IBM).
-        Returns an empty list if the backend exposes no calibration.
+        Returns an empty list if the backend exposes no calibration and
+        no threshold was requested.
     n : int
         Number of qubits to select. Must be a positive integer and must
         not exceed ``backend.num_qubits``.
+    max_readout_error : float, optional
+        Keep only qubits with readout error at or below this value.
+    qubit_error_threshold : float, optional
+        Keep only qubits whose single-qubit ``sx`` gate error is at or
+        below this value; e.g. ``0.001`` means fidelity >= 99.9%.
+    strict : bool
+        When a threshold leaves fewer than ``n`` usable qubits, raise
+        ``ValueError`` if true (default); otherwise return all usable
+        qubits.
 
     Returns
     -------
     list[int]
         Top-``n`` physical qubit indices, sorted by ascending score.
+
+    Raises
+    ------
+    ValueError
+        If ``n`` is out of range, if a requested threshold cannot be
+        enforced because calibration is unavailable, or (with ``strict``)
+        if fewer than ``n`` qubits satisfy the thresholds.
 
     Examples
     --------
@@ -450,11 +474,22 @@ def best_qubits(backend, n: int) -> list:
     """
     if not isinstance(n, int) or n < 1:
         raise ValueError(f"best_qubits: n must be a positive integer, got {n!r}")
+    has_threshold = max_readout_error is not None or qubit_error_threshold is not None
     try:
         props = backend.properties()
-    except Exception:
+    except Exception as exc:
+        if has_threshold:
+            raise ValueError(
+                "best_qubits: backend calibration is unavailable; "
+                "cannot enforce qubit calibration thresholds"
+            ) from exc
         return []
     if props is None:
+        if has_threshold:
+            raise ValueError(
+                "best_qubits: backend calibration is unavailable; "
+                "cannot enforce qubit calibration thresholds"
+            )
         return []
     try:
         num_qubits = backend.num_qubits
@@ -472,20 +507,29 @@ def best_qubits(backend, n: int) -> list:
         except Exception:
             pass
         # Faulty qubits report NaN calibration values; NaN compares False
-        # everywhere and corrupts sorting, so treat NaN exactly like
-        # missing data.
+        # against any threshold and corrupts sorting, so treat NaN exactly
+        # like missing data: it fails an active threshold and falls back to
+        # a pessimistic constant when only ranking.
         try:
             ro = float(props.readout_error(q))
         except Exception:
             ro = float("nan")
         if math.isnan(ro):
+            if max_readout_error is not None:
+                continue
             ro = 0.5
+        if max_readout_error is not None and ro > max_readout_error:
+            continue
         try:
             sx = float(props.gate_error("sx", [q]))
         except Exception:
             sx = float("nan")
         if math.isnan(sx):
+            if qubit_error_threshold is not None:
+                continue
             sx = 1e-2
+        if qubit_error_threshold is not None and sx > qubit_error_threshold:
+            continue
         try:
             t2_us = float(props.t2(q)) * 1e6
         except Exception:
@@ -494,6 +538,19 @@ def best_qubits(backend, n: int) -> list:
             t2_us = 50.0
         score = ro + sx + 1e-4 / max(t2_us, 1.0)
         scored.append((score, q))
+    if len(scored) < n:
+        thresholds = []
+        if max_readout_error is not None:
+            thresholds.append(f"max_readout_error<={max_readout_error:.6g}")
+        if qubit_error_threshold is not None:
+            thresholds.append(f"single_qubit_sx_error<={qubit_error_threshold:.6g}")
+        threshold_text = " and ".join(thresholds) if thresholds else "ranking"
+        if not strict and scored:
+            scored.sort()
+            return [q for _score, q in scored]
+        raise ValueError(
+            f"best_qubits: only {len(scored)} qubits satisfy {threshold_text}; need {n}"
+        )
     scored.sort()
     return [q for _score, q in scored[:n]]
 
@@ -852,7 +909,8 @@ def qiskit_solver(
             )
 
     # Auto-detect QPU size from backend if parallel_qubits="auto"
-    if parallel_qubits == "auto" and backend is not None:
+    auto_parallel_qubits = parallel_qubits == "auto"
+    if auto_parallel_qubits and backend is not None:
         parallel_qubits = backend.num_qubits
 
     # Resolve initial_layout:
@@ -870,6 +928,11 @@ def qiskit_solver(
         # best_qubits returns [] when calibration is unavailable; qiskit
         # treats an empty layout like None, so normalize it here too.
         initial_layout = None
+    max_readout_error = kwargs.get("max_readout_error", None)
+    qubit_error_threshold = kwargs.get("qubit_error_threshold", None)
+    has_layout_threshold = (
+        max_readout_error is not None or qubit_error_threshold is not None
+    )
     if isinstance(initial_layout, str):
         if initial_layout != "auto":
             raise ValueError(
@@ -882,7 +945,15 @@ def qiskit_solver(
                 "to score qubit calibration."
             )
         n_layout = parallel_qubits if (parallel_qubits and parallel_qubits > 1) else 1
-        initial_layout = best_qubits(backend, n_layout)
+        initial_layout = best_qubits(
+            backend,
+            n_layout,
+            max_readout_error=max_readout_error,
+            qubit_error_threshold=qubit_error_threshold,
+            # With parallel_qubits="auto" the packing width follows the
+            # calibration quality instead of failing the threshold check.
+            strict=not (auto_parallel_qubits and has_layout_threshold),
+        )
         if not initial_layout:
             # No calibration available — fall back to transpiler default.
             warnings.warn(
@@ -891,6 +962,10 @@ def qiskit_solver(
                 stacklevel=2,
             )
             initial_layout = None
+        elif auto_parallel_qubits and has_layout_threshold:
+            parallel_qubits = len(initial_layout)
+    elif auto_parallel_qubits and isinstance(initial_layout, list):
+        parallel_qubits = len(initial_layout)
     if initial_layout is not None and estimator is not None:
         warnings.warn(
             "initial_layout is ignored when execution goes through an "

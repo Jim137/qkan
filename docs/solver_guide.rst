@@ -255,6 +255,9 @@ Key parameters:
 - ``initial_layout``: Controls which physical qubits receive the packed circuit (see below).
   Defaults to ``None`` (let the transpiler choose).
   Applies only when executing through a ``backend``; a user-supplied ``estimator`` receives circuits without qkan-side transpilation.
+- ``qubit_error_threshold``: Optional single-qubit ``sx`` gate-error threshold for ``initial_layout="auto"``.
+  For example, ``0.001`` means ``sx`` error <= 0.1%, equivalent to single-qubit fidelity >= 99.9%.
+- ``max_readout_error``: Optional readout-error threshold for ``initial_layout="auto"``.
 
 
 Qubit-calibration layout
@@ -292,6 +295,19 @@ Alternatively, pass ``"auto"`` to let ``qiskit_solver`` compute the layout inter
        "initial_layout": "auto",
    }
 
+To exclude qubits above a single-qubit gate-error threshold, add ``qubit_error_threshold``.
+For example, ``0.001`` keeps qubits whose IBM-native ``sx`` gate error is at or below 0.1%:
+
+.. code-block:: python
+
+   solver_kwargs={
+       "backend": backend,
+       "shots": 1024,
+       "parallel_qubits": 20,
+       "initial_layout": "auto",
+       "qubit_error_threshold": 0.001,
+   }
+
 ``best_qubits(backend, n)`` scores each physical qubit by
 
 .. math::
@@ -302,6 +318,11 @@ Alternatively, pass ``"auto"`` to let ``qiskit_solver`` compute the layout inter
 
 and returns the ``n`` lowest-scoring qubit indices.
 Readout error dominates the sum; sx error breaks ties; short :math:`T_2` is penalised only slightly because QKAN's shallow single-qubit circuits aren't T2-sensitive.
+Qubits whose calibration reports NaN (faulty qubits) are treated as missing data.
+
+Use ``max_readout_error`` when readout filtering is also desired.
+If a threshold is supplied and fewer than ``n`` qubits satisfy it, ``best_qubits`` raises ``ValueError`` instead of silently using noisier qubits.
+With ``parallel_qubits="auto"`` and ``initial_layout="auto"``, QKAN instead packs onto all qubits that satisfy the threshold, so the packing width follows the current calibration quality.
 
 **Empirical impact.** Smoke test on ``FakeSherbrooke`` with a trained single-sample forecast, ``parallel_qubits=20``, ``shots=1024``:
 
