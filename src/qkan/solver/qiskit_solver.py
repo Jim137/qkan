@@ -390,11 +390,10 @@ def best_qubits(backend, n: int) -> list:
 
     When packing ``n`` independent single-qubit QKAN circuits onto ``n``
     physical qubits of one multi-qubit job, the naive transpiler layout
-    (qubits ``0..n-1``) often includes poorly-calibrated qubits. Because
-    per-edge noise dominates the fast-programmer's output, and
-    ``rel MSE ∝ σ²``, a 6× higher mean readout error across the selected
-    set can compound to ~36× higher aggregate rel MSE vs. the best-qubit
-    serial baseline.
+    (qubits ``0..n-1``) often includes poorly-calibrated qubits. Readout
+    and single-qubit gate errors on the selected qubits directly bias
+    every expectation value in the packed job, so a few bad qubits
+    inflate the aggregate error of the whole batch.
 
     This helper scores each physical qubit by
 
@@ -406,13 +405,17 @@ def best_qubits(backend, n: int) -> list:
 
     (readout error dominates, :math:`sx` error is secondary, short
     :math:`T_2` gets a small penalty) and returns the indices of the
-    ``n`` lowest-scoring qubits. Pass the result as ``initial_layout``
-    via ``solver_kwargs`` to pin the packed circuit onto them.
+    ``n`` lowest-scoring qubits, best first. Qubits flagged
+    non-operational are skipped, and calibration values reported as NaN
+    (typical for faulty qubits) are treated as missing data rather than
+    ranked. Pass the result as ``initial_layout`` via ``solver_kwargs``
+    to pin the packed circuit onto them.
 
     Empirically on ``FakeSherbrooke`` with ``parallel_qubits=20``,
     ``shots=1024``: the smart layout recovers near-``parallel_qubits=1``
-    fidelity (≈0.13% rel MSE vs flash) where the naive layout lands at
-    ≈5% rel MSE — a ~40× improvement at identical QPU cost.
+    fidelity (≈0.13% rel MSE vs a noiseless reference) where the naive
+    layout lands at ≈5% rel MSE — a ~40× improvement at identical QPU
+    cost.
 
     Parameters
     ----------
@@ -420,7 +423,8 @@ def best_qubits(backend, n: int) -> list:
         Backend with a ``properties()`` method (FakeProvider or real IBM).
         Returns an empty list if the backend exposes no calibration.
     n : int
-        Number of qubits to select. Must not exceed ``backend.num_qubits``.
+        Number of qubits to select. Must be a positive integer and must
+        not exceed ``backend.num_qubits``.
 
     Returns
     -------
@@ -441,11 +445,9 @@ def best_qubits(backend, n: int) -> list:
     ...         "initial_layout": layout,
     ...     },
     ... )
-
-    See Also
-    --------
-    `initial_layout`, `parallel_qubits` in ``solver_kwargs``.
     """
+    if not isinstance(n, int) or n < 1:
+        raise ValueError(f"best_qubits: n must be a positive integer, got {n!r}")
     try:
         props = backend.properties()
     except Exception:
@@ -463,16 +465,30 @@ def best_qubits(backend, n: int) -> list:
     scored = []
     for q in range(num_qubits):
         try:
+            if not props.is_qubit_operational(q):
+                continue
+        except Exception:
+            pass
+        # Faulty qubits report NaN calibration values; NaN compares False
+        # everywhere and corrupts sorting, so treat NaN exactly like
+        # missing data.
+        try:
             ro = float(props.readout_error(q))
         except Exception:
+            ro = float("nan")
+        if math.isnan(ro):
             ro = 0.5
         try:
             sx = float(props.gate_error("sx", [q]))
         except Exception:
+            sx = float("nan")
+        if math.isnan(sx):
             sx = 1e-2
         try:
             t2_us = float(props.t2(q)) * 1e6
         except Exception:
+            t2_us = float("nan")
+        if math.isnan(t2_us):
             t2_us = 50.0
         score = ro + sx + 1e-4 / max(t2_us, 1.0)
         scored.append((score, q))
