@@ -199,44 +199,41 @@ def _build_cudaq_parallel_pz_folded_kernel(
     n_qubits: int,
     reps: int,
     scale_factor: int,
-    width: Optional[int] = None,
-    layout: Optional[list[int]] = None,
+    layout: list[int],
 ):
     """Build a gate-folded parallel pz kernel for ZNE."""
     n_folds = (scale_factor - 1) // 2
-    if layout is None:
-        layout = list(range(n_qubits))
-    if width is None:
-        width = max(layout) + 1
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(x_vals: list[float], all_thetas: list[float]):
         qubits = cudaq.qvector(width)
         params_per = 2 * (reps + 1)
         for q_idx in range(n_qubits):
+            phys = layout[q_idx]
             offset = q_idx * params_per
-            h(qubits[layout[q_idx]])
+            h(qubits[phys])
             for l in range(reps):
-                rz(all_thetas[offset + 2 * l], qubits[layout[q_idx]])
-                ry(all_thetas[offset + 2 * l + 1], qubits[layout[q_idx]])
-                rz(x_vals[q_idx], qubits[layout[q_idx]])
-            rz(all_thetas[offset + 2 * reps], qubits[layout[q_idx]])
-            ry(all_thetas[offset + 2 * reps + 1], qubits[layout[q_idx]])
+                rz(all_thetas[offset + 2 * l], qubits[phys])
+                ry(all_thetas[offset + 2 * l + 1], qubits[phys])
+                rz(x_vals[q_idx], qubits[phys])
+            rz(all_thetas[offset + 2 * reps], qubits[phys])
+            ry(all_thetas[offset + 2 * reps + 1], qubits[phys])
             for _f in range(n_folds):
-                ry(-all_thetas[offset + 2 * reps + 1], qubits[layout[q_idx]])
-                rz(-all_thetas[offset + 2 * reps], qubits[layout[q_idx]])
+                ry(-all_thetas[offset + 2 * reps + 1], qubits[phys])
+                rz(-all_thetas[offset + 2 * reps], qubits[phys])
                 for l in range(reps - 1, -1, -1):
-                    rz(-x_vals[q_idx], qubits[layout[q_idx]])
-                    ry(-all_thetas[offset + 2 * l + 1], qubits[layout[q_idx]])
-                    rz(-all_thetas[offset + 2 * l], qubits[layout[q_idx]])
-                h(qubits[layout[q_idx]])
-                h(qubits[layout[q_idx]])
+                    rz(-x_vals[q_idx], qubits[phys])
+                    ry(-all_thetas[offset + 2 * l + 1], qubits[phys])
+                    rz(-all_thetas[offset + 2 * l], qubits[phys])
+                h(qubits[phys])
+                h(qubits[phys])
                 for l in range(reps):
-                    rz(all_thetas[offset + 2 * l], qubits[layout[q_idx]])
-                    ry(all_thetas[offset + 2 * l + 1], qubits[layout[q_idx]])
-                    rz(x_vals[q_idx], qubits[layout[q_idx]])
-                rz(all_thetas[offset + 2 * reps], qubits[layout[q_idx]])
-                ry(all_thetas[offset + 2 * reps + 1], qubits[layout[q_idx]])
+                    rz(all_thetas[offset + 2 * l], qubits[phys])
+                    ry(all_thetas[offset + 2 * l + 1], qubits[phys])
+                    rz(x_vals[q_idx], qubits[phys])
+                rz(all_thetas[offset + 2 * reps], qubits[phys])
+                ry(all_thetas[offset + 2 * reps + 1], qubits[phys])
 
     return kernel
 
@@ -245,40 +242,37 @@ def _build_cudaq_parallel_real_folded_kernel(
     n_qubits: int,
     reps: int,
     scale_factor: int,
-    width: Optional[int] = None,
-    layout: Optional[list[int]] = None,
+    layout: list[int],
 ):
     """Build a gate-folded parallel real kernel for ZNE."""
     n_folds = (scale_factor - 1) // 2
-    if layout is None:
-        layout = list(range(n_qubits))
-    if width is None:
-        width = max(layout) + 1
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(x_vals: list[float], all_thetas: list[float]):
         qubits = cudaq.qvector(width)
         for q_idx in range(n_qubits):
+            phys = layout[q_idx]
             offset = q_idx * reps
-            h(qubits[layout[q_idx]])
+            h(qubits[phys])
             for l in range(reps):
-                x(qubits[layout[q_idx]])
-                ry(all_thetas[offset + l], qubits[layout[q_idx]])
-                z(qubits[layout[q_idx]])
-                ry(x_vals[q_idx], qubits[layout[q_idx]])
+                x(qubits[phys])
+                ry(all_thetas[offset + l], qubits[phys])
+                z(qubits[phys])
+                ry(x_vals[q_idx], qubits[phys])
             for _f in range(n_folds):
                 for l in range(reps - 1, -1, -1):
-                    ry(-x_vals[q_idx], qubits[layout[q_idx]])
-                    z(qubits[layout[q_idx]])
-                    ry(-all_thetas[offset + l], qubits[layout[q_idx]])
-                    x(qubits[layout[q_idx]])
-                h(qubits[layout[q_idx]])
-                h(qubits[layout[q_idx]])
+                    ry(-x_vals[q_idx], qubits[phys])
+                    z(qubits[phys])
+                    ry(-all_thetas[offset + l], qubits[phys])
+                    x(qubits[phys])
+                h(qubits[phys])
+                h(qubits[phys])
                 for l in range(reps):
-                    x(qubits[layout[q_idx]])
-                    ry(all_thetas[offset + l], qubits[layout[q_idx]])
-                    z(qubits[layout[q_idx]])
-                    ry(x_vals[q_idx], qubits[layout[q_idx]])
+                    x(qubits[phys])
+                    ry(all_thetas[offset + l], qubits[phys])
+                    z(qubits[phys])
+                    ry(x_vals[q_idx], qubits[phys])
 
     return kernel
 
@@ -287,39 +281,36 @@ def _build_cudaq_parallel_rpz_folded_kernel(
     n_qubits: int,
     reps: int,
     scale_factor: int,
-    width: Optional[int] = None,
-    layout: Optional[list[int]] = None,
+    layout: list[int],
 ):
     """Build a gate-folded parallel rpz kernel for ZNE."""
     n_folds = (scale_factor - 1) // 2
-    if layout is None:
-        layout = list(range(n_qubits))
-    if width is None:
-        width = max(layout) + 1
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(encoded_xs: list[float], all_thetas: list[float]):
         qubits = cudaq.qvector(width)
         t_per = reps + 1
         for q_idx in range(n_qubits):
+            phys = layout[q_idx]
             t_off = q_idx * t_per
             x_off = q_idx * reps
-            h(qubits[layout[q_idx]])
+            h(qubits[phys])
             for l in range(reps):
-                ry(all_thetas[t_off + l], qubits[layout[q_idx]])
-                rz(encoded_xs[x_off + l], qubits[layout[q_idx]])
-            ry(all_thetas[t_off + reps], qubits[layout[q_idx]])
+                ry(all_thetas[t_off + l], qubits[phys])
+                rz(encoded_xs[x_off + l], qubits[phys])
+            ry(all_thetas[t_off + reps], qubits[phys])
             for _f in range(n_folds):
-                ry(-all_thetas[t_off + reps], qubits[layout[q_idx]])
+                ry(-all_thetas[t_off + reps], qubits[phys])
                 for l in range(reps - 1, -1, -1):
-                    rz(-encoded_xs[x_off + l], qubits[layout[q_idx]])
-                    ry(-all_thetas[t_off + l], qubits[layout[q_idx]])
-                h(qubits[layout[q_idx]])
-                h(qubits[layout[q_idx]])
+                    rz(-encoded_xs[x_off + l], qubits[phys])
+                    ry(-all_thetas[t_off + l], qubits[phys])
+                h(qubits[phys])
+                h(qubits[phys])
                 for l in range(reps):
-                    ry(all_thetas[t_off + l], qubits[layout[q_idx]])
-                    rz(encoded_xs[x_off + l], qubits[layout[q_idx]])
-                ry(all_thetas[t_off + reps], qubits[layout[q_idx]])
+                    ry(all_thetas[t_off + l], qubits[phys])
+                    rz(encoded_xs[x_off + l], qubits[phys])
+                ry(all_thetas[t_off + reps], qubits[phys])
 
     return kernel
 
@@ -463,28 +454,25 @@ def _get_cudaq_kernel(
 def _build_cudaq_parallel_pz_kernel(
     n_qubits: int,
     reps: int,
-    width: Optional[int] = None,
-    layout: Optional[list[int]] = None,
+    layout: list[int],
 ):
     """Build a CUDA-Q kernel that runs N independent pz circuits in parallel."""
-    if layout is None:
-        layout = list(range(n_qubits))
-    if width is None:
-        width = max(layout) + 1
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(x_vals: list[float], all_thetas: list[float]):
         qubits = cudaq.qvector(width)
         params_per = 2 * (reps + 1)
         for q_idx in range(n_qubits):
-            h(qubits[layout[q_idx]])
+            phys = layout[q_idx]
+            h(qubits[phys])
             offset = q_idx * params_per
             for l in range(reps):
-                rz(all_thetas[offset + 2 * l], qubits[layout[q_idx]])
-                ry(all_thetas[offset + 2 * l + 1], qubits[layout[q_idx]])
-                rz(x_vals[q_idx], qubits[layout[q_idx]])
-            rz(all_thetas[offset + 2 * reps], qubits[layout[q_idx]])
-            ry(all_thetas[offset + 2 * reps + 1], qubits[layout[q_idx]])
+                rz(all_thetas[offset + 2 * l], qubits[phys])
+                ry(all_thetas[offset + 2 * l + 1], qubits[phys])
+                rz(x_vals[q_idx], qubits[phys])
+            rz(all_thetas[offset + 2 * reps], qubits[phys])
+            ry(all_thetas[offset + 2 * reps + 1], qubits[phys])
 
     return kernel
 
@@ -492,26 +480,23 @@ def _build_cudaq_parallel_pz_kernel(
 def _build_cudaq_parallel_real_kernel(
     n_qubits: int,
     reps: int,
-    width: Optional[int] = None,
-    layout: Optional[list[int]] = None,
+    layout: list[int],
 ):
     """Build a CUDA-Q kernel that runs N independent real circuits in parallel."""
-    if layout is None:
-        layout = list(range(n_qubits))
-    if width is None:
-        width = max(layout) + 1
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(x_vals: list[float], all_thetas: list[float]):
         qubits = cudaq.qvector(width)
         for q_idx in range(n_qubits):
-            h(qubits[layout[q_idx]])
+            phys = layout[q_idx]
+            h(qubits[phys])
             offset = q_idx * reps
             for l in range(reps):
-                x(qubits[layout[q_idx]])
-                ry(all_thetas[offset + l], qubits[layout[q_idx]])
-                z(qubits[layout[q_idx]])
-                ry(x_vals[q_idx], qubits[layout[q_idx]])
+                x(qubits[phys])
+                ry(all_thetas[offset + l], qubits[phys])
+                z(qubits[phys])
+                ry(x_vals[q_idx], qubits[phys])
 
     return kernel
 
@@ -519,27 +504,24 @@ def _build_cudaq_parallel_real_kernel(
 def _build_cudaq_parallel_rpz_kernel(
     n_qubits: int,
     reps: int,
-    width: Optional[int] = None,
-    layout: Optional[list[int]] = None,
+    layout: list[int],
 ):
     """Build a CUDA-Q kernel that runs N independent rpz circuits in parallel."""
-    if layout is None:
-        layout = list(range(n_qubits))
-    if width is None:
-        width = max(layout) + 1
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(encoded_xs: list[float], all_thetas: list[float]):
         qubits = cudaq.qvector(width)
         t_per = reps + 1
         for q_idx in range(n_qubits):
-            h(qubits[layout[q_idx]])
+            phys = layout[q_idx]
+            h(qubits[phys])
             t_off = q_idx * t_per
             x_off = q_idx * reps
             for l in range(reps):
-                ry(all_thetas[t_off + l], qubits[layout[q_idx]])
-                rz(encoded_xs[x_off + l], qubits[layout[q_idx]])
-            ry(all_thetas[t_off + reps], qubits[layout[q_idx]])
+                ry(all_thetas[t_off + l], qubits[phys])
+                rz(encoded_xs[x_off + l], qubits[phys])
+            ry(all_thetas[t_off + reps], qubits[phys])
 
     return kernel
 
@@ -590,9 +572,8 @@ def _cudaq_run_parallel(
                 "initial_layout has fewer qubits than the packing width: "
                 f"{len(initial_layout)} < {n_qubits}"
             )
-        layout = [int(q) for q in initial_layout[:n_qubits]]
-        if len(set(layout)) != len(layout):
-            raise ValueError("initial_layout assigns the same physical qubit twice")
+        # Entries were validated (ints, distinct) at the solver boundary.
+        layout = list(initial_layout[:n_qubits])
     else:
         layout = list(range(n_qubits))
     width = max(layout) + 1
@@ -603,39 +584,46 @@ def _cudaq_run_parallel(
     slot_layout = layout + [q for q in range(width) if q not in used]
     n_slots = width
 
-    # Build kernel once — all chunks pad to n_qubits
-    if ansatz in ("pz_encoding", "pz") and not preacts_trainable:
+    # Build the kernel once per shape — construction recompiles MLIR, so
+    # cache on the full shape key alongside the single-qubit kernels.
+    cache_key = (
+        "parallel",
+        ansatz,
+        reps,
+        preacts_trainable,
+        scale_factor,
+        tuple(slot_layout),
+    )
+    par_kernel = _CUDAQ_KERNEL_CACHE.get(cache_key)
+    if par_kernel is not None:
+        pass
+    elif ansatz in ("pz_encoding", "pz") and not preacts_trainable:
         par_kernel = (
             _build_cudaq_parallel_pz_folded_kernel(
-                n_slots, reps, scale_factor, width=width, layout=slot_layout
+                n_slots, reps, scale_factor, slot_layout
             )
             if scale_factor > 1
-            else _build_cudaq_parallel_pz_kernel(
-                n_slots, reps, width=width, layout=slot_layout
-            )
+            else _build_cudaq_parallel_pz_kernel(n_slots, reps, slot_layout)
         )
     elif ansatz == "real" and not preacts_trainable:
         par_kernel = (
             _build_cudaq_parallel_real_folded_kernel(
-                n_slots, reps, scale_factor, width=width, layout=slot_layout
+                n_slots, reps, scale_factor, slot_layout
             )
             if scale_factor > 1
-            else _build_cudaq_parallel_real_kernel(
-                n_slots, reps, width=width, layout=slot_layout
-            )
+            else _build_cudaq_parallel_real_kernel(n_slots, reps, slot_layout)
         )
     elif ansatz in ("rpz_encoding", "rpz") or preacts_trainable:
         par_kernel = (
             _build_cudaq_parallel_rpz_folded_kernel(
-                n_slots, reps, scale_factor, width=width, layout=slot_layout
+                n_slots, reps, scale_factor, slot_layout
             )
             if scale_factor > 1
-            else _build_cudaq_parallel_rpz_kernel(
-                n_slots, reps, width=width, layout=slot_layout
-            )
+            else _build_cudaq_parallel_rpz_kernel(n_slots, reps, slot_layout)
         )
     else:
         raise NotImplementedError(f"Parallel not supported for ansatz '{ansatz}'")
+    _CUDAQ_KERNEL_CACHE[cache_key] = par_kernel
 
     spin_sum = cudaq.spin.z(layout[0])
     for q_idx in range(1, n_qubits):

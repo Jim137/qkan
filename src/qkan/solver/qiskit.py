@@ -137,7 +137,9 @@ def _emit_job_event(
             usage = metrics.get("usage")
             if isinstance(usage, dict):
                 usage_seconds = usage.get("quantum_seconds")
-        if usage_seconds is None:
+        elif metrics is None:
+            # job.usage() re-fetches the same metrics payload, so only fall
+            # back to it when the metrics fetch itself failed.
             try:
                 usage_seconds = job.usage()
             except Exception as usage_error:

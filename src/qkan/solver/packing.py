@@ -80,8 +80,8 @@ def _edges_of_ops(ops) -> list[tuple[int, int]]:
             edges.append((qubits[0], qubits[1]))
         elif len(qubits) > 2:
             raise ValueError(
-                f"kernel_interaction_of: gate '{name}' acts on {len(qubits)} "
-                "qubits; decompose to 1- and 2-qubit gates first"
+                f"gate '{name}' acts on {len(qubits)} qubits; decompose "
+                "to 1- and 2-qubit gates first"
             )
     return edges
 
@@ -101,6 +101,12 @@ def kernel_interaction_of(block, *args) -> list[tuple[int, int]]:
     return _edges_of_ops(ops)
 
 
+def _validate_tile(tile: int, copies: int) -> None:
+    """Range-check a tile index against the number of packed copies."""
+    if not 0 <= tile < copies:
+        raise IndexError(f"tile {tile} out of range for {copies} copies")
+
+
 @dataclass(frozen=True)
 class PackedCircuit:
     """A packed qiskit job: ``copies`` circuit copies pinned to disjoint tiles.
@@ -113,9 +119,21 @@ class PackedCircuit:
     circuit: Any
     isa: Any
     tiles: tuple[tuple[int, ...], ...]
-    layout: tuple[int, ...]
-    block_qubits: int
-    copies: int
+
+    @property
+    def layout(self) -> tuple[int, ...]:
+        """Tile-major flattening of ``tiles`` (the pinned initial layout)."""
+        return tuple(q for tile in self.tiles for q in tile)
+
+    @property
+    def block_qubits(self) -> int:
+        """Qubits per circuit copy."""
+        return len(self.tiles[0])
+
+    @property
+    def copies(self) -> int:
+        """Number of packed circuit copies."""
+        return len(self.tiles)
 
     def physical_qubits(self, tile: int) -> list[int]:
         """Physical qubit indices hosting circuit copy ``tile``."""
@@ -133,8 +151,7 @@ class PackedCircuit:
 
         if tile is None:
             return [self.observable(obs, t) for t in range(self.copies)]
-        if not 0 <= tile < self.copies:
-            raise IndexError(f"tile {tile} out of range for {self.copies} copies")
+        _validate_tile(tile, self.copies)
         op = obs if isinstance(obs, SparsePauliOp) else SparsePauliOp(obs)
         if op.num_qubits != self.block_qubits:
             raise ValueError(
@@ -164,12 +181,7 @@ def _select_tiles(
     tiles = tile_disjoint(profile, interaction, k=k, n_logical=m, **thresholds)
     if not tiles:
         raise ValueError(f"{caller}: no tiles satisfy the coupling map and thresholds")
-    if len(tiles[0]) < m:
-        raise RuntimeError(
-            f"{caller}: tiles span {len(tiles[0])} qubits but the block has "
-            f"{m} (this is a bug; please report)"
-        )
-    return [tuple(t[:m]) for t in tiles]
+    return [tuple(t) for t in tiles]
 
 
 def pack_circuit(
@@ -214,7 +226,29 @@ def pack_circuit(
     thresholds, ``buffer_hops``, ``k="max"``, and ``strict`` semantics are
     those of :func:`~qkan.solver.layout.tile_disjoint`.
     """
-    if hasattr(circuit, "find_bit") and hasattr(circuit, "num_qubits"):
+    is_qiskit = hasattr(circuit, "find_bit") and hasattr(circuit, "num_qubits")
+    is_kernel = callable(circuit) and hasattr(circuit, "signature")
+    if not (is_qiskit or is_kernel):
+        raise TypeError(
+            f"pack_circuit: unsupported circuit type "
+            f"'{type(circuit).__name__}' — expected a qiskit QuantumCircuit "
+            "or a @cudaq.kernel"
+        )
+    thresholds: dict[str, Any] = dict(
+        max_readout_error=max_readout_error,
+        qubit_error_threshold=qubit_error_threshold,
+        edge_error_threshold=edge_error_threshold,
+        tile_score_threshold=tile_score_threshold,
+        buffer_hops=buffer_hops,
+        strict=strict,
+    )
+    if is_qiskit:
+        if isinstance(backend, DeviceProfile):
+            raise TypeError(
+                "pack_circuit: qiskit circuits transpile against a backend, "
+                "not a DeviceProfile — pass the backend (profile=... "
+                "overrides its calibration)"
+            )
         if block_args:
             raise ValueError("pack_circuit: block_args apply to CUDA-Q kernels only")
         return _pack_qiskit(
@@ -222,37 +256,21 @@ def pack_circuit(
             circuit,
             k,
             profile=profile,
-            max_readout_error=max_readout_error,
-            qubit_error_threshold=qubit_error_threshold,
-            edge_error_threshold=edge_error_threshold,
-            tile_score_threshold=tile_score_threshold,
-            buffer_hops=buffer_hops,
-            strict=strict,
             optimization_level=optimization_level,
+            **thresholds,
         )
-    if callable(circuit) and hasattr(circuit, "signature"):
-        selected = backend if isinstance(backend, DeviceProfile) else profile
-        if selected is None:
-            raise TypeError(
-                "pack_circuit: CUDA-Q kernels pack against calibration — "
-                "pass a DeviceProfile as the first argument"
-            )
-        return pack_kernel(
-            circuit,
-            profile=selected,
-            k=k,
-            block_args=block_args,
-            max_readout_error=max_readout_error,
-            qubit_error_threshold=qubit_error_threshold,
-            edge_error_threshold=edge_error_threshold,
-            tile_score_threshold=tile_score_threshold,
-            buffer_hops=buffer_hops,
-            strict=strict,
+    calibration = backend if isinstance(backend, DeviceProfile) else profile
+    if calibration is None:
+        raise TypeError(
+            "pack_circuit: CUDA-Q kernels pack against calibration — "
+            "pass a DeviceProfile as the first argument"
         )
-    raise TypeError(
-        f"pack_circuit: unsupported circuit type "
-        f"'{type(circuit).__name__}' — expected a qiskit QuantumCircuit "
-        "or a @cudaq.kernel"
+    return pack_kernel(
+        circuit,
+        profile=calibration,
+        k=k,
+        block_args=block_args,
+        **thresholds,
     )
 
 
@@ -306,14 +324,7 @@ def _pack_qiskit(
             "disagrees with the transpilation backend (stale snapshot or "
             "hand-built edges) — rebuild it with DeviceProfile.from_qiskit"
         )
-    return PackedCircuit(
-        circuit=merged,
-        isa=isa,
-        tiles=tuple(tiles),
-        layout=tuple(flat),
-        block_qubits=m,
-        copies=copies,
-    )
+    return PackedCircuit(circuit=merged, isa=isa, tiles=tuple(tiles))
 
 
 def _z_parity(counts, positions, width: Optional[int] = None) -> float:
@@ -350,11 +361,27 @@ class PackedKernel:
 
     kernel: Any
     tiles: tuple[tuple[int, ...], ...]
-    flat: tuple[int, ...]
-    width: int
-    block_qubits: int
-    copies: int
     gates: Optional[tuple] = None
+
+    @property
+    def flat(self) -> tuple[int, ...]:
+        """Tile-major flattening of ``tiles``."""
+        return tuple(q for tile in self.tiles for q in tile)
+
+    @property
+    def width(self) -> int:
+        """Register width of the packed kernel."""
+        return max(self.flat) + 1
+
+    @property
+    def block_qubits(self) -> int:
+        """Qubits per block copy."""
+        return len(self.tiles[0])
+
+    @property
+    def copies(self) -> int:
+        """Number of packed block copies."""
+        return len(self.tiles)
 
     def physical_qubits(self, tile: int) -> list[int]:
         """Physical qubit indices hosting block copy ``tile``."""
@@ -417,8 +444,7 @@ class PackedKernel:
 
         if tile is None:
             return [self.spin_op(pauli, t) for t in range(self.copies)]
-        if not 0 <= tile < self.copies:
-            raise IndexError(f"tile {tile} out of range for {self.copies} copies")
+        _validate_tile(tile, self.copies)
         pauli = pauli.upper()
         if len(pauli) != self.block_qubits:
             raise ValueError(
@@ -448,14 +474,9 @@ class PackedKernel:
         """
         if tile is None:
             return [self.z_parity(result, positions, t) for t in range(self.copies)]
-        if not 0 <= tile < self.copies:
-            raise IndexError(f"tile {tile} out of range for {self.copies} copies")
+        _validate_tile(tile, self.copies)
         physical = [self.tiles[tile][p] for p in positions]
         return _z_parity(result, physical, width=self.width)
-
-
-# Gate names whose kernel-builder method is spelled differently.
-_BUILDER_GATES = {"ccx": "ctx"}
 
 
 def _recompose(
@@ -472,7 +493,7 @@ def _recompose(
     q = kernel.qalloc(width)
     for tile in tiles:
         for name, params, qubits in gates:
-            method = getattr(kernel, _BUILDER_GATES.get(name, name), None)
+            method = getattr(kernel, name, None)
             if method is None:
                 raise ValueError(
                     f"pack_kernel: gate '{name}' has no cudaq kernel-builder equivalent"
@@ -582,14 +603,7 @@ def pack_kernel(
             # hardware pipelines that compact untouched qubits (dqe).
             mz(q)  # noqa: F821
 
-        return PackedKernel(
-            kernel=packed,
-            tiles=tiles,
-            flat=tuple(flat),
-            width=width,
-            block_qubits=m,
-            copies=copies,
-        )
+        return PackedKernel(kernel=packed, tiles=tiles)
 
     if not hasattr(block, "prepare_call"):
         raise TypeError(
@@ -639,11 +653,5 @@ def pack_kernel(
         )
     gates = tuple((name, tuple(params), tuple(qubits)) for name, params, qubits in ops)
     return PackedKernel(
-        kernel=_recompose(gates, tiles, width),
-        tiles=tiles,
-        flat=tuple(flat),
-        width=width,
-        block_qubits=m,
-        copies=copies,
-        gates=gates,
+        kernel=_recompose(gates, tiles, width), tiles=tiles, gates=gates
     )

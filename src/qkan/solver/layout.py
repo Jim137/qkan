@@ -34,6 +34,7 @@ Public API:
   subgraphs to run several independent circuits in parallel.
 """
 
+import functools
 import math
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping, Optional, Sequence, Union
@@ -92,6 +93,12 @@ class DeviceProfile:
     def has_calibration(self) -> bool:
         """True when the profile carries any per-qubit calibration data."""
         return bool(self.readout_error or self.gate_error_1q or self.gate_error_2q)
+
+    @functools.cached_property
+    def _edge_set(self) -> frozenset:
+        # Cached for the layout searches, which test coupling membership
+        # once per interaction edge per VF2 candidate.
+        return frozenset(self.edges)
 
     @classmethod
     def from_qiskit(cls, backend, *, refresh: bool = False) -> "DeviceProfile":
@@ -398,7 +405,7 @@ def _qubit_cost(
 def _edge_error(profile: DeviceProfile, a: int, b: int) -> Optional[float]:
     """Calibrated 2q error for the physical pair, or None if not coupled."""
     edge = (min(a, b), max(a, b))
-    if edge not in set(profile.edges):
+    if edge not in profile._edge_set:
         return None
     err = float(profile.gate_error_2q.get(edge, float("nan")))
     if math.isnan(err):
@@ -431,6 +438,31 @@ def _interaction_edges(
     edges = sorted(multiplicity)
     n_logical = max(max(a, b) for a, b in edges) + 1
     return edges, n_logical, multiplicity
+
+
+def _usable_costs(
+    profile: DeviceProfile,
+    *,
+    exclude: Optional[set[int]] = None,
+    max_readout_error: Optional[float] = None,
+    qubit_error_threshold: Optional[float] = None,
+) -> list[tuple[float, int]]:
+    """Sorted ``(cost, qubit)`` over qubits passing the threshold filters."""
+    scored = []
+    for q in range(profile.num_qubits):
+        if exclude and q in exclude:
+            continue
+        cost = _qubit_cost(
+            profile,
+            q,
+            max_readout_error=max_readout_error,
+            qubit_error_threshold=qubit_error_threshold,
+            filtering=True,
+        )
+        if cost is not None:
+            scored.append((cost, q))
+    scored.sort()
+    return scored
 
 
 def rank_qubits(
@@ -466,26 +498,18 @@ def rank_qubits(
         raise ValueError(
             f"rank_qubits: requested n={n} exceeds num_qubits={profile.num_qubits}"
         )
-    scored = []
-    for q in range(profile.num_qubits):
-        cost = _qubit_cost(
-            profile,
-            q,
-            max_readout_error=max_readout_error,
-            qubit_error_threshold=qubit_error_threshold,
-            filtering=True,
-        )
-        if cost is not None:
-            scored.append((cost, q))
+    scored = _usable_costs(
+        profile,
+        max_readout_error=max_readout_error,
+        qubit_error_threshold=qubit_error_threshold,
+    )
     if len(scored) < n:
         if not strict and scored:
-            scored.sort()
             return [q for _cost, q in scored]
         raise ValueError(
             f"rank_qubits: only {len(scored)} qubits satisfy the requested "
             f"thresholds; need {n}"
         )
-    scored.sort()
     return [q for _cost, q in scored[:n]]
 
 
@@ -522,10 +546,29 @@ def score_layout(
                 f"layout entry {layout[i]} is outside the device's "
                 f"{profile.num_qubits}-qubit index space"
             )
-    counts = gate_counts or {}
+    return _score_normalized(
+        profile, edges, multiplicity, n_logical, layout, gate_counts or {}
+    )
+
+
+def _score_normalized(
+    profile: DeviceProfile,
+    edges: Sequence[tuple[int, int]],
+    multiplicity: Mapping[tuple[int, int], int],
+    n_logical: int,
+    layout: Sequence[int],
+    counts: Mapping[Any, int],
+    qubit_costs: Optional[Mapping[int, float]] = None,
+) -> float:
+    """:func:`score_layout` core over a pre-normalized, pre-validated
+    interaction — the per-VF2-candidate hot path, so no re-normalization
+    and per-qubit costs can be supplied from a cache."""
     total = 0.0
     for i in range(n_logical):
-        cost = _qubit_cost(profile, int(layout[i]))
+        phys = int(layout[i])
+        cost = (
+            qubit_costs[phys] if qubit_costs is not None else _qubit_cost(profile, phys)
+        )
         assert cost is not None
         total += float(counts.get(i, 1)) * cost
     for a, b in edges:
@@ -583,10 +626,10 @@ def _best_subgraph_on(
     graph,
     edges: list[tuple[int, int]],
     n_logical: int,
+    multiplicity: Mapping[tuple[int, int], int],
     *,
     call_limit: Optional[int],
     max_trials: int,
-    score_interaction: Optional[Interaction] = None,
 ) -> Optional[tuple[list[int], float]]:
     """Best layout of the interaction onto the pruned graph, or None."""
     # Isolated logical qubits (no interaction edges) are assigned greedily
@@ -604,10 +647,15 @@ def _best_subgraph_on(
             "place each component separately (see tile_disjoint)"
         )
 
-    available = sorted(
-        (graph[node] for node in graph.node_indices()),
-        key=lambda q: _qubit_cost(profile, q) or _BIG,
-    )
+    # Per-qubit costs are reused for the availability ordering and for
+    # every candidate's score (they do not vary across VF2 trials).
+    qubit_costs: dict[int, float] = {}
+    for node in graph.node_indices():
+        q = graph[node]
+        cost = _qubit_cost(profile, q)
+        assert cost is not None  # non-filtering mode always yields a cost
+        qubit_costs[q] = cost
+    available = sorted(qubit_costs, key=qubit_costs.__getitem__)
 
     best: Optional[tuple[list[int], float]] = None
     if edges:
@@ -636,10 +684,8 @@ def _best_subgraph_on(
                         layout[lq] = next(free)
             except StopIteration:
                 continue
-            score = score_layout(
-                profile,
-                score_interaction if score_interaction is not None else edges,
-                layout,
+            score = _score_normalized(
+                profile, edges, multiplicity, n_logical, layout, {}, qubit_costs
             )
             if best is None or score < best[1]:
                 best = (layout, score)
@@ -649,7 +695,10 @@ def _best_subgraph_on(
     else:
         if len(available) >= n_logical:
             layout = available[:n_logical]
-            best = (layout, score_layout(profile, n_logical, layout))
+            score = _score_normalized(
+                profile, [], {}, n_logical, layout, {}, qubit_costs
+            )
+            best = (layout, score)
     return best
 
 
@@ -681,7 +730,7 @@ def best_subgraph(
     :func:`tile_disjoint`) and must embed in the coupling map without
     routing.
     """
-    edges, n_logical, _mult = _interaction_edges(interaction)
+    edges, n_logical, multiplicity = _interaction_edges(interaction)
     if not edges:
         return rank_qubits(
             profile,
@@ -713,9 +762,9 @@ def best_subgraph(
         graph,
         edges,
         n_logical,
+        multiplicity,
         call_limit=call_limit,
         max_trials=max_trials,
-        score_interaction=interaction,
     )
     if best is None:
         if strict:
@@ -765,7 +814,7 @@ def tile_disjoint(
         raise ValueError(f"tile_disjoint: k must be 'max' or a positive int, got {k!r}")
     if buffer_hops < 0:
         raise ValueError(f"tile_disjoint: buffer_hops must be >= 0, got {buffer_hops}")
-    edges, n_logical_span, _mult = _interaction_edges(interaction)
+    edges, n_logical_span, multiplicity = _interaction_edges(interaction)
     if n_logical is None:
         n_logical = n_logical_span
     elif n_logical < n_logical_span:
@@ -802,28 +851,20 @@ def tile_disjoint(
                 graph,
                 edges,
                 n_logical,
+                multiplicity,
                 call_limit=call_limit,
                 max_trials=max_trials,
-                score_interaction=interaction,
             )
         else:
-            usable = []
-            for q in range(profile.num_qubits):
-                if q in removed:
-                    continue
-                cost = _qubit_cost(
-                    profile,
-                    q,
-                    max_readout_error=max_readout_error,
-                    qubit_error_threshold=qubit_error_threshold,
-                    filtering=True,
-                )
-                if cost is not None:
-                    usable.append((cost, q))
+            usable = _usable_costs(
+                profile,
+                exclude=removed,
+                max_readout_error=max_readout_error,
+                qubit_error_threshold=qubit_error_threshold,
+            )
             if len(usable) < n_logical or not profile.has_calibration():
                 best = None
             else:
-                usable.sort()
                 layout = [q for _c, q in usable[:n_logical]]
                 best = (layout, score_layout(profile, n_logical, layout))
         if best is None:
