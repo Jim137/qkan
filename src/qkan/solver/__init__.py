@@ -35,7 +35,7 @@ from .cutile import _CUTILE_AVAILABLE, cutile_flash_exact_solver
 from .cutn import cutn_solver
 from .exact import torch_exact_solver
 from .flash import _FLASH_AVAILABLE, flash_exact_solver
-from .qiskit import qiskit_solver
+from .qiskit import best_qubits, qiskit_solver
 from .qml import qml_solver
 
 __all__ = [
@@ -43,6 +43,7 @@ __all__ = [
     "_CUTILE_AVAILABLE",
     "_FLASH_AVAILABLE",
     "QKANSolver",
+    "best_qubits",
     "cudaq_solver",
     "cute_exact_solver",
     "cutile_flash_exact_solver",
