@@ -1,0 +1,429 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qkan.inference &mdash; QKAN 0.2.3dev documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/inference.html" />
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples &amp; Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">qkan.inference</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for qkan.inference</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Inference helpers: CUDA graph capture for QKAN.</span>
+
+<span class="sd">At small batch sizes QKAN inference is CPU-bound — roughly 8 kernel launches per</span>
+<span class="sd">forward with ~2 us of Python/launch overhead each. A CUDA graph replays the</span>
+<span class="sd">captured stream of kernels as a single submission, eliminating almost all of</span>
+<span class="sd">that overhead. For GPT-style HQKAN blocks this typically yields a 2-3x speedup.</span>
+
+<span class="sd">Friendly API (recommended)</span>
+<span class="sd">--------------------------</span>
+<span class="sd">``compile_inference`` wraps any module with lazy, per-shape CUDA-graph</span>
+<span class="sd">capture. First call at a new shape captures; subsequent calls replay.</span>
+<span class="sd">Training / ``requires_grad`` inputs transparently fall back to eager::</span>
+
+<span class="sd">    import qkan</span>
+<span class="sd">    model = MyModel(...).cuda().eval()</span>
+<span class="sd">    model = qkan.compile_inference(model)          # drop-in wrapper</span>
+<span class="sd">    with torch.no_grad():</span>
+<span class="sd">        y = model(x)                               # captures on first call</span>
+<span class="sd">        y2 = model(x)                              # replays (2-3x faster)</span>
+
+<span class="sd">For multi-block transformers, install per-block graphs in one shot::</span>
+
+<span class="sd">    qkan.graph_submodules(transformer, sample_input, predicate=lambda m: isinstance(m, MyMLP))</span>
+
+<span class="sd">Low-level API</span>
+<span class="sd">-------------</span>
+<span class="sd">``make_graphed_inference(module, sample)`` captures a single-shape graph and</span>
+<span class="sd">returns a bare callable — useful when you know the shape ahead of time and</span>
+<span class="sd">don&#39;t want the shape-dispatch overhead.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">nn</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;make_graphed_inference&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;compile_inference&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;CompiledInference&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;graph_submodules&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Low-level: single-shape graph capture</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="make_graphed_inference">
+<a class="viewcode-back" href="../../api.html#qkan.make_graphed_inference">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_graphed_inference</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
+    <span class="n">sample_input</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">warmup</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Capture a CUDA graph for ``model(sample_input)`` and return a replay fn.</span>
+
+<span class="sd">    The input to the returned callable must match ``sample_input`` in shape,</span>
+<span class="sd">    dtype, and device. The output tensor is reused across calls — clone it</span>
+<span class="sd">    before issuing the next replay if you need to keep the value around.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        model: a module in eval() mode. Parameters must not change between</span>
+<span class="sd">            capture and replay.</span>
+<span class="sd">        sample_input: representative input — its shape/dtype/device fixes the</span>
+<span class="sd">            capture.</span>
+<span class="sd">        warmup: warmup forward passes on a side stream before capture.</span>
+<span class="sd">            PyTorch recommends &gt;=3 to stabilise cuBLAS/cuDNN selection.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A callable ``fn(x) -&gt; y`` that replays the captured graph.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">sample_input</span><span class="o">.</span><span class="n">is_cuda</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;make_graphed_inference requires a CUDA input&quot;</span><span class="p">)</span>
+
+    <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+    <span class="n">was_grad</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_grad_enabled</span><span class="p">()</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">set_grad_enabled</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">static_input</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">sample_input</span><span class="p">)</span>
+        <span class="n">static_input</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">sample_input</span><span class="p">)</span>
+
+        <span class="c1"># Warmup on a side stream so the main stream stays clean for capture.</span>
+        <span class="n">side</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Stream</span><span class="p">()</span>
+        <span class="n">side</span><span class="o">.</span><span class="n">wait_stream</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">())</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span><span class="n">side</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">warmup</span><span class="p">)):</span>
+                <span class="n">model</span><span class="p">(</span><span class="n">static_input</span><span class="p">)</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">()</span><span class="o">.</span><span class="n">wait_stream</span><span class="p">(</span><span class="n">side</span><span class="p">)</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+
+        <span class="n">graph</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">CUDAGraph</span><span class="p">()</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">graph</span><span class="p">(</span><span class="n">graph</span><span class="p">):</span>
+            <span class="n">static_output</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">static_input</span><span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">set_grad_enabled</span><span class="p">(</span><span class="n">was_grad</span><span class="p">)</span>
+
+    <span class="n">sample_shape</span> <span class="o">=</span> <span class="n">sample_input</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">sample_dtype</span> <span class="o">=</span> <span class="n">sample_input</span><span class="o">.</span><span class="n">dtype</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">replay</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">sample_shape</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">sample_dtype</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Graphed callable requires shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">sample_shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;dtype </span><span class="si">{</span><span class="n">sample_dtype</span><span class="si">}</span><span class="s2">; got shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;dtype </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">static_input</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">graph</span><span class="o">.</span><span class="n">replay</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">static_output</span>
+
+    <span class="k">return</span> <span class="n">replay</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Friendly API: lazy, multi-shape drop-in wrapper</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_input_key</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hashable key for graph-cache lookup; None when graphs don&#39;t apply.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">x</span><span class="o">.</span><span class="n">is_cuda</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="CompiledInference">
+<a class="viewcode-back" href="../../api.html#qkan.CompiledInference">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CompiledInference</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Transparent wrapper that captures CUDA graphs lazily per input shape.</span>
+
+<span class="sd">    Behaves exactly like the wrapped module in training (``self.training`` is</span>
+<span class="sd">    True) or when grad is enabled or the input is not a single CUDA tensor —</span>
+<span class="sd">    so you can wrap a model once and keep using it normally::</span>
+
+<span class="sd">        model = CompiledInference(model)</span>
+<span class="sd">        model.train(); model(x).sum().backward()   # eager, grad flows</span>
+<span class="sd">        model.eval()</span>
+<span class="sd">        with torch.no_grad():</span>
+<span class="sd">            model(x)                               # captures + replays</span>
+
+<span class="sd">    On each eval/no-grad forward, the (shape, dtype, device) of the input is</span>
+<span class="sd">    used as the cache key. A miss triggers a capture (up to ``max_shapes``);</span>
+<span class="sd">    a hit replays the captured graph. When the cache is full the fallback is</span>
+<span class="sd">    eager execution — graphs are not evicted.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        module: the module to wrap. ``forward`` must take one tensor arg.</span>
+<span class="sd">        max_shapes: maximum number of distinct input shapes to cache.</span>
+<span class="sd">        warmup: warmup forward passes before each capture.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">module</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
+        <span class="n">max_shapes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+        <span class="n">warmup</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">module</span> <span class="o">=</span> <span class="n">module</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_shapes</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">max_shapes</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">warmup</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">warmup</span><span class="p">)</span>
+        <span class="c1"># key -&gt; (graph, static_input, static_output)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span>
+            <span class="nb">tuple</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">CUDAGraph</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="c1"># Delegate train/eval/to/state_dict transparently.</span>
+<div class="viewcode-block" id="CompiledInference.train">
+<a class="viewcode-back" href="../../api.html#qkan.CompiledInference.train">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">train</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mode</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">train</span><span class="p">(</span><span class="n">mode</span><span class="p">)</span>
+        <span class="c1"># Param changes invalidate captured graphs.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">train</span><span class="p">(</span><span class="n">mode</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CompiledInference.clear_cache">
+<a class="viewcode-back" href="../../api.html#qkan.CompiledInference.clear_cache">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Drop all captured graphs. Call after editing parameters in-place.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
+
+
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_capture</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">sample</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">CUDAGraph</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+        <span class="n">static_input</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">sample</span><span class="p">)</span>
+        <span class="n">static_input</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">sample</span><span class="p">)</span>
+
+        <span class="n">side</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Stream</span><span class="p">()</span>
+        <span class="n">side</span><span class="o">.</span><span class="n">wait_stream</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">())</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span><span class="n">side</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">warmup</span><span class="p">)):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">static_input</span><span class="p">)</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">()</span><span class="o">.</span><span class="n">wait_stream</span><span class="p">(</span><span class="n">side</span><span class="p">)</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+
+        <span class="n">graph</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">CUDAGraph</span><span class="p">()</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">graph</span><span class="p">(</span><span class="n">graph</span><span class="p">):</span>
+            <span class="n">static_output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">static_input</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">graph</span><span class="p">,</span> <span class="n">static_input</span><span class="p">,</span> <span class="n">static_output</span>
+
+<div class="viewcode-block" id="CompiledInference.forward">
+<a class="viewcode-back" href="../../api.html#qkan.CompiledInference.forward">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">*</span><span class="n">extra</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="c1"># Any path that can&#39;t be safely graphed falls through to eager.</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">training</span>
+            <span class="ow">or</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_grad_enabled</span><span class="p">()</span>
+            <span class="ow">or</span> <span class="n">extra</span>
+            <span class="ow">or</span> <span class="n">kwargs</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="n">x</span><span class="o">.</span><span class="n">is_cuda</span>
+            <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">requires_grad</span>
+        <span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="n">extra</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="n">key</span> <span class="o">=</span> <span class="n">_input_key</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+        <span class="n">entry</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">entry</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_shapes</span><span class="p">:</span>
+                <span class="c1"># Cache is saturated — fall back to eager rather than evict</span>
+                <span class="c1"># (evicting mid-inference would trash ongoing replays).</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="n">entry</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_capture</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">entry</span>
+
+        <span class="n">graph</span><span class="p">,</span> <span class="n">static_input</span><span class="p">,</span> <span class="n">static_output</span> <span class="o">=</span> <span class="n">entry</span>
+        <span class="n">static_input</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">graph</span><span class="o">.</span><span class="n">replay</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">static_output</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="compile_inference">
+<a class="viewcode-back" href="../../api.html#qkan.compile_inference">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">compile_inference</span><span class="p">(</span>
+    <span class="n">module</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
+    <span class="n">max_shapes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+    <span class="n">warmup</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CompiledInference</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Shortcut: ``compile_inference(m) == CompiledInference(m)``.</span>
+
+<span class="sd">    Drop-in replacement that uses CUDA graphs for inference and falls back to</span>
+<span class="sd">    eager execution for training or gradient-tracking forwards. See</span>
+<span class="sd">    ``CompiledInference`` for details.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">CompiledInference</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">max_shapes</span><span class="o">=</span><span class="n">max_shapes</span><span class="p">,</span> <span class="n">warmup</span><span class="o">=</span><span class="n">warmup</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Helper: apply CUDA graphs to selected submodules (e.g. every MLP block)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="graph_submodules">
+<a class="viewcode-back" href="../../api.html#qkan.graph_submodules">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">graph_submodules</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
+    <span class="n">sample_input</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">predicate</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">],</span> <span class="nb">bool</span><span class="p">],</span>
+    <span class="n">max_shapes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+    <span class="n">warmup</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Wrap every submodule matching ``predicate`` with ``CompiledInference``.</span>
+
+<span class="sd">    Useful for transformer-style models where full-model graph capture fails</span>
+<span class="sd">    (e.g. SDPA backends increment an RNG counter even at dropout_p=0). Wrap</span>
+<span class="sd">    each MLP block instead — QKAN&#39;s launch-bound cost is concentrated there.</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        qkan.graph_submodules(</span>
+<span class="sd">            gpt2, sample_idx,</span>
+<span class="sd">            predicate=lambda m: isinstance(m, HQKANMLP),</span>
+<span class="sd">        )</span>
+
+<span class="sd">    The model is modified in place; replaced submodules wrap the originals so</span>
+<span class="sd">    they share parameters (``named_parameters`` is unchanged).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Collect matches first to avoid mutating during traversal.</span>
+    <span class="n">targets</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">parent</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">modules</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">child</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">parent</span><span class="o">.</span><span class="n">named_children</span><span class="p">()):</span>
+            <span class="k">if</span> <span class="n">predicate</span><span class="p">(</span><span class="n">child</span><span class="p">):</span>
+                <span class="n">targets</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">parent</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">child</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">parent</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">targets</span><span class="p">:</span>
+        <span class="nb">setattr</span><span class="p">(</span>
+            <span class="n">parent</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">CompiledInference</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="n">max_shapes</span><span class="o">=</span><span class="n">max_shapes</span><span class="p">,</span> <span class="n">warmup</span><span class="o">=</span><span class="n">warmup</span><span class="p">)</span>
+        <span class="p">)</span>
+    <span class="c1"># Trigger an initial capture pass with the provided sample so the first</span>
+    <span class="c1"># live forward doesn&#39;t pay the compile cost.</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+        <span class="n">model</span><span class="p">(</span><span class="n">sample_input</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">model</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

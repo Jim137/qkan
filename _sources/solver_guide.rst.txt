@@ -131,6 +131,82 @@ Key parameters:
 - ``fast_measure=False``: Required for real devices. Uses ``|alpha|^2 - |beta|^2`` (Born rule) instead of the quantum-inspired ``|alpha| - |beta|`` shortcut.
 - ``parallel_qubits``: Packs N independent single-qubit circuits onto N qubits of one multi-qubit job, reducing QPU submissions by ~Nx.
 - ``shots``: Number of measurement samples per circuit. More shots = less statistical noise.
+- ``initial_layout``: Controls which physical qubits receive the packed circuit (see below).
+  Defaults to ``None`` (let the transpiler choose).
+  Applies only when executing through a ``backend``; a user-supplied ``estimator`` receives circuits without qkan-side transpilation.
+
+
+Qubit-calibration layout
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Modern IBM devices have substantial per-qubit calibration variance — on a snapshot of ``FakeSherbrooke``, readout error across the physical qubits ``0..19`` that a level-1 transpile assigns by default spans 1.1% to 25.7% (a 23x spread), and the chip-wide spread is larger still.
+When the transpiler maps a packed N-qubit circuit onto physical qubits ``0..N-1``, several poorly-calibrated qubits end up in the mix, and their readout and gate errors directly bias every expectation value in the packed job.
+
+Fix: pin the packed circuit to the best-calibrated qubits via ``initial_layout`` in ``solver_kwargs``.
+
+.. code-block:: python
+
+   from qkan.solver import best_qubits
+
+   layout = best_qubits(backend, 20)
+
+   model = QKAN(
+       [1, 2, 1], solver="qiskit", fast_measure=False,
+       solver_kwargs={
+           "backend": backend,
+           "shots": 1024,
+           "parallel_qubits": 20,
+           "initial_layout": layout,
+       },
+   )
+
+Alternatively, pass ``"auto"`` to let ``qiskit_solver`` compute the layout internally from the current backend calibration:
+
+.. code-block:: python
+
+   solver_kwargs={
+       "backend": backend,
+       "shots": 1024,
+       "parallel_qubits": 20,
+       "initial_layout": "auto",
+   }
+
+``best_qubits(backend, n)`` scores each physical qubit by
+
+.. math::
+
+   \mathrm{score}(q) = \mathrm{readout\_error}(q) +
+                        \mathrm{sx\_err}(q) +
+                        10^{-4} / \max(T_2(q)\,[\mu s],\, 1)
+
+and returns the ``n`` lowest-scoring qubit indices.
+Readout error dominates the sum; sx error breaks ties; short :math:`T_2` is penalised only slightly because QKAN's shallow single-qubit circuits aren't T2-sensitive.
+
+**Empirical impact.** Smoke test on ``FakeSherbrooke`` with a trained single-sample forecast, ``parallel_qubits=20``, ``shots=1024``:
+
++-----------------------------+--------------------------+
+| Layout                      | rel MSE vs noiseless ref |
++=============================+==========================+
+| ``parallel_qubits=1``       | 0.134%                   |
+| (serial baseline, qubit 0)  |                          |
++-----------------------------+--------------------------+
+| naive ``0..19``             | 5.218%                   |
++-----------------------------+--------------------------+
+| ``best_qubits(backend, 20)``| 0.127%                   |
++-----------------------------+--------------------------+
+
+The smart layout at ``parallel_qubits=20`` fully recovers the ``parallel_qubits=1`` fidelity (a ~40x improvement over the naive layout) at identical QPU cost.
+
+**Caveats and scope.**
+
+- Real-backend calibration drifts over time.
+  ``initial_layout="auto"`` re-resolves the layout on every forward call, but ``qiskit_ibm_runtime`` caches ``backend.properties()`` after the first fetch — call ``backend.properties(refresh=True)`` (or re-create the backend) before long runs to pick up fresh calibration.
+  An explicit layout computed once via ``best_qubits`` is frozen for the lifetime of the model.
+- The helper assumes independent single-qubit circuits (the QKAN ``parallel_qubits`` packing pattern).
+  If you add 2-qubit gates, you also need connectivity-aware routing.
+- ``best_qubits`` returns ``[]`` when ``backend.properties()`` is unavailable (e.g. ``AerSimulator`` or ``GenericBackendV2``, which lack the legacy calibration API); the solver treats an empty layout as ``None`` and warns before falling back to the transpiler default.
+- A layout longer than a packed chunk is truncated to the chunk's width (keeping the best-ranked qubits), so ragged final chunks are handled; a layout *shorter* than the packed width raises ``ValueError``.
+- ``initial_layout`` applies only when executing through a ``backend``; a user-supplied ``estimator`` receives circuits without qkan-side transpilation (a warning is emitted).
 
 
 Error Mitigation

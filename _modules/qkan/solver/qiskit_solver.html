@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.solver.qiskit_solver &mdash; QKAN 0.2.1 documentation</title>
+  <title>qkan.solver.qiskit_solver &mdash; QKAN 0.2.3dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/qiskit_solver.html" />
       <script src="../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../../_static/documentation_options.js?v=37f418d5"></script>
+      <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
       <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -94,6 +94,7 @@
 <span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
@@ -132,6 +133,24 @@
 
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">._mitigation</span><span class="w"> </span><span class="kn">import</span> <span class="n">_apply_mitigation</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_configure_estimator</span><span class="p">(</span><span class="n">rt_estimator</span><span class="p">,</span> <span class="n">shots</span><span class="p">,</span> <span class="n">resilience_level</span><span class="p">,</span> <span class="n">twirling</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Apply shots, resilience, and twirling options to an EstimatorV2.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">shots</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">default_shots</span> <span class="o">=</span> <span class="n">shots</span>
+    <span class="k">if</span> <span class="n">resilience_level</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">resilience_level</span> <span class="o">=</span> <span class="n">resilience_level</span>
+    <span class="k">if</span> <span class="n">twirling</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">twirling</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enable_gates&quot;</span><span class="p">):</span>
+            <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">enable_gates</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">twirling</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enable_measure&quot;</span><span class="p">):</span>
+            <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">enable_measure</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">twirling</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;num_randomizations&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">num_randomizations</span> <span class="o">=</span> <span class="n">twirling</span><span class="p">[</span>
+                <span class="s2">&quot;num_randomizations&quot;</span>
+            <span class="p">]</span>
+
 
 <span class="c1"># ---------------------------------------------------------------------------</span>
 <span class="c1"># Qiskit circuit builders</span>
@@ -442,6 +461,150 @@
 <span class="n">_MAX_PUBS_CACHE</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
 
 
+<div class="viewcode-block" id="best_qubits">
+<a class="viewcode-back" href="../../../api.html#qkan.solver.best_qubits">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">best_qubits</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the ``n`` best-calibrated qubit indices on ``backend``.</span>
+
+<span class="sd">    When packing ``n`` independent single-qubit QKAN circuits onto ``n``</span>
+<span class="sd">    physical qubits of one multi-qubit job, the naive transpiler layout</span>
+<span class="sd">    (qubits ``0..n-1``) often includes poorly-calibrated qubits. Readout</span>
+<span class="sd">    and single-qubit gate errors on the selected qubits directly bias</span>
+<span class="sd">    every expectation value in the packed job, so a few bad qubits</span>
+<span class="sd">    inflate the aggregate error of the whole batch.</span>
+
+<span class="sd">    This helper scores each physical qubit by</span>
+
+<span class="sd">    .. math::</span>
+
+<span class="sd">        \\mathrm{score}(q) = \\mathrm{readout\\_error}(q) +</span>
+<span class="sd">                              \\mathrm{sx\\_err}(q) +</span>
+<span class="sd">                              10^{-4} / \\max(T_2(q)\\,[\\mu s],\\, 1)</span>
+
+<span class="sd">    (readout error dominates, :math:`sx` error is secondary, short</span>
+<span class="sd">    :math:`T_2` gets a small penalty) and returns the indices of the</span>
+<span class="sd">    ``n`` lowest-scoring qubits, best first. Qubits flagged</span>
+<span class="sd">    non-operational are skipped, and calibration values reported as NaN</span>
+<span class="sd">    (typical for faulty qubits) are treated as missing data rather than</span>
+<span class="sd">    ranked. Pass the result as ``initial_layout`` via ``solver_kwargs``</span>
+<span class="sd">    to pin the packed circuit onto them.</span>
+
+<span class="sd">    Empirically on ``FakeSherbrooke`` with ``parallel_qubits=20``,</span>
+<span class="sd">    ``shots=1024``: the smart layout recovers near-``parallel_qubits=1``</span>
+<span class="sd">    fidelity (≈0.13% rel MSE vs a noiseless reference) where the naive</span>
+<span class="sd">    layout lands at ≈5% rel MSE — a ~40× improvement at identical QPU</span>
+<span class="sd">    cost.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    backend : qiskit Backend</span>
+<span class="sd">        Backend with a ``properties()`` method (FakeProvider or real IBM).</span>
+<span class="sd">        Returns an empty list if the backend exposes no calibration.</span>
+<span class="sd">    n : int</span>
+<span class="sd">        Number of qubits to select. Must be a positive integer and must</span>
+<span class="sd">        not exceed ``backend.num_qubits``.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    list[int]</span>
+<span class="sd">        Top-``n`` physical qubit indices, sorted by ascending score.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    &gt;&gt;&gt; from qiskit_ibm_runtime.fake_provider import FakeSherbrooke</span>
+<span class="sd">    &gt;&gt;&gt; backend = FakeSherbrooke()</span>
+<span class="sd">    &gt;&gt;&gt; layout = best_qubits(backend, 20)</span>
+<span class="sd">    &gt;&gt;&gt; model = QKAN(</span>
+<span class="sd">    ...     [1, 2, 1], solver=&quot;qiskit&quot;, fast_measure=False,</span>
+<span class="sd">    ...     solver_kwargs={</span>
+<span class="sd">    ...         &quot;backend&quot;: backend,</span>
+<span class="sd">    ...         &quot;shots&quot;: 1024,</span>
+<span class="sd">    ...         &quot;parallel_qubits&quot;: 20,</span>
+<span class="sd">    ...         &quot;initial_layout&quot;: layout,</span>
+<span class="sd">    ...     },</span>
+<span class="sd">    ... )</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">n</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;best_qubits: n must be a positive integer, got </span><span class="si">{</span><span class="n">n</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">props</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">properties</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">props</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">num_qubits</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">num_qubits</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">n</span> <span class="o">&gt;</span> <span class="n">num_qubits</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;best_qubits: requested n=</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2"> exceeds backend.num_qubits=</span><span class="si">{</span><span class="n">num_qubits</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">scored</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_qubits</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">props</span><span class="o">.</span><span class="n">is_qubit_operational</span><span class="p">(</span><span class="n">q</span><span class="p">):</span>
+                <span class="k">continue</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="c1"># Faulty qubits report NaN calibration values; NaN compares False</span>
+        <span class="c1"># everywhere and corrupts sorting, so treat NaN exactly like</span>
+        <span class="c1"># missing data.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">ro</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">readout_error</span><span class="p">(</span><span class="n">q</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">ro</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">ro</span><span class="p">):</span>
+            <span class="n">ro</span> <span class="o">=</span> <span class="mf">0.5</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">sx</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">gate_error</span><span class="p">(</span><span class="s2">&quot;sx&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">q</span><span class="p">]))</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">sx</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">sx</span><span class="p">):</span>
+            <span class="n">sx</span> <span class="o">=</span> <span class="mf">1e-2</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">t2_us</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">t2</span><span class="p">(</span><span class="n">q</span><span class="p">))</span> <span class="o">*</span> <span class="mf">1e6</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">t2_us</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">t2_us</span><span class="p">):</span>
+            <span class="n">t2_us</span> <span class="o">=</span> <span class="mf">50.0</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="n">ro</span> <span class="o">+</span> <span class="n">sx</span> <span class="o">+</span> <span class="mf">1e-4</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="n">t2_us</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="n">scored</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">score</span><span class="p">,</span> <span class="n">q</span><span class="p">))</span>
+    <span class="n">scored</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">q</span> <span class="k">for</span> <span class="n">_score</span><span class="p">,</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">scored</span><span class="p">[:</span><span class="n">n</span><span class="p">]]</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_initial_layout_for_circuit</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="n">circuit_qubits</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return an initial layout with the same length as the circuit.</span>
+
+<span class="sd">    qiskit rejects a layout whose length differs from the circuit width, so</span>
+<span class="sd">    packed chunks narrower than ``parallel_qubits`` (ragged final chunk,</span>
+<span class="sd">    or a total circuit count below the packing width) use the first</span>
+<span class="sd">    ``circuit_qubits`` entries — the best-ranked qubits when the layout</span>
+<span class="sd">    came from :func:`best_qubits`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">initial_layout</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+        <span class="n">initial_layout</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="s2">&quot;tolist&quot;</span><span class="p">):</span>
+        <span class="c1"># numpy arrays / torch tensors would otherwise skip the truncation</span>
+        <span class="c1"># below and qiskit rejects layouts longer than the circuit.</span>
+        <span class="n">initial_layout</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">initial_layout</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">initial_layout</span><span class="p">:</span>
+            <span class="c1"># qiskit treats an empty layout like None; keep that fallback.</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">circuit_qubits</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;initial_layout has fewer qubits than the circuit: &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span><span class="si">}</span><span class="s2"> &lt; </span><span class="si">{</span><span class="n">circuit_qubits</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">initial_layout</span><span class="p">[:</span><span class="n">circuit_qubits</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">initial_layout</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_qiskit_run_parallel</span><span class="p">(</span>
     <span class="n">circuits</span><span class="p">,</span>
     <span class="n">n_qubits</span><span class="p">,</span>
@@ -449,6 +612,7 @@
     <span class="n">backend</span><span class="p">,</span>
     <span class="n">optimization_level</span><span class="p">,</span>
     <span class="n">shots</span><span class="p">,</span>
+    <span class="n">initial_layout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">max_pubs_per_job</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
     <span class="n">resilience_level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">twirling</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
@@ -464,6 +628,14 @@
 <span class="sd">    - If `max_pubs_per_job` == 0 (default), starts with all PUBs in one job.</span>
 <span class="sd">    - On memory error (6073), automatically halves and retries.</span>
 <span class="sd">    - The discovered working batch size is cached per backend.</span>
+
+<span class="sd">    When `initial_layout` is a list of `n_qubits` physical qubit indices,</span>
+<span class="sd">    the packed circuit is pinned to those qubits during transpilation.</span>
+<span class="sd">    The layout is truncated to each chunk&#39;s width, so a ragged final</span>
+<span class="sd">    chunk uses the first `chunk_size` entries — the best-ranked qubits</span>
+<span class="sd">    when the layout came from :func:`best_qubits`. This is how</span>
+<span class="sd">    :func:`best_qubits` gets applied — qkan does not auto-select qubits</span>
+<span class="sd">    unless the caller explicitly requests it.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">circuits</span><span class="p">)</span>
 
@@ -473,8 +645,9 @@
 
     <span class="k">if</span> <span class="n">estimator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">for</span> <span class="n">start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">total</span><span class="p">,</span> <span class="n">n_qubits</span><span class="p">):</span>
-            <span class="n">batch_circuits</span> <span class="o">=</span> <span class="n">circuits</span><span class="p">[</span><span class="n">start</span> <span class="p">:</span> <span class="n">start</span> <span class="o">+</span> <span class="n">n_qubits</span><span class="p">]</span>
-            <span class="n">chunk_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">batch_circuits</span><span class="p">)</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">start</span> <span class="o">+</span> <span class="n">n_qubits</span><span class="p">,</span> <span class="n">total</span><span class="p">)</span>
+            <span class="n">batch_circuits</span> <span class="o">=</span> <span class="n">circuits</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+            <span class="n">chunk_size</span> <span class="o">=</span> <span class="n">end</span> <span class="o">-</span> <span class="n">start</span>
             <span class="n">all_chunk_sizes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">chunk_size</span><span class="p">)</span>
             <span class="n">packed_qc</span> <span class="o">=</span> <span class="n">_build_qiskit_parallel_circuit</span><span class="p">(</span><span class="n">batch_circuits</span><span class="p">)</span>
             <span class="n">chunk_obs</span> <span class="o">=</span> <span class="n">_make_parallel_observables</span><span class="p">(</span><span class="n">chunk_size</span><span class="p">)</span>
@@ -487,30 +660,27 @@
         <span class="k">return</span> <span class="n">expvals</span>
 
     <span class="k">elif</span> <span class="n">backend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">pm</span> <span class="o">=</span> <span class="n">generate_preset_pass_manager</span><span class="p">(</span>
-            <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span> <span class="n">optimization_level</span><span class="o">=</span><span class="n">optimization_level</span>
-        <span class="p">)</span>
+        <span class="c1"># One pass manager per chunk width: the final chunk can be narrower</span>
+        <span class="c1"># than n_qubits, and qiskit pins the layout length at construction.</span>
+        <span class="n">pm_cache</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">rt_estimator</span> <span class="o">=</span> <span class="n">Estimator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="n">backend</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">shots</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">default_shots</span> <span class="o">=</span> <span class="n">shots</span>
-        <span class="k">if</span> <span class="n">resilience_level</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">resilience_level</span> <span class="o">=</span> <span class="n">resilience_level</span>
-        <span class="k">if</span> <span class="n">twirling</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">twirling</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enable_gates&quot;</span><span class="p">):</span>
-                <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">enable_gates</span> <span class="o">=</span> <span class="kc">True</span>
-            <span class="k">if</span> <span class="n">twirling</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enable_measure&quot;</span><span class="p">):</span>
-                <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">enable_measure</span> <span class="o">=</span> <span class="kc">True</span>
-            <span class="k">if</span> <span class="n">twirling</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;num_randomizations&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">num_randomizations</span> <span class="o">=</span> <span class="n">twirling</span><span class="p">[</span>
-                    <span class="s2">&quot;num_randomizations&quot;</span>
-                <span class="p">]</span>
+        <span class="n">_configure_estimator</span><span class="p">(</span><span class="n">rt_estimator</span><span class="p">,</span> <span class="n">shots</span><span class="p">,</span> <span class="n">resilience_level</span><span class="p">,</span> <span class="n">twirling</span><span class="p">)</span>
 
         <span class="k">for</span> <span class="n">start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">total</span><span class="p">,</span> <span class="n">n_qubits</span><span class="p">):</span>
-            <span class="n">batch_circuits</span> <span class="o">=</span> <span class="n">circuits</span><span class="p">[</span><span class="n">start</span> <span class="p">:</span> <span class="n">start</span> <span class="o">+</span> <span class="n">n_qubits</span><span class="p">]</span>
-            <span class="n">chunk_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">batch_circuits</span><span class="p">)</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">start</span> <span class="o">+</span> <span class="n">n_qubits</span><span class="p">,</span> <span class="n">total</span><span class="p">)</span>
+            <span class="n">batch_circuits</span> <span class="o">=</span> <span class="n">circuits</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+            <span class="n">chunk_size</span> <span class="o">=</span> <span class="n">end</span> <span class="o">-</span> <span class="n">start</span>
             <span class="n">all_chunk_sizes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">chunk_size</span><span class="p">)</span>
             <span class="n">packed_qc</span> <span class="o">=</span> <span class="n">_build_qiskit_parallel_circuit</span><span class="p">(</span><span class="n">batch_circuits</span><span class="p">)</span>
-            <span class="n">isa_qc</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">packed_qc</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">chunk_size</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">pm_cache</span><span class="p">:</span>
+                <span class="n">pm_cache</span><span class="p">[</span><span class="n">chunk_size</span><span class="p">]</span> <span class="o">=</span> <span class="n">generate_preset_pass_manager</span><span class="p">(</span>
+                    <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span>
+                    <span class="n">optimization_level</span><span class="o">=</span><span class="n">optimization_level</span><span class="p">,</span>
+                    <span class="n">initial_layout</span><span class="o">=</span><span class="n">_initial_layout_for_circuit</span><span class="p">(</span>
+                        <span class="n">initial_layout</span><span class="p">,</span> <span class="n">chunk_size</span>
+                    <span class="p">),</span>
+                <span class="p">)</span>
+            <span class="n">isa_qc</span> <span class="o">=</span> <span class="n">pm_cache</span><span class="p">[</span><span class="n">chunk_size</span><span class="p">]</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">packed_qc</span><span class="p">)</span>
             <span class="n">chunk_obs</span> <span class="o">=</span> <span class="n">_make_parallel_observables</span><span class="p">(</span><span class="n">chunk_size</span><span class="p">)</span>
             <span class="n">isa_obs</span> <span class="o">=</span> <span class="p">[</span><span class="n">obs</span><span class="o">.</span><span class="n">apply_layout</span><span class="p">(</span><span class="n">isa_qc</span><span class="o">.</span><span class="n">layout</span><span class="p">)</span> <span class="k">for</span> <span class="n">obs</span> <span class="ow">in</span> <span class="n">chunk_obs</span><span class="p">]</span>
             <span class="n">all_pubs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">isa_qc</span><span class="p">,</span> <span class="n">isa_obs</span><span class="p">))</span>
@@ -553,6 +723,7 @@
     <span class="n">shots</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;shots&quot;</span><span class="p">]</span>
     <span class="n">optimization_level</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;optimization_level&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
     <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;parallel_qubits&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">initial_layout</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;initial_layout&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
     <span class="c1"># Broadcast theta/preacts to (out_dim, in_dim, ...)</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
@@ -587,27 +758,27 @@
     <span class="n">observables</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">pauli_z</span> <span class="o">=</span> <span class="n">SparsePauliOp</span><span class="o">.</span><span class="n">from_list</span><span class="p">([(</span><span class="s2">&quot;Z&quot;</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)])</span>
 
+    <span class="c1"># Pre-convert theta (batch-independent) and x to Python lists</span>
+    <span class="n">theta_lists</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="p">(</span><span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">):</span> <span class="n">theta_np</span><span class="p">[</span><span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">out_dim</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">in_dim</span><span class="p">)</span>
+    <span class="p">}</span>
+    <span class="n">x_py</span> <span class="o">=</span> <span class="n">x_np</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+    <span class="n">enc_py</span> <span class="o">=</span> <span class="n">encoded_x_np</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span> <span class="k">if</span> <span class="n">encoded_x_np</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
     <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">batch</span><span class="p">):</span>
         <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">out_dim</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">in_dim</span><span class="p">):</span>
+                <span class="n">t</span> <span class="o">=</span> <span class="n">theta_lists</span><span class="p">[(</span><span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">)]</span>
+                <span class="n">enc_vals</span> <span class="o">=</span> <span class="n">enc_py</span><span class="p">[</span><span class="n">b</span><span class="p">][</span><span class="n">o</span><span class="p">][</span><span class="n">i</span><span class="p">]</span> <span class="k">if</span> <span class="n">enc_py</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
                 <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">):</span>
-                    <span class="n">t</span> <span class="o">=</span> <span class="n">theta_np</span><span class="p">[</span><span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-                    <span class="n">enc_vals</span> <span class="o">=</span> <span class="kc">None</span>
-                    <span class="k">if</span> <span class="n">encoded_x_np</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                        <span class="n">enc_vals</span> <span class="o">=</span> <span class="n">encoded_x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-                    <span class="n">qc</span> <span class="o">=</span> <span class="n">_build_qiskit_pz_circuit</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">i</span><span class="p">]),</span> <span class="n">t</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">enc_vals</span><span class="p">)</span>
+                    <span class="n">qc</span> <span class="o">=</span> <span class="n">_build_qiskit_pz_circuit</span><span class="p">(</span><span class="n">x_py</span><span class="p">[</span><span class="n">b</span><span class="p">][</span><span class="n">i</span><span class="p">],</span> <span class="n">t</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">enc_vals</span><span class="p">)</span>
                 <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
-                    <span class="n">t</span> <span class="o">=</span> <span class="n">theta_np</span><span class="p">[</span><span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-                    <span class="n">enc_vals</span> <span class="o">=</span> <span class="n">encoded_x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
+                    <span class="k">assert</span> <span class="n">enc_vals</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                     <span class="n">qc</span> <span class="o">=</span> <span class="n">_build_qiskit_rpz_circuit</span><span class="p">(</span><span class="n">enc_vals</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">reps</span><span class="p">)</span>
                 <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
-                    <span class="n">t</span> <span class="o">=</span> <span class="n">theta_np</span><span class="p">[</span><span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-                    <span class="n">enc_vals</span> <span class="o">=</span> <span class="kc">None</span>
-                    <span class="k">if</span> <span class="n">encoded_x_np</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                        <span class="n">enc_vals</span> <span class="o">=</span> <span class="n">encoded_x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-                    <span class="n">qc</span> <span class="o">=</span> <span class="n">_build_qiskit_real_circuit</span><span class="p">(</span>
-                        <span class="nb">float</span><span class="p">(</span><span class="n">x_np</span><span class="p">[</span><span class="n">b</span><span class="p">,</span> <span class="n">i</span><span class="p">]),</span> <span class="n">t</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">enc_vals</span>
-                    <span class="p">)</span>
+                    <span class="n">qc</span> <span class="o">=</span> <span class="n">_build_qiskit_real_circuit</span><span class="p">(</span><span class="n">x_py</span><span class="p">[</span><span class="n">b</span><span class="p">][</span><span class="n">i</span><span class="p">],</span> <span class="n">t</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">enc_vals</span><span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
                         <span class="sa">f</span><span class="s2">&quot;Ansatz &#39;</span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&#39; not supported by qiskit_solver&quot;</span>
@@ -618,6 +789,26 @@
     <span class="c1"># Execute via the appropriate Estimator</span>
     <span class="n">max_pubs</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_pubs_per_job&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
     <span class="n">mitigation</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mitigation&quot;</span><span class="p">,</span> <span class="p">{})</span>
+
+    <span class="c1"># Pre-build resources that don&#39;t change across ZNE/repeat calls</span>
+    <span class="n">_rl</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;resilience_level&quot;</span><span class="p">)</span>
+    <span class="n">_tw</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;twirling&quot;</span><span class="p">)</span>
+    <span class="n">_pm</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_rt_est</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="n">backend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="ow">and</span> <span class="n">estimator</span> <span class="ow">is</span> <span class="kc">None</span>
+        <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="n">parallel_qubits</span> <span class="ow">and</span> <span class="n">parallel_qubits</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="p">):</span>
+        <span class="n">_pm</span> <span class="o">=</span> <span class="n">generate_preset_pass_manager</span><span class="p">(</span>
+            <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span>
+            <span class="n">optimization_level</span><span class="o">=</span><span class="n">optimization_level</span><span class="p">,</span>
+            <span class="c1"># Serial-path circuits are single-qubit: pin them to the</span>
+            <span class="c1"># best-ranked entry of the layout.</span>
+            <span class="n">initial_layout</span><span class="o">=</span><span class="n">_initial_layout_for_circuit</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">_rt_est</span> <span class="o">=</span> <span class="n">Estimator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="n">backend</span><span class="p">)</span>
+        <span class="n">_configure_estimator</span><span class="p">(</span><span class="n">_rt_est</span><span class="p">,</span> <span class="n">shots</span><span class="p">,</span> <span class="n">_rl</span><span class="p">,</span> <span class="n">_tw</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_run_qiskit</span><span class="p">(</span><span class="n">scale_factor</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
         <span class="n">run_circuits</span> <span class="o">=</span> <span class="p">(</span>
@@ -633,38 +824,24 @@
                 <span class="n">backend</span><span class="p">,</span>
                 <span class="n">optimization_level</span><span class="p">,</span>
                 <span class="n">shots</span><span class="p">,</span>
+                <span class="n">initial_layout</span><span class="o">=</span><span class="n">initial_layout</span><span class="p">,</span>
                 <span class="n">max_pubs_per_job</span><span class="o">=</span><span class="n">max_pubs</span><span class="p">,</span>
-                <span class="n">resilience_level</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;resilience_level&quot;</span><span class="p">),</span>
-                <span class="n">twirling</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;twirling&quot;</span><span class="p">),</span>
+                <span class="n">resilience_level</span><span class="o">=</span><span class="n">_rl</span><span class="p">,</span>
+                <span class="n">twirling</span><span class="o">=</span><span class="n">_tw</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">estimator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">pubs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">run_circuits</span><span class="p">,</span> <span class="n">observables</span><span class="p">))</span>
             <span class="n">job</span> <span class="o">=</span> <span class="n">estimator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">pubs</span><span class="p">)</span>
             <span class="n">result</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
             <span class="k">return</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">evs</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">result</span><span class="p">]</span>
-        <span class="k">elif</span> <span class="n">backend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">pm</span> <span class="o">=</span> <span class="n">generate_preset_pass_manager</span><span class="p">(</span>
-                <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span> <span class="n">optimization_level</span><span class="o">=</span><span class="n">optimization_level</span>
-            <span class="p">)</span>
-            <span class="n">isa_circuits</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">run_circuits</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">_rt_est</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">isa_circuits</span> <span class="o">=</span> <span class="n">_pm</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">run_circuits</span><span class="p">)</span>
             <span class="n">isa_observables</span> <span class="o">=</span> <span class="p">[</span>
                 <span class="n">obs</span><span class="o">.</span><span class="n">apply_layout</span><span class="p">(</span><span class="n">qc</span><span class="o">.</span><span class="n">layout</span><span class="p">)</span>
                 <span class="k">for</span> <span class="n">obs</span><span class="p">,</span> <span class="n">qc</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">observables</span><span class="p">,</span> <span class="n">isa_circuits</span><span class="p">)</span>
             <span class="p">]</span>
-            <span class="n">rt_estimator</span> <span class="o">=</span> <span class="n">Estimator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="n">backend</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">shots</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">default_shots</span> <span class="o">=</span> <span class="n">shots</span>
-            <span class="n">rl</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;resilience_level&quot;</span><span class="p">)</span>
-            <span class="n">tw</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;twirling&quot;</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">rl</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">resilience_level</span> <span class="o">=</span> <span class="n">rl</span>
-            <span class="k">if</span> <span class="n">tw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">tw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enable_gates&quot;</span><span class="p">):</span>
-                    <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">enable_gates</span> <span class="o">=</span> <span class="kc">True</span>
-                <span class="k">if</span> <span class="n">tw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enable_measure&quot;</span><span class="p">):</span>
-                    <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">enable_measure</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="n">pubs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">isa_circuits</span><span class="p">,</span> <span class="n">isa_observables</span><span class="p">))</span>
-            <span class="n">job</span> <span class="o">=</span> <span class="n">rt_estimator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">pubs</span><span class="p">)</span>
+            <span class="n">job</span> <span class="o">=</span> <span class="n">_rt_est</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">pubs</span><span class="p">)</span>
             <span class="n">result</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
             <span class="k">return</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">evs</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">result</span><span class="p">]</span>
         <span class="k">else</span><span class="p">:</span>
@@ -757,6 +934,50 @@
     <span class="k">if</span> <span class="n">parallel_qubits</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span> <span class="ow">and</span> <span class="n">backend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">num_qubits</span>
 
+    <span class="c1"># Resolve initial_layout:</span>
+    <span class="c1">#   None (default)  -&gt; let the transpiler choose</span>
+    <span class="c1">#   &quot;auto&quot;          -&gt; top-N best-calibrated qubits via best_qubits()</span>
+    <span class="c1">#   list[int]       -&gt; user-supplied physical qubit indices (used as-is)</span>
+    <span class="n">initial_layout</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;initial_layout&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+        <span class="n">initial_layout</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">initial_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="s2">&quot;tolist&quot;</span><span class="p">):</span>
+        <span class="c1"># Normalize numpy arrays / torch tensors so the string sentinel</span>
+        <span class="c1"># check and per-chunk truncation see a plain list.</span>
+        <span class="n">initial_layout</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">initial_layout</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">initial_layout</span><span class="p">:</span>
+        <span class="c1"># best_qubits returns [] when calibration is unavailable; qiskit</span>
+        <span class="c1"># treats an empty layout like None, so normalize it here too.</span>
+        <span class="n">initial_layout</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">initial_layout</span> <span class="o">!=</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;initial_layout must be None, &#39;auto&#39;, or a list of physical &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;qubit indices; got </span><span class="si">{</span><span class="n">initial_layout</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">backend</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;initial_layout=&#39;auto&#39; requires a backend with properties() &quot;</span>
+                <span class="s2">&quot;to score qubit calibration.&quot;</span>
+            <span class="p">)</span>
+        <span class="n">n_layout</span> <span class="o">=</span> <span class="n">parallel_qubits</span> <span class="k">if</span> <span class="p">(</span><span class="n">parallel_qubits</span> <span class="ow">and</span> <span class="n">parallel_qubits</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span> <span class="k">else</span> <span class="mi">1</span>
+        <span class="n">initial_layout</span> <span class="o">=</span> <span class="n">best_qubits</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">n_layout</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">initial_layout</span><span class="p">:</span>
+            <span class="c1"># No calibration available — fall back to transpiler default.</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="s2">&quot;initial_layout=&#39;auto&#39;: backend exposes no calibration data; &quot;</span>
+                <span class="s2">&quot;falling back to the transpiler&#39;s default layout.&quot;</span><span class="p">,</span>
+                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">initial_layout</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">initial_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">estimator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="s2">&quot;initial_layout is ignored when execution goes through an &quot;</span>
+            <span class="s2">&quot;estimator rather than a backend: circuits are submitted &quot;</span>
+            <span class="s2">&quot;without qkan-side transpilation.&quot;</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="p">)</span>
+
     <span class="n">max_pubs_per_job</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_pubs_per_job&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
 
     <span class="n">config</span> <span class="o">=</span> <span class="p">{</span>
@@ -768,6 +989,7 @@
         <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="n">shots</span><span class="p">,</span>
         <span class="s2">&quot;optimization_level&quot;</span><span class="p">:</span> <span class="n">optimization_level</span><span class="p">,</span>
         <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="n">parallel_qubits</span><span class="p">,</span>
+        <span class="s2">&quot;initial_layout&quot;</span><span class="p">:</span> <span class="n">initial_layout</span><span class="p">,</span>
         <span class="s2">&quot;max_pubs_per_job&quot;</span><span class="p">:</span> <span class="n">max_pubs_per_job</span><span class="p">,</span>
         <span class="s2">&quot;resilience_level&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;resilience_level&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
         <span class="s2">&quot;twirling&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;twirling&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>

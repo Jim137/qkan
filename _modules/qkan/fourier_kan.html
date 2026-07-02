@@ -1,0 +1,413 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qkan.fourier_kan &mdash; QKAN 0.2.3dev documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/fourier_kan.html" />
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples &amp; Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">qkan.fourier_kan</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for qkan.fourier_kan</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Fourier-based Kolmogorov-Arnold Network (FourierKAN) for baseline comparison.</span>
+
+<span class="sd">Replaces B-spline basis functions with Fourier basis (sin/cos) as the learnable</span>
+<span class="sd">activation functions on edges.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.qkan</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKAN</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">FourierKANLinear</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">in_features</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">out_features</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">grid_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>
+        <span class="n">scale_base</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">scale_fourier</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">enable_standalone_scale_fourier</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">base_activation</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">SiLU</span><span class="p">,</span>
+        <span class="n">grid_range</span><span class="o">=</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">FourierKANLinear</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">in_features</span> <span class="o">=</span> <span class="n">in_features</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out_features</span> <span class="o">=</span> <span class="n">out_features</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">grid_size</span> <span class="o">=</span> <span class="n">grid_size</span>
+
+        <span class="c1"># Precompute the frequency indices: 1, 2, ..., grid_size</span>
+        <span class="n">freqs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">grid_size</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">freqs</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s2">&quot;freqs&quot;</span><span class="p">,</span> <span class="n">freqs</span><span class="p">)</span>
+
+        <span class="c1"># Scale input from grid_range to [-pi, pi]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">grid_range</span> <span class="o">=</span> <span class="n">grid_range</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">input_scale</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">input_shift</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span>
+            <span class="s2">&quot;input_scale&quot;</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="p">(</span><span class="n">grid_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">grid_range</span><span class="p">[</span><span class="mi">0</span><span class="p">])),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span>
+            <span class="s2">&quot;input_shift&quot;</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span>
+                <span class="o">-</span><span class="n">grid_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="p">(</span><span class="n">grid_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">grid_range</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="o">-</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Fourier coefficients: (out_features, in_features, 2 * grid_size)</span>
+        <span class="c1"># First grid_size entries are cosine coefficients, last grid_size are sine</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fourier_weight</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">(</span><span class="n">out_features</span><span class="p">,</span> <span class="n">in_features</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">grid_size</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Base weight (linear residual connection through activation)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_weight</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">(</span><span class="n">out_features</span><span class="p">,</span> <span class="n">in_features</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="n">enable_standalone_scale_fourier</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fourier_scaler</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">(</span><span class="n">out_features</span><span class="p">,</span> <span class="n">in_features</span><span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">scale_base</span> <span class="o">=</span> <span class="n">scale_base</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scale_fourier</span> <span class="o">=</span> <span class="n">scale_fourier</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enable_standalone_scale_fourier</span> <span class="o">=</span> <span class="n">enable_standalone_scale_fourier</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_activation</span> <span class="o">=</span> <span class="n">base_activation</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">reset_parameters</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset_parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">kaiming_uniform_</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">base_weight</span><span class="p">,</span> <span class="n">a</span><span class="o">=</span><span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_base</span>
+        <span class="p">)</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="c1"># Initialize Fourier coefficients with small random values</span>
+            <span class="n">std</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_fourier</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">in_features</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">grid_size</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fourier_weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">std</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">enable_standalone_scale_fourier</span><span class="p">:</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">kaiming_uniform_</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">fourier_scaler</span><span class="p">,</span> <span class="n">a</span><span class="o">=</span><span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_fourier</span>
+                <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">fourier_basis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute the Fourier basis for the given input tensor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            x (torch.Tensor): Input tensor of shape (batch_size, in_features).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            torch.Tensor: Fourier basis tensor of shape (batch_size, in_features, 2 * grid_size).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">x</span><span class="o">.</span><span class="n">dim</span><span class="p">()</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_features</span>
+
+        <span class="c1"># Map input to [-pi, pi]</span>
+        <span class="n">x_scaled</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_scale</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_shift</span>  <span class="c1"># (batch, in_features)</span>
+
+        <span class="c1"># (batch, in_features, grid_size)</span>
+        <span class="n">phase</span> <span class="o">=</span> <span class="n">x_scaled</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqs</span>
+
+        <span class="c1"># Concatenate cos and sin: (batch, in_features, 2 * grid_size)</span>
+        <span class="n">bases</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">phase</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">phase</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">bases</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">scaled_fourier_weight</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">fourier_weight</span> <span class="o">*</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fourier_scaler</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">enable_standalone_scale_fourier</span>
+            <span class="k">else</span> <span class="mf">1.0</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_features</span>
+        <span class="n">original_shape</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_features</span><span class="p">)</span>
+
+        <span class="n">base_output</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">base_activation</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_weight</span><span class="p">)</span>
+        <span class="n">fourier_output</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fourier_basis</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">scaled_fourier_weight</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">output</span> <span class="o">=</span> <span class="n">base_output</span> <span class="o">+</span> <span class="n">fourier_output</span>
+
+        <span class="n">output</span> <span class="o">=</span> <span class="n">output</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">original_shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_features</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">output</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit_from_qkan</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">x0</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">max_iter</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">200</span><span class="p">,</span> <span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-5</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Fit FourierKAN layer from QKAN with early stopping.</span>
+
+<span class="sd">        Args</span>
+<span class="sd">        ----</span>
+<span class="sd">            x0: torch.Tensor</span>
+<span class="sd">                Input tensor</span>
+<span class="sd">            y: torch.Tensor</span>
+<span class="sd">                Target tensor</span>
+<span class="sd">            max_iter: int</span>
+<span class="sd">                Maximum number of iterations, default: 200</span>
+<span class="sd">            tol: float</span>
+<span class="sd">                Tolerance for early stopping, default: 1e-5</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+        <span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-1</span><span class="p">)</span>
+        <span class="n">criterion</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">MSELoss</span><span class="p">()</span>
+        <span class="n">prev_loss</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;inf&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iter</span><span class="p">):</span>
+            <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">forward</span><span class="p">(</span><span class="n">x0</span><span class="p">)</span>
+            <span class="n">loss</span> <span class="o">=</span> <span class="n">criterion</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+            <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+            <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+            <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">prev_loss</span> <span class="o">-</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span> <span class="o">&lt;</span> <span class="n">tol</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">prev_loss</span> <span class="o">=</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">regularization_loss</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">regularize_activation</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">regularize_entropy</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute the regularization loss.</span>
+
+<span class="sd">        L1 regularization on the Fourier coefficients, analogous to the spline</span>
+<span class="sd">        weight regularization in KANLinear.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">l1_fake</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fourier_weight</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">regularization_loss_activation</span> <span class="o">=</span> <span class="n">l1_fake</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">l1_fake</span> <span class="o">/</span> <span class="n">regularization_loss_activation</span>
+        <span class="n">regularization_loss_entropy</span> <span class="o">=</span> <span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">p</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">log</span><span class="p">())</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">regularize_activation</span> <span class="o">*</span> <span class="n">regularization_loss_activation</span>
+            <span class="o">+</span> <span class="n">regularize_entropy</span> <span class="o">*</span> <span class="n">regularization_loss_entropy</span>
+        <span class="p">)</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">FourierKANModuleList</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">FourierKANModuleList</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">FourierKANLinear</span><span class="p">,</span> <span class="s2">&quot;FourierKANModuleList&quot;</span><span class="p">]:</span>  <span class="c1"># type: ignore</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">FourierKANModuleList</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__getitem__</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="FourierKAN">
+<a class="viewcode-back" href="../../api.html#qkan.FourierKAN">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FourierKAN</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Fourier KAN (Kolmogorov-Arnold Network) model.</span>
+
+<span class="sd">    Uses Fourier basis (sin/cos) as the learnable activation functions on edges,</span>
+<span class="sd">    serving as a baseline for comparison with B-spline KAN and QKAN.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">layers_hidden</span><span class="p">,</span>
+        <span class="n">grid_size</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+        <span class="n">scale_base</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">scale_fourier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">base_activation</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">SiLU</span><span class="p">,</span>
+        <span class="n">grid_range</span><span class="o">=</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+        <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span>
+        <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">FourierKAN</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+        <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">grid_size</span> <span class="o">=</span> <span class="n">grid_size</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">layers</span> <span class="o">=</span> <span class="n">FourierKANModuleList</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">in_features</span><span class="p">,</span> <span class="n">out_features</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">layers_hidden</span><span class="p">,</span> <span class="n">layers_hidden</span><span class="p">[</span><span class="mi">1</span><span class="p">:]):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">FourierKANLinear</span><span class="p">(</span>
+                    <span class="n">in_features</span><span class="p">,</span>
+                    <span class="n">out_features</span><span class="p">,</span>
+                    <span class="n">grid_size</span><span class="o">=</span><span class="n">grid_size</span><span class="p">,</span>
+                    <span class="n">scale_base</span><span class="o">=</span><span class="n">scale_base</span><span class="p">,</span>
+                    <span class="n">scale_fourier</span><span class="o">=</span><span class="n">scale_fourier</span><span class="p">,</span>
+                    <span class="n">base_activation</span><span class="o">=</span><span class="n">base_activation</span><span class="p">,</span>
+                    <span class="n">grid_range</span><span class="o">=</span><span class="n">grid_range</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">device</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+
+<div class="viewcode-block" id="FourierKAN.forward">
+<a class="viewcode-back" href="../../api.html#qkan.FourierKAN.forward">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">update_grid</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span></div>
+
+
+<div class="viewcode-block" id="FourierKAN.regularization_loss">
+<a class="viewcode-back" href="../../api.html#qkan.FourierKAN.regularization_loss">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">regularization_loss</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">regularize_activation</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">regularize_entropy</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span>
+            <span class="n">layer</span><span class="o">.</span><span class="n">regularization_loss</span><span class="p">(</span><span class="n">regularize_activation</span><span class="p">,</span> <span class="n">regularize_entropy</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="FourierKAN.initialize_from_qkan">
+<a class="viewcode-back" href="../../api.html#qkan.FourierKAN.initialize_from_qkan">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialize_from_qkan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">qkan</span><span class="p">:</span> <span class="s2">&quot;QKAN&quot;</span><span class="p">,</span> <span class="n">x0</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">sampling</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize FourierKAN from a QKAN.</span>
+
+<span class="sd">        Args</span>
+<span class="sd">        ----</span>
+<span class="sd">            qkan: QKAN</span>
+<span class="sd">            x0: torch.Tensor (batch, in_dim)</span>
+<span class="sd">            sampling: int</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">qkan</span><span class="o">.</span><span class="n">layers</span><span class="p">),</span> <span class="s2">&quot;Mismatched architecture&quot;</span>
+        <span class="k">if</span> <span class="n">qkan</span><span class="o">.</span><span class="n">is_map</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Cannot initialize from a QKAN with a map layer&quot;</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">fourier_layer</span><span class="p">,</span> <span class="n">qkan_layer</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+            <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">)),</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">,</span> <span class="n">qkan</span><span class="o">.</span><span class="n">layers</span>
+        <span class="p">):</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="n">x0</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">ymin</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">values</span>  <span class="c1"># noqa: F821</span>
+                <span class="n">ymax</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">values</span>  <span class="c1"># noqa: F821</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
+                    <span class="p">[</span>
+                        <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span>
+                            <span class="n">ymin</span><span class="p">[</span><span class="n">j</span><span class="p">],</span>
+                            <span class="n">ymax</span><span class="p">[</span><span class="n">j</span><span class="p">],</span>
+                            <span class="n">steps</span><span class="o">=</span><span class="n">sampling</span><span class="p">,</span>
+                            <span class="n">device</span><span class="o">=</span><span class="n">x0</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+                        <span class="p">)</span>
+                        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">qkan_layer</span><span class="o">.</span><span class="n">in_dim</span><span class="p">))</span>  <span class="c1"># type: ignore[arg-type]</span>
+                    <span class="p">]</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">permute</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>  <span class="c1"># x.shape = (sampling, in_dim)</span>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+                <span class="n">out</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">=</span> <span class="n">qkan_layer</span><span class="o">.</span><span class="n">forward</span><span class="p">(</span>
+                    <span class="n">x</span>
+                <span class="p">)</span>  <span class="c1"># out.shape = (batch, out_dim)</span>
+            <span class="n">fourier_layer</span><span class="o">.</span><span class="n">fit_from_qkan</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

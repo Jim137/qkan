@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Solver Guide &mdash; QKAN 0.2.1 documentation</title>
+  <title>Solver Guide &mdash; QKAN 0.2.3dev documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
@@ -14,10 +14,12 @@
     <link rel="canonical" href="https://qkan.jimq.cc/solver_guide.html" />
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=37f418d5"></script>
+      <script src="_static/documentation_options.js?v=db1dea96"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -54,6 +56,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#real-quantum-device-deployment">Real Quantum Device Deployment</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#ibm-quantum-qiskit">IBM Quantum (Qiskit)</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#aws-braket-via-cuda-q">AWS Braket via CUDA-Q</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#qubit-calibration-layout">Qubit-calibration layout</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#error-mitigation">Error Mitigation</a></li>
@@ -224,6 +227,78 @@ Use FP8 only for <code class="docutils literal notranslate"><span class="pre">c_
 <li><p><code class="docutils literal notranslate"><span class="pre">fast_measure=False</span></code>: Required for real devices. Uses <code class="docutils literal notranslate"><span class="pre">|alpha|^2</span> <span class="pre">-</span> <span class="pre">|beta|^2</span></code> (Born rule) instead of the quantum-inspired <code class="docutils literal notranslate"><span class="pre">|alpha|</span> <span class="pre">-</span> <span class="pre">|beta|</span></code> shortcut.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">parallel_qubits</span></code>: Packs N independent single-qubit circuits onto N qubits of one multi-qubit job, reducing QPU submissions by ~Nx.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">shots</span></code>: Number of measurement samples per circuit. More shots = less statistical noise.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">initial_layout</span></code>: Controls which physical qubits receive the packed circuit (see below).
+Defaults to <code class="docutils literal notranslate"><span class="pre">None</span></code> (let the transpiler choose).
+Applies only when executing through a <code class="docutils literal notranslate"><span class="pre">backend</span></code>; a user-supplied <code class="docutils literal notranslate"><span class="pre">estimator</span></code> receives circuits without qkan-side transpilation.</p></li>
+</ul>
+</section>
+<section id="qubit-calibration-layout">
+<h3>Qubit-calibration layout<a class="headerlink" href="#qubit-calibration-layout" title="Link to this heading"></a></h3>
+<p>Modern IBM devices have substantial per-qubit calibration variance — on a snapshot of <code class="docutils literal notranslate"><span class="pre">FakeSherbrooke</span></code>, readout error across the physical qubits <code class="docutils literal notranslate"><span class="pre">0..19</span></code> that a level-1 transpile assigns by default spans 1.1% to 25.7% (a 23x spread), and the chip-wide spread is larger still.
+When the transpiler maps a packed N-qubit circuit onto physical qubits <code class="docutils literal notranslate"><span class="pre">0..N-1</span></code>, several poorly-calibrated qubits end up in the mix, and their readout and gate errors directly bias every expectation value in the packed job.</p>
+<p>Fix: pin the packed circuit to the best-calibrated qubits via <code class="docutils literal notranslate"><span class="pre">initial_layout</span></code> in <code class="docutils literal notranslate"><span class="pre">solver_kwargs</span></code>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qkan.solver</span><span class="w"> </span><span class="kn">import</span> <span class="n">best_qubits</span>
+
+<span class="n">layout</span> <span class="o">=</span> <span class="n">best_qubits</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
+    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;qiskit&quot;</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;backend&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
+        <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
+        <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
+        <span class="s2">&quot;initial_layout&quot;</span><span class="p">:</span> <span class="n">layout</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Alternatively, pass <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> to let <code class="docutils literal notranslate"><span class="pre">qiskit_solver</span></code> compute the layout internally from the current backend calibration:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
+    <span class="s2">&quot;backend&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
+    <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
+    <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
+    <span class="s2">&quot;initial_layout&quot;</span><span class="p">:</span> <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">best_qubits(backend,</span> <span class="pre">n)</span></code> scores each physical qubit by</p>
+<div class="math notranslate nohighlight">
+\[\mathrm{score}(q) = \mathrm{readout\_error}(q) +
+                     \mathrm{sx\_err}(q) +
+                     10^{-4} / \max(T_2(q)\,[\mu s],\, 1)\]</div>
+<p>and returns the <code class="docutils literal notranslate"><span class="pre">n</span></code> lowest-scoring qubit indices.
+Readout error dominates the sum; sx error breaks ties; short <span class="math notranslate nohighlight">\(T_2\)</span> is penalised only slightly because QKAN’s shallow single-qubit circuits aren’t T2-sensitive.</p>
+<p><strong>Empirical impact.</strong> Smoke test on <code class="docutils literal notranslate"><span class="pre">FakeSherbrooke</span></code> with a trained single-sample forecast, <code class="docutils literal notranslate"><span class="pre">parallel_qubits=20</span></code>, <code class="docutils literal notranslate"><span class="pre">shots=1024</span></code>:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Layout</p></th>
+<th class="head"><p>rel MSE vs noiseless ref</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">parallel_qubits=1</span></code>
+(serial baseline, qubit 0)</p></td>
+<td><p>0.134%</p></td>
+</tr>
+<tr class="row-odd"><td><p>naive <code class="docutils literal notranslate"><span class="pre">0..19</span></code></p></td>
+<td><p>5.218%</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">best_qubits(backend,</span> <span class="pre">20)</span></code></p></td>
+<td><p>0.127%</p></td>
+</tr>
+</tbody>
+</table>
+<p>The smart layout at <code class="docutils literal notranslate"><span class="pre">parallel_qubits=20</span></code> fully recovers the <code class="docutils literal notranslate"><span class="pre">parallel_qubits=1</span></code> fidelity (a ~40x improvement over the naive layout) at identical QPU cost.</p>
+<p><strong>Caveats and scope.</strong></p>
+<ul class="simple">
+<li><p>Real-backend calibration drifts over time.
+<code class="docutils literal notranslate"><span class="pre">initial_layout=&quot;auto&quot;</span></code> re-resolves the layout on every forward call, but <code class="docutils literal notranslate"><span class="pre">qiskit_ibm_runtime</span></code> caches <code class="docutils literal notranslate"><span class="pre">backend.properties()</span></code> after the first fetch — call <code class="docutils literal notranslate"><span class="pre">backend.properties(refresh=True)</span></code> (or re-create the backend) before long runs to pick up fresh calibration.
+An explicit layout computed once via <code class="docutils literal notranslate"><span class="pre">best_qubits</span></code> is frozen for the lifetime of the model.</p></li>
+<li><p>The helper assumes independent single-qubit circuits (the QKAN <code class="docutils literal notranslate"><span class="pre">parallel_qubits</span></code> packing pattern).
+If you add 2-qubit gates, you also need connectivity-aware routing.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">best_qubits</span></code> returns <code class="docutils literal notranslate"><span class="pre">[]</span></code> when <code class="docutils literal notranslate"><span class="pre">backend.properties()</span></code> is unavailable (e.g. <code class="docutils literal notranslate"><span class="pre">AerSimulator</span></code> or <code class="docutils literal notranslate"><span class="pre">GenericBackendV2</span></code>, which lack the legacy calibration API); the solver treats an empty layout as <code class="docutils literal notranslate"><span class="pre">None</span></code> and warns before falling back to the transpiler default.</p></li>
+<li><p>A layout longer than a packed chunk is truncated to the chunk’s width (keeping the best-ranked qubits), so ragged final chunks are handled; a layout <em>shorter</em> than the packed width raises <code class="docutils literal notranslate"><span class="pre">ValueError</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">initial_layout</span></code> applies only when executing through a <code class="docutils literal notranslate"><span class="pre">backend</span></code>; a user-supplied <code class="docutils literal notranslate"><span class="pre">estimator</span></code> receives circuits without qkan-side transpilation (a warning is emitted).</p></li>
 </ul>
 </section>
 </section>

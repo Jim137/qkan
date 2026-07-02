@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.solver.flash &mdash; QKAN 0.2.1 documentation</title>
+  <title>qkan.solver.flash &mdash; QKAN 0.2.3dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/flash.html" />
       <script src="../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../../_static/documentation_options.js?v=37f418d5"></script>
+      <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
       <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -295,16 +295,17 @@
             <span class="p">]</span>
             <span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:]</span>
 
-    <span class="c1"># Check if gradients are needed (training)</span>
-    <span class="n">needs_grad</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">requires_grad</span>
-    <span class="k">if</span> <span class="n">_needs_encoded_x</span><span class="p">:</span>
-        <span class="n">needs_grad</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">needs_grad</span> <span class="ow">or</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">requires_grad</span>
-        <span class="p">)</span>
-    <span class="k">elif</span> <span class="n">preacts_trainable</span><span class="p">:</span>
-        <span class="n">needs_grad</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">needs_grad</span> <span class="ow">or</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">requires_grad</span>
-        <span class="p">)</span>
+    <span class="c1"># Check if gradients are needed. Under torch.no_grad() / inference_mode,</span>
+    <span class="c1"># skip the autograd.Function wrapper to avoid its overhead even when</span>
+    <span class="c1"># parameter tensors still have requires_grad=True.</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_grad_enabled</span><span class="p">():</span>
+        <span class="n">needs_grad</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">needs_grad</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">requires_grad</span>
+        <span class="k">if</span> <span class="n">_needs_encoded_x</span> <span class="ow">or</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+            <span class="n">needs_grad</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">needs_grad</span> <span class="ow">or</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">requires_grad</span>
+            <span class="p">)</span>
 
     <span class="k">if</span> <span class="n">needs_grad</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">_FlashFunction</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>

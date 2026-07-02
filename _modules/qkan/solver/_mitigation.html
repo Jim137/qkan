@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.solver._mitigation &mdash; QKAN 0.2.1 documentation</title>
+  <title>qkan.solver._mitigation &mdash; QKAN 0.2.3dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/_mitigation.html" />
       <script src="../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../../_static/documentation_options.js?v=37f418d5"></script>
+      <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
       <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -161,30 +161,37 @@
     <span class="n">n_repeats</span> <span class="o">=</span> <span class="n">mitigation</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;n_repeats&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
     <span class="n">clip</span> <span class="o">=</span> <span class="n">mitigation</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;clip_expvals&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
 
-    <span class="n">all_repeat_results</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_repeats</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">zne_config</span><span class="p">:</span>
-            <span class="n">scale_factors</span> <span class="o">=</span> <span class="n">zne_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;scale_factors&quot;</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">])</span>
-            <span class="c1"># Run at each noise scale</span>
+    <span class="n">scale_factors</span> <span class="o">=</span> <span class="n">zne_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;scale_factors&quot;</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">])</span> <span class="k">if</span> <span class="n">zne_config</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="c1"># Precompute ZNE weights once (they don&#39;t change across repeats)</span>
+    <span class="k">if</span> <span class="n">scale_factors</span><span class="p">:</span>
+        <span class="n">n_sf</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">scale_factors</span><span class="p">)</span>
+        <span class="n">zne_weights</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_sf</span><span class="p">):</span>
+            <span class="n">w</span> <span class="o">=</span> <span class="mf">1.0</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_sf</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">j</span> <span class="o">!=</span> <span class="n">i</span><span class="p">:</span>
+                    <span class="n">w</span> <span class="o">*=</span> <span class="o">-</span><span class="n">scale_factors</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">scale_factors</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">scale_factors</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+            <span class="n">zne_weights</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">w</span><span class="p">)</span>
+
+    <span class="n">running_sum</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">rep</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_repeats</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">scale_factors</span><span class="p">:</span>
             <span class="n">scaled_results</span> <span class="o">=</span> <span class="p">[</span><span class="n">run_fn</span><span class="p">(</span><span class="n">sf</span><span class="p">)</span> <span class="k">for</span> <span class="n">sf</span> <span class="ow">in</span> <span class="n">scale_factors</span><span class="p">]</span>
-            <span class="c1"># Richardson extrapolate per circuit</span>
             <span class="n">n_circuits</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">scaled_results</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-            <span class="n">extrapolated</span> <span class="o">=</span> <span class="p">[</span>
-                <span class="n">_richardson_extrapolate</span><span class="p">(</span><span class="n">scale_factors</span><span class="p">,</span> <span class="p">[</span><span class="n">sr</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">sr</span> <span class="ow">in</span> <span class="n">scaled_results</span><span class="p">])</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="nb">sum</span><span class="p">(</span><span class="n">zne_weights</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="o">*</span> <span class="n">scaled_results</span><span class="p">[</span><span class="n">s</span><span class="p">][</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_sf</span><span class="p">))</span>
                 <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_circuits</span><span class="p">)</span>
             <span class="p">]</span>
-            <span class="n">all_repeat_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">extrapolated</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">all_repeat_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">run_fn</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">run_fn</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 
-    <span class="c1"># Average across repeats</span>
-    <span class="n">n_circuits</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_repeat_results</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-    <span class="k">if</span> <span class="n">n_repeats</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="n">expvals</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="nb">sum</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">all_repeat_results</span><span class="p">)</span> <span class="o">/</span> <span class="n">n_repeats</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_circuits</span><span class="p">)</span>
-        <span class="p">]</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">expvals</span> <span class="o">=</span> <span class="n">all_repeat_results</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">rep</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">running_sum</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">running_sum</span><span class="p">)):</span>
+                <span class="n">running_sum</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="n">result</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+
+    <span class="n">expvals</span> <span class="o">=</span> <span class="p">[</span><span class="n">v</span> <span class="o">/</span> <span class="n">n_repeats</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">running_sum</span><span class="p">]</span> <span class="k">if</span> <span class="n">n_repeats</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">running_sum</span>
 
     <span class="k">if</span> <span class="n">clip</span><span class="p">:</span>
         <span class="n">expvals</span> <span class="o">=</span> <span class="n">_clip_expvals</span><span class="p">(</span><span class="n">expvals</span><span class="p">)</span>

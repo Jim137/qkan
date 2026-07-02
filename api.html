@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>API Reference &mdash; QKAN 0.2.1 documentation</title>
+  <title>API Reference &mdash; QKAN 0.2.3dev documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
@@ -14,10 +14,12 @@
     <link rel="canonical" href="https://qkan.jimq.cc/api.html" />
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=37f418d5"></script>
+      <script src="_static/documentation_options.js?v=db1dea96"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -52,6 +54,12 @@
 <li class="toctree-l2"><a class="reference internal" href="#module-qkan">Core Module</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.DARUAN"><code class="docutils literal notranslate"><span class="pre">DARUAN</span></code></a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.DARUAN.forward"><code class="docutils literal notranslate"><span class="pre">DARUAN.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#qkan.FourierKAN"><code class="docutils literal notranslate"><span class="pre">FourierKAN</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.FourierKAN.forward"><code class="docutils literal notranslate"><span class="pre">FourierKAN.forward()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.FourierKAN.regularization_loss"><code class="docutils literal notranslate"><span class="pre">FourierKAN.regularization_loss()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.FourierKAN.initialize_from_qkan"><code class="docutils literal notranslate"><span class="pre">FourierKAN.initialize_from_qkan()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.KAN"><code class="docutils literal notranslate"><span class="pre">KAN</span></code></a><ul>
@@ -131,6 +139,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.init_parameters"><code class="docutils literal notranslate"><span class="pre">QKANLayer.init_parameters()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.xavier_init"><code class="docutils literal notranslate"><span class="pre">QKANLayer.xavier_init()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.to"><code class="docutils literal notranslate"><span class="pre">QKANLayer.to()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.train"><code class="docutils literal notranslate"><span class="pre">QKANLayer.train()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.param_size"><code class="docutils literal notranslate"><span class="pre">QKANLayer.param_size</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.x0"><code class="docutils literal notranslate"><span class="pre">QKANLayer.x0</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.QKANLayer.forward"><code class="docutils literal notranslate"><span class="pre">QKANLayer.forward()</span></code></a></li>
@@ -167,15 +176,26 @@
 <li class="toctree-l4"><a class="reference internal" href="#qkan.TorchGates.cz_gate"><code class="docutils literal notranslate"><span class="pre">TorchGates.cz_gate()</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l3"><a class="reference internal" href="#qkan.CompiledInference"><code class="docutils literal notranslate"><span class="pre">CompiledInference</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.CompiledInference.train"><code class="docutils literal notranslate"><span class="pre">CompiledInference.train()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.CompiledInference.clear_cache"><code class="docutils literal notranslate"><span class="pre">CompiledInference.clear_cache()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.CompiledInference.forward"><code class="docutils literal notranslate"><span class="pre">CompiledInference.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#qkan.compile_inference"><code class="docutils literal notranslate"><span class="pre">compile_inference()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.create_dataset"><code class="docutils literal notranslate"><span class="pre">create_dataset()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.get_feynman_dataset"><code class="docutils literal notranslate"><span class="pre">get_feynman_dataset()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#qkan.graph_submodules"><code class="docutils literal notranslate"><span class="pre">graph_submodules()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#qkan.make_graphed_inference"><code class="docutils literal notranslate"><span class="pre">make_graphed_inference()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.print0"><code class="docutils literal notranslate"><span class="pre">print0()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.print_banner"><code class="docutils literal notranslate"><span class="pre">print_banner()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.print_version"><code class="docutils literal notranslate"><span class="pre">print_version()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#module-qkan.solver">Solver Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#qkan.solver.best_qubits"><code class="docutils literal notranslate"><span class="pre">best_qubits()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.solver.cudaq_solver"><code class="docutils literal notranslate"><span class="pre">cudaq_solver()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#qkan.solver.cute_exact_solver"><code class="docutils literal notranslate"><span class="pre">cute_exact_solver()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.solver.cutile_flash_exact_solver"><code class="docutils literal notranslate"><span class="pre">cutile_flash_exact_solver()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.solver.cutn_solver"><code class="docutils literal notranslate"><span class="pre">cutn_solver()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.solver.flash_exact_solver"><code class="docutils literal notranslate"><span class="pre">flash_exact_solver()</span></code></a></li>
@@ -260,6 +280,49 @@ this function, one should call the <code class="xref py py-class docutils litera
 instead of this since the former takes care of running the
 registered hooks while the latter silently ignores them.</p>
 </div>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="qkan.FourierKAN">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">FourierKAN</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">layers_hidden,</span> <span class="pre">grid_size=5,</span> <span class="pre">scale_base=1.0,</span> <span class="pre">scale_fourier=1.0,</span> <span class="pre">base_activation=&lt;class</span> <span class="pre">'torch.nn.modules.activation.SiLU'&gt;,</span> <span class="pre">grid_range=[-1,</span> <span class="pre">1],</span> <span class="pre">device='cpu',</span> <span class="pre">seed=0,</span> <span class="pre">**kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/fourier_kan.html#FourierKAN"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.FourierKAN" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
+<p>Fourier KAN (Kolmogorov-Arnold Network) model.</p>
+<p>Uses Fourier basis (sin/cos) as the learnable activation functions on edges,
+serving as a baseline for comparison with B-spline KAN and QKAN.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.FourierKAN.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">update_grid</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/fourier_kan.html#FourierKAN.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.FourierKAN.forward" title="Link to this definition"></a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.FourierKAN.regularization_loss">
+<span class="sig-name descname"><span class="pre">regularization_loss</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">regularize_activation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">regularize_entropy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/fourier_kan.html#FourierKAN.regularization_loss"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.FourierKAN.regularization_loss" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.FourierKAN.initialize_from_qkan">
+<span class="sig-name descname"><span class="pre">initialize_from_qkan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">qkan</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sampling</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/fourier_kan.html#FourierKAN.initialize_from_qkan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.FourierKAN.initialize_from_qkan" title="Link to this definition"></a></dt>
+<dd><p>Initialize FourierKAN from a QKAN.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>qkan</strong> (<a class="reference internal" href="#qkan.QKAN" title="qkan.QKAN"><em>QKAN</em></a>)</p></li>
+<li><p><strong>x0</strong> (<em>torch.Tensor</em><em> (</em><em>batch</em><em>, </em><a class="reference internal" href="#qkan.QKANLayer.in_dim" title="qkan.QKANLayer.in_dim"><em>in_dim</em></a><em>)</em>)</p></li>
+<li><p><strong>sampling</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 </dd></dl>
@@ -1175,6 +1238,28 @@ When <code class="docutils literal notranslate"><span class="pre">self.preact_in
 </dl>
 </dd></dl>
 
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.QKANLayer.train">
+<span class="sig-name descname"><span class="pre">train</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/qkan.html#QKANLayer.train"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.QKANLayer.train" title="Link to this definition"></a></dt>
+<dd><p>Set the module in training mode.</p>
+<p>This has any effect only on certain modules. See documentations of
+particular modules for details of their behaviors in training/evaluation
+mode, if they are affected, e.g. <code class="xref py py-class docutils literal notranslate"><span class="pre">Dropout</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">BatchNorm</span></code>,
+etc.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>mode</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – whether to set training mode (<code class="docutils literal notranslate"><span class="pre">True</span></code>) or evaluation
+mode (<code class="docutils literal notranslate"><span class="pre">False</span></code>). Default: <code class="docutils literal notranslate"><span class="pre">True</span></code>.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>self</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Module</p>
+</dd>
+</dl>
+</dd></dl>
+
 <dl class="py property">
 <dt class="sig sig-object py" id="qkan.QKANLayer.param_size">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">param_size</span></span><a class="headerlink" href="#qkan.QKANLayer.param_size" title="Link to this definition"></a></dt>
@@ -1502,6 +1587,102 @@ control: int</p>
 
 </dd></dl>
 
+<dl class="py class">
+<dt class="sig sig-object py" id="qkan.CompiledInference">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">CompiledInference</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_shapes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">warmup</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/inference.html#CompiledInference"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.CompiledInference" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
+<p>Transparent wrapper that captures CUDA graphs lazily per input shape.</p>
+<p>Behaves exactly like the wrapped module in training (<code class="docutils literal notranslate"><span class="pre">self.training</span></code> is
+True) or when grad is enabled or the input is not a single CUDA tensor —
+so you can wrap a model once and keep using it normally:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">CompiledInference</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">();</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>   <span class="c1"># eager, grad flows</span>
+<span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                               <span class="c1"># captures + replays</span>
+</pre></div>
+</div>
+<p>On each eval/no-grad forward, the (shape, dtype, device) of the input is
+used as the cache key. A miss triggers a capture (up to <code class="docutils literal notranslate"><span class="pre">max_shapes</span></code>);
+a hit replays the captured graph. When the cache is full the fallback is
+eager execution — graphs are not evicted.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>module</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></span>) – the module to wrap. <code class="docutils literal notranslate"><span class="pre">forward</span></code> must take one tensor arg.</p></li>
+<li><p><strong>max_shapes</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></a></span>) – maximum number of distinct input shapes to cache.</p></li>
+<li><p><strong>warmup</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></a></span>) – warmup forward passes before each capture.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.CompiledInference.train">
+<span class="sig-name descname"><span class="pre">train</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/inference.html#CompiledInference.train"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.CompiledInference.train" title="Link to this definition"></a></dt>
+<dd><p>Set the module in training mode.</p>
+<p>This has any effect only on certain modules. See documentations of
+particular modules for details of their behaviors in training/evaluation
+mode, if they are affected, e.g. <code class="xref py py-class docutils literal notranslate"><span class="pre">Dropout</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">BatchNorm</span></code>,
+etc.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>mode</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – whether to set training mode (<code class="docutils literal notranslate"><span class="pre">True</span></code>) or evaluation
+mode (<code class="docutils literal notranslate"><span class="pre">False</span></code>). Default: <code class="docutils literal notranslate"><span class="pre">True</span></code>.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>self</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Module</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.CompiledInference.clear_cache">
+<span class="sig-name descname"><span class="pre">clear_cache</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/inference.html#CompiledInference.clear_cache"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.CompiledInference.clear_cache" title="Link to this definition"></a></dt>
+<dd><p>Drop all captured graphs. Call after editing parameters in-place.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="qkan.CompiledInference.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">extra</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/inference.html#CompiledInference.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.CompiledInference.forward" title="Link to this definition"></a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="qkan.compile_inference">
+<span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">compile_inference</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_shapes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">warmup</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/inference.html#compile_inference"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.compile_inference" title="Link to this definition"></a></dt>
+<dd><p>Shortcut: <code class="docutils literal notranslate"><span class="pre">compile_inference(m)</span> <span class="pre">==</span> <span class="pre">CompiledInference(m)</span></code>.</p>
+<p>Drop-in replacement that uses CUDA graphs for inference and falls back to
+eager execution for training or gradient-tracking forwards. See
+<code class="docutils literal notranslate"><span class="pre">CompiledInference</span></code> for details.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference internal" href="#qkan.CompiledInference" title="qkan.inference.CompiledInference"><code class="xref py py-class docutils literal notranslate"><span class="pre">CompiledInference</span></code></a></span></p>
+</dd>
+</dl>
+</dd></dl>
+
 <dl class="py function">
 <dt class="sig sig-object py" id="qkan.create_dataset">
 <span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">create_dataset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">f</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_var</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">f_mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'col'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ranges</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[-1,</span> <span class="pre">1]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_num</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_num</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalize_input</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalize_label</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cpu'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/utils.html#create_dataset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.create_dataset" title="Link to this definition"></a></dt>
@@ -1559,6 +1740,56 @@ dataset[‘test_input’], dataset[‘test_label’]</p>
 </dd></dl>
 
 <dl class="py function">
+<dt class="sig sig-object py" id="qkan.graph_submodules">
+<span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">graph_submodules</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sample_input</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">predicate</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_shapes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">warmup</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/inference.html#graph_submodules"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.graph_submodules" title="Link to this definition"></a></dt>
+<dd><p>Wrap every submodule matching <code class="docutils literal notranslate"><span class="pre">predicate</span></code> with <code class="docutils literal notranslate"><span class="pre">CompiledInference</span></code>.</p>
+<p>Useful for transformer-style models where full-model graph capture fails
+(e.g. SDPA backends increment an RNG counter even at dropout_p=0). Wrap
+each MLP block instead — QKAN’s launch-bound cost is concentrated there.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">qkan</span><span class="o">.</span><span class="n">graph_submodules</span><span class="p">(</span>
+    <span class="n">gpt2</span><span class="p">,</span> <span class="n">sample_idx</span><span class="p">,</span>
+    <span class="n">predicate</span><span class="o">=</span><span class="k">lambda</span> <span class="n">m</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">HQKANMLP</span><span class="p">),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>The model is modified in place; replaced submodules wrap the originals so
+they share parameters (<code class="docutils literal notranslate"><span class="pre">named_parameters</span></code> is unchanged).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="qkan.make_graphed_inference">
+<span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">make_graphed_inference</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sample_input</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">warmup</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/inference.html#make_graphed_inference"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.make_graphed_inference" title="Link to this definition"></a></dt>
+<dd><p>Capture a CUDA graph for <code class="docutils literal notranslate"><span class="pre">model(sample_input)</span></code> and return a replay fn.</p>
+<p>The input to the returned callable must match <code class="docutils literal notranslate"><span class="pre">sample_input</span></code> in shape,
+dtype, and device. The output tensor is reused across calls — clone it
+before issuing the next replay if you need to keep the value around.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></span>) – a module in eval() mode. Parameters must not change between
+capture and replay.</p></li>
+<li><p><strong>sample_input</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span>) – representative input — its shape/dtype/device fixes the
+capture.</p></li>
+<li><p><strong>warmup</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></a></span>) – warmup forward passes on a side stream before capture.
+PyTorch recommends &gt;=3 to stabilise cuBLAS/cuDNN selection.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><code class="xref py py-data docutils literal notranslate"><span class="pre">Callable</span></code></a>[[<code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code>], <code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code>]</span></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A callable <code class="docutils literal notranslate"><span class="pre">fn(x)</span> <span class="pre">-&gt;</span> <span class="pre">y</span></code> that replays the captured graph.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
 <dt class="sig sig-object py" id="qkan.print0">
 <span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">print0</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">s</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/info.html#print0"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.print0" title="Link to this definition"></a></dt>
 <dd></dd></dl>
@@ -1585,6 +1816,66 @@ dataset[‘test_input’], dataset[‘test_label’]</p>
 - qml: PennyLane quantum circuits
 - qiskit_solver: IBM Quantum backends via Qiskit Runtime
 - cudaq_solver: NVIDIA CUDA-Q backends (GPU-accelerated simulation or QPU)</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="qkan.solver.best_qubits">
+<span class="sig-prename descclassname"><span class="pre">qkan.solver.</span></span><span class="sig-name descname"><span class="pre">best_qubits</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">backend</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/solver/qiskit_solver.html#best_qubits"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.solver.best_qubits" title="Link to this definition"></a></dt>
+<dd><p>Return the <code class="docutils literal notranslate"><span class="pre">n</span></code> best-calibrated qubit indices on <code class="docutils literal notranslate"><span class="pre">backend</span></code>.</p>
+<p>When packing <code class="docutils literal notranslate"><span class="pre">n</span></code> independent single-qubit QKAN circuits onto <code class="docutils literal notranslate"><span class="pre">n</span></code>
+physical qubits of one multi-qubit job, the naive transpiler layout
+(qubits <code class="docutils literal notranslate"><span class="pre">0..n-1</span></code>) often includes poorly-calibrated qubits. Readout
+and single-qubit gate errors on the selected qubits directly bias
+every expectation value in the packed job, so a few bad qubits
+inflate the aggregate error of the whole batch.</p>
+<p>This helper scores each physical qubit by</p>
+<div class="math notranslate nohighlight">
+\[\mathrm{score}(q) = \mathrm{readout\_error}(q) +
+                      \mathrm{sx\_err}(q) +
+                      10^{-4} / \max(T_2(q)\,[\mu s],\, 1)\]</div>
+<p>(readout error dominates, <span class="math notranslate nohighlight">\(sx\)</span> error is secondary, short
+<span class="math notranslate nohighlight">\(T_2\)</span> gets a small penalty) and returns the indices of the
+<code class="docutils literal notranslate"><span class="pre">n</span></code> lowest-scoring qubits, best first. Qubits flagged
+non-operational are skipped, and calibration values reported as NaN
+(typical for faulty qubits) are treated as missing data rather than
+ranked. Pass the result as <code class="docutils literal notranslate"><span class="pre">initial_layout</span></code> via <code class="docutils literal notranslate"><span class="pre">solver_kwargs</span></code>
+to pin the packed circuit onto them.</p>
+<p>Empirically on <code class="docutils literal notranslate"><span class="pre">FakeSherbrooke</span></code> with <code class="docutils literal notranslate"><span class="pre">parallel_qubits=20</span></code>,
+<code class="docutils literal notranslate"><span class="pre">shots=1024</span></code>: the smart layout recovers near-<code class="docutils literal notranslate"><span class="pre">parallel_qubits=1</span></code>
+fidelity (≈0.13% rel MSE vs a noiseless reference) where the naive
+layout lands at ≈5% rel MSE — a ~40× improvement at identical QPU
+cost.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>backend</strong> (<em>qiskit Backend</em>) – Backend with a <code class="docutils literal notranslate"><span class="pre">properties()</span></code> method (FakeProvider or real IBM).
+Returns an empty list if the backend exposes no calibration.</p></li>
+<li><p><strong>n</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of qubits to select. Must be a positive integer and must
+not exceed <code class="docutils literal notranslate"><span class="pre">backend.num_qubits</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Top-<code class="docutils literal notranslate"><span class="pre">n</span></code> physical qubit indices, sorted by ascending score.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)">list</a>[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a>]</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">qiskit_ibm_runtime.fake_provider</span><span class="w"> </span><span class="kn">import</span> <span class="n">FakeSherbrooke</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">backend</span> <span class="o">=</span> <span class="n">FakeSherbrooke</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">layout</span> <span class="o">=</span> <span class="n">best_qubits</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;qiskit&quot;</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
+<span class="gp">... </span>        <span class="s2">&quot;backend&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
+<span class="gp">... </span>        <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
+<span class="gp">... </span>        <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
+<span class="gp">... </span>        <span class="s2">&quot;initial_layout&quot;</span><span class="p">:</span> <span class="n">layout</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="p">},</span>
+<span class="gp">... </span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
 <dl class="py function">
 <dt class="sig sig-object py" id="qkan.solver.cudaq_solver">
 <span class="sig-prename descclassname"><span class="pre">qkan.solver.</span></span><span class="sig-name descname"><span class="pre">cudaq_solver</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preacts_weight</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preacts_bias</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reps</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/solver/cudaq_solver.html#cudaq_solver"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.solver.cudaq_solver" title="Link to this definition"></a></dt>
@@ -1618,6 +1909,33 @@ Set before calling via cudaq.set_target().</p></li>
 </dd>
 </dl>
 </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="qkan.solver.cute_exact_solver">
+<span class="sig-prename descclassname"><span class="pre">qkan.solver.</span></span><span class="sig-name descname"><span class="pre">cute_exact_solver</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preacts_weight</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preacts_bias</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reps</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/solver/cute.html#cute_exact_solver"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.solver.cute_exact_solver" title="Link to this definition"></a></dt>
+<dd><p>CuTe DSL-accelerated exact solver.  Drop-in replacement for flash_exact_solver.</p>
+<p>Uses fused CuTe CUDA kernels for pz_encoding, rpz_encoding, and real ansatzes.
+Falls back to torch_exact_solver for unsupported ansatzes.</p>
+<dl class="simple">
+<dt>Key optimizations over Triton/cuTile:</dt><dd><ul class="simple">
+<li><p>Shared-memory theta trig caching (eliminates redundant sin/cos across batch)</p></li>
+<li><p>__sincosf intrinsics (simultaneous sin+cos per call)</p></li>
+<li><p>Warp-shuffle reductions for gradient accumulation</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>torch_exact_solver.</strong> (<em>Same as</em>)</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>(batch_size, out_dim, in_dim)</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.Tensor, shape</p>
 </dd>
 </dl>
 </dd></dl>

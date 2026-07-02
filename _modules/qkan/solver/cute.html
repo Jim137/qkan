@@ -5,12 +5,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.solver.cutile &mdash; QKAN 0.2.3dev documentation</title>
+  <title>qkan.solver.cute &mdash; QKAN 0.2.3dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
 
   
-    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/cutile.html" />
+    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/cute.html" />
       <script src="../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
       <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
@@ -64,7 +64,7 @@
   <ul class="wy-breadcrumbs">
       <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
-      <li class="breadcrumb-item active">qkan.solver.cutile</li>
+      <li class="breadcrumb-item active">qkan.solver.cute</li>
       <li class="wy-breadcrumbs-aside">
       </li>
   </ul>
@@ -73,7 +73,7 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <h1>Source code for qkan.solver.cutile</h1><div class="highlight"><pre>
+  <h1>Source code for qkan.solver.cute</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
 <span class="c1">#</span>
 <span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
@@ -95,29 +95,30 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">.torch_exact</span><span class="w"> </span><span class="kn">import</span> <span class="n">torch_exact_solver</span>
 
 <span class="k">try</span><span class="p">:</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">..cutile_ops</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-        <span class="n">cutile_pz_backward</span><span class="p">,</span>
-        <span class="n">cutile_pz_forward</span><span class="p">,</span>
-        <span class="n">cutile_real_backward</span><span class="p">,</span>
-        <span class="n">cutile_real_forward</span><span class="p">,</span>
-        <span class="n">cutile_rpz_backward</span><span class="p">,</span>
-        <span class="n">cutile_rpz_forward</span><span class="p">,</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">..cute_ops</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+        <span class="n">_CUTE_KERNELS_AVAILABLE</span><span class="p">,</span>
+        <span class="n">cute_pz_backward</span><span class="p">,</span>
+        <span class="n">cute_pz_forward</span><span class="p">,</span>
+        <span class="n">cute_real_backward</span><span class="p">,</span>
+        <span class="n">cute_real_forward</span><span class="p">,</span>
+        <span class="n">cute_rpz_backward</span><span class="p">,</span>
+        <span class="n">cute_rpz_forward</span><span class="p">,</span>
     <span class="p">)</span>
 
-    <span class="n">_CUTILE_AVAILABLE</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">_CUTE_AVAILABLE</span> <span class="o">=</span> <span class="n">_CUTE_KERNELS_AVAILABLE</span>
 <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-    <span class="n">_CUTILE_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">_CUTE_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
 
 
-<span class="n">_SUPPORTED_CUTILE_ANSATZES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">,</span> <span class="s2">&quot;real&quot;</span><span class="p">}</span>
+<span class="n">_SUPPORTED_CUTE_ANSATZES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">,</span> <span class="s2">&quot;real&quot;</span><span class="p">}</span>
 
 
-<span class="k">class</span><span class="w"> </span><span class="nc">_CuTileFlashFunction</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_CuTeFunction</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Custom autograd function: cuTile forward and backward.</span>
+<span class="sd">    Custom autograd function: CuTe CUDA forward and backward.</span>
 
-<span class="sd">    Forward dispatches to the appropriate cuTile kernel based on ansatz.</span>
-<span class="sd">    Backward uses direct cuTile kernels with forward recomputation.</span>
+<span class="sd">    Forward dispatches to the appropriate CuTe kernel based on ansatz.</span>
+<span class="sd">    Backward uses direct CuTe kernels with forward recomputation.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="nd">@staticmethod</span>
@@ -143,7 +144,7 @@
         <span class="n">ctx</span><span class="o">.</span><span class="n">ansatz</span> <span class="o">=</span> <span class="n">ansatz</span>
 
         <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">cutile_pz_forward</span><span class="p">(</span>
+            <span class="k">return</span> <span class="n">cute_pz_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
                 <span class="n">preacts_w</span><span class="p">,</span>
@@ -153,7 +154,7 @@
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">cutile_rpz_forward</span><span class="p">(</span>
+            <span class="k">return</span> <span class="n">cute_rpz_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
                 <span class="n">preacts_w</span><span class="p">,</span>
@@ -162,7 +163,7 @@
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">cutile_real_forward</span><span class="p">(</span>
+            <span class="k">return</span> <span class="n">cute_real_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
                 <span class="n">preacts_w</span><span class="p">,</span>
@@ -172,7 +173,7 @@
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported ansatz for cutile: </span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported ansatz for cute: </span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">grad_output</span><span class="p">):</span>
@@ -180,7 +181,7 @@
         <span class="n">ansatz</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">ansatz</span>
 
         <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">):</span>
-            <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">cutile_pz_backward</span><span class="p">(</span>
+            <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">cute_pz_backward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
                 <span class="n">preacts_w</span><span class="p">,</span>
@@ -191,7 +192,7 @@
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
-            <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">cutile_rpz_backward</span><span class="p">(</span>
+            <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">cute_rpz_backward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
                 <span class="n">preacts_w</span><span class="p">,</span>
@@ -201,7 +202,7 @@
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
-            <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">cutile_real_backward</span><span class="p">(</span>
+            <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">cute_real_backward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
                 <span class="n">preacts_w</span><span class="p">,</span>
@@ -212,7 +213,7 @@
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported ansatz for cutile backward: </span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported ansatz for cute backward: </span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">c_dtype</span> <span class="ow">in</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">float8_e4m3fn</span><span class="p">):</span>
             <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">_cast_grads_to_dtype</span><span class="p">(</span>
@@ -233,9 +234,9 @@
         <span class="p">)</span>
 
 
-<div class="viewcode-block" id="cutile_flash_exact_solver">
-<a class="viewcode-back" href="../../../api.html#qkan.solver.cutile_flash_exact_solver">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">cutile_flash_exact_solver</span><span class="p">(</span>
+<div class="viewcode-block" id="cute_exact_solver">
+<a class="viewcode-back" href="../../../api.html#qkan.solver.cute_exact_solver">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">cute_exact_solver</span><span class="p">(</span>
     <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">preacts_weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -244,10 +245,15 @@
     <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    cuTile-accelerated exact solver. Drop-in replacement for flash_exact_solver.</span>
+<span class="sd">    CuTe DSL-accelerated exact solver.  Drop-in replacement for flash_exact_solver.</span>
 
-<span class="sd">    Uses fused cuTile kernels for pz_encoding, rpz_encoding, and real ansatzes.</span>
+<span class="sd">    Uses fused CuTe CUDA kernels for pz_encoding, rpz_encoding, and real ansatzes.</span>
 <span class="sd">    Falls back to torch_exact_solver for unsupported ansatzes.</span>
+
+<span class="sd">    Key optimizations over Triton/cuTile:</span>
+<span class="sd">      - Shared-memory theta trig caching (eliminates redundant sin/cos across batch)</span>
+<span class="sd">      - __sincosf intrinsics (simultaneous sin+cos per call)</span>
+<span class="sd">      - Warp-shuffle reductions for gradient accumulation</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        Same as torch_exact_solver.</span>
@@ -255,9 +261,10 @@
 <span class="sd">    Returns:</span>
 <span class="sd">        torch.Tensor, shape: (batch_size, out_dim, in_dim)</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">_CUTILE_AVAILABLE</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_CUTE_AVAILABLE</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
-            <span class="s2">&quot;cuTile fused kernels not available. Install cuda-tile to use cutile solver.&quot;</span>
+            <span class="s2">&quot;CuTe fused kernels not available. Ensure CUTLASS headers are &quot;</span>
+            <span class="s2">&quot;installed and CUTLASS_PATH is set.&quot;</span>
         <span class="p">)</span>
 
     <span class="n">ansatz</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ansatz&quot;</span><span class="p">,</span> <span class="s2">&quot;pz_encoding&quot;</span><span class="p">)</span>
@@ -268,7 +275,7 @@
     <span class="n">batch</span><span class="p">,</span> <span class="n">in_dim</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
 
     <span class="c1"># Fallback for unsupported ansatzes</span>
-    <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_SUPPORTED_CUTILE_ANSATZES</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_SUPPORTED_CUTE_ANSATZES</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">torch_exact_solver</span><span class="p">(</span>
             <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">preacts_bias</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
         <span class="p">)</span>
@@ -295,9 +302,9 @@
             <span class="p">]</span>
             <span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:]</span>
 
-    <span class="c1"># Check if gradients are needed (training)</span>
-    <span class="c1"># Bypass autograd.Function wrapper when torch.no_grad() / inference_mode</span>
-    <span class="c1"># is active. Saves ~6-10 μs of Python overhead per inference forward.</span>
+    <span class="c1"># Check if gradients are needed. Under torch.no_grad() / inference_mode,</span>
+    <span class="c1"># skip the autograd.Function wrapper to avoid its overhead even when</span>
+    <span class="c1"># parameter tensors still have requires_grad=True.</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_grad_enabled</span><span class="p">():</span>
         <span class="n">needs_grad</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="k">else</span><span class="p">:</span>
@@ -308,7 +315,7 @@
             <span class="p">)</span>
 
     <span class="k">if</span> <span class="n">needs_grad</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">_CuTileFlashFunction</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+        <span class="k">return</span> <span class="n">_CuTeFunction</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
             <span class="n">x</span><span class="p">,</span>
             <span class="n">theta</span><span class="p">,</span>
             <span class="n">preacts_weight</span><span class="p">,</span>
@@ -322,7 +329,7 @@
         <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">cutile_pz_forward</span><span class="p">(</span>
+            <span class="k">return</span> <span class="n">cute_pz_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
                 <span class="n">preacts_weight</span><span class="p">,</span>
@@ -332,7 +339,7 @@
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">cutile_rpz_forward</span><span class="p">(</span>
+            <span class="k">return</span> <span class="n">cute_rpz_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
                 <span class="n">preacts_weight</span><span class="p">,</span>
@@ -341,7 +348,7 @@
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">cutile_real_forward</span><span class="p">(</span>
+            <span class="k">return</span> <span class="n">cute_real_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
                 <span class="n">preacts_weight</span><span class="p">,</span>

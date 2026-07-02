@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Index &mdash; QKAN 0.2.1 documentation</title>
+  <title>Index &mdash; QKAN 0.2.3dev documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/genindex.html" />
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=37f418d5"></script>
+      <script src="_static/documentation_options.js?v=db1dea96"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -135,11 +135,13 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.ba_trainable">ba_trainable (qkan.QKAN attribute)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.base_activation">base_activation (qkan.QKAN attribute)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKANLayer.base_weight">base_weight (qkan.QKANLayer attribute)</a>
+</li>
+      <li><a href="api.html#qkan.solver.best_qubits">best_qubits() (in module qkan.solver)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -149,7 +151,13 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKANLayer.c_dtype">c_dtype (qkan.QKANLayer attribute)</a>
 </li>
+      <li><a href="api.html#qkan.CompiledInference.clear_cache">clear_cache() (qkan.CompiledInference method)</a>
+</li>
       <li><a href="api.html#qkan.QKAN.clear_ckpts">clear_ckpts() (qkan.QKAN static method)</a>
+</li>
+      <li><a href="api.html#qkan.compile_inference">compile_inference() (in module qkan)</a>
+</li>
+      <li><a href="api.html#qkan.CompiledInference">CompiledInference (class in qkan)</a>
 </li>
       <li><a href="api.html#qkan.create_dataset">create_dataset() (in module qkan)</a>
 
@@ -160,6 +168,8 @@
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.solver.cudaq_solver">cudaq_solver() (in module qkan.solver)</a>
+</li>
+      <li><a href="api.html#qkan.solver.cute_exact_solver">cute_exact_solver() (in module qkan.solver)</a>
 </li>
       <li><a href="api.html#qkan.solver.cutile_flash_exact_solver">cutile_flash_exact_solver() (in module qkan.solver)</a>
 </li>
@@ -213,10 +223,10 @@
 </li>
       <li><a href="api.html#qkan.utils.f_log">f_log() (in module qkan.utils)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.utils.f_power1d5">f_power1d5() (in module qkan.utils)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.utils.f_sqrt">f_sqrt() (in module qkan.utils)</a>
 </li>
       <li><a href="api.html#qkan.utils.f_tan">f_tan() (in module qkan.utils)</a>
@@ -229,9 +239,13 @@
       </ul></li>
       <li><a href="api.html#qkan.solver.flash_exact_solver">flash_exact_solver() (in module qkan.solver)</a>
 </li>
-      <li><a href="api.html#qkan.DARUAN.forward">forward() (qkan.DARUAN method)</a>
+      <li><a href="api.html#qkan.CompiledInference.forward">forward() (qkan.CompiledInference method)</a>
 
       <ul>
+        <li><a href="api.html#qkan.DARUAN.forward">(qkan.DARUAN method)</a>
+</li>
+        <li><a href="api.html#qkan.FourierKAN.forward">(qkan.FourierKAN method)</a>
+</li>
         <li><a href="api.html#qkan.KAN.forward">(qkan.KAN method)</a>
 </li>
         <li><a href="api.html#qkan.QKAN.forward">(qkan.QKAN method)</a>
@@ -240,6 +254,8 @@
 </li>
       </ul></li>
       <li><a href="api.html#qkan.QKANLayer.forward_no_sum">forward_no_sum() (qkan.QKANLayer method)</a>
+</li>
+      <li><a href="api.html#qkan.FourierKAN">FourierKAN (class in qkan)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -251,9 +267,11 @@
 </li>
       <li><a href="api.html#qkan.QKAN.get_reg">get_reg() (qkan.QKAN method)</a>
 </li>
+      <li><a href="api.html#qkan.QKANLayer.get_subset">get_subset() (qkan.QKANLayer method)</a>
+</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#qkan.QKANLayer.get_subset">get_subset() (qkan.QKANLayer method)</a>
+      <li><a href="api.html#qkan.graph_submodules">graph_submodules() (in module qkan)</a>
 </li>
       <li><a href="api.html#qkan.QKAN.group">group (qkan.QKAN attribute)</a>
 
@@ -291,8 +309,12 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#qkan.KAN.initialize_from_qkan">initialize_from_qkan() (qkan.KAN method)</a>
+      <li><a href="api.html#qkan.FourierKAN.initialize_from_qkan">initialize_from_qkan() (qkan.FourierKAN method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.KAN.initialize_from_qkan">(qkan.KAN method)</a>
 </li>
+      </ul></li>
       <li><a href="api.html#qkan.QKAN.initialize_parameters">initialize_parameters() (qkan.QKAN method)</a>
 </li>
       <li><a href="api.html#qkan.QKAN.is_batchnorm">is_batchnorm (qkan.QKAN attribute)</a>
@@ -331,6 +353,8 @@
 <h2 id="M">M</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.make_graphed_inference">make_graphed_inference() (in module qkan)</a>
+</li>
       <li><a href="api.html#qkan.QKANLayer.mask">mask (qkan.QKANLayer attribute)</a>
 </li>
       <li><a href="api.html#qkan.StateVector.measure_x">measure_x() (qkan.StateVector method)</a>
@@ -490,8 +514,12 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.refine">refine() (qkan.QKAN method)</a>
 </li>
-      <li><a href="api.html#qkan.KAN.regularization_loss">regularization_loss() (qkan.KAN method)</a>
+      <li><a href="api.html#qkan.FourierKAN.regularization_loss">regularization_loss() (qkan.FourierKAN method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.KAN.regularization_loss">(qkan.KAN method)</a>
 </li>
+      </ul></li>
       <li><a href="api.html#qkan.QKAN.remove_edge">remove_edge() (qkan.QKAN method)</a>
 </li>
       <li><a href="api.html#qkan.QKAN.remove_node">remove_node() (qkan.QKAN method)</a>
@@ -568,6 +596,12 @@
 </li>
       <li><a href="api.html#qkan.TorchGates">TorchGates (class in qkan)</a>
 </li>
+      <li><a href="api.html#qkan.CompiledInference.train">train() (qkan.CompiledInference method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.QKANLayer.train">(qkan.QKANLayer method)</a>
+</li>
+      </ul></li>
       <li><a href="api.html#qkan.QKAN.train_">train_() (qkan.QKAN method)</a>
 </li>
   </ul></td>
