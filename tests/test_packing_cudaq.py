@@ -286,3 +286,44 @@ def test_builder_kernel_rejected():
     builder.h(q[0])
     with pytest.raises(TypeError, match="kernel-builder"):
         pack_kernel(builder, [(0, 1)])
+
+
+def test_block_args_batch_and_rebind(profile):
+    import math
+
+    @cudaq.kernel
+    def rotate(theta: float):
+        q = cudaq.qvector(2)
+        ry(theta, q[0])  # noqa: F821
+        x.ctrl(q[0], q[1])  # noqa: F821
+
+    batch = [(0.4,), (1.3,)]
+    packed = pack_circuit(profile, rotate, block_args_batch=batch)
+    assert packed.copies == 2
+    result = cudaq.sample(packed.kernel, shots_count=100000)
+    for got, (t,) in zip(packed.expectation(result, "ZI"), batch):
+        assert abs(got - math.cos(t)) < 0.03
+    assert packed.expectation(result, "ZZ") == [1.0, 1.0]
+
+    rebound = packed.rebind([(1.0,), (1.0,)])
+    assert rebound.tiles == packed.tiles
+    result = cudaq.sample(rebound.kernel, shots_count=100000)
+    for got in rebound.expectation(result, "ZI"):
+        assert abs(got - math.cos(1.0)) < 0.03
+
+    with pytest.raises(ValueError, match="not both"):
+        pack_circuit(profile, rotate, block_args=(0.1,), block_args_batch=batch)
+    with pytest.raises(ValueError, match="k=3"):
+        pack_circuit(profile, rotate, k=3, block_args_batch=batch)
+
+
+def test_expectation_mapping_and_mean(profile):
+    packed = pack_circuit(profile, bell, k=2)
+    result_z = cudaq.sample(packed.kernel, shots_count=SHOTS)
+    result_x = cudaq.sample(packed.basis_kernel("XX"), shots_count=SHOTS)
+    assert packed.expectation(result_z, "ZZ") == [1.0, 1.0]
+    assert packed.expectation(result_x, "XX") == [1.0, 1.0]
+    assert packed.expectation(result_z, "ZZ", "mean") == 1.0
+    assert packed.expectation(result_z, "II") == [1.0, 1.0]
+    with pytest.raises(ValueError, match="2 qubits"):
+        packed.expectation(result_z, "ZZZ")

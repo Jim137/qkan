@@ -123,3 +123,42 @@ def test_observable_expectation_roundtrip():
     noiseless = aer_primitives.EstimatorV2()
     values = noiseless.run([(packed.isa, obs)], precision=0).result()[0].data.evs
     assert all(abs(v - 1.0) < 1e-6 for v in values)
+
+
+def test_parameter_batch_binds_per_copy():
+    import math
+
+    aer_primitives = pytest.importorskip("qiskit_aer.primitives")
+    from qiskit.circuit import Parameter
+
+    theta = Parameter("theta")
+    vqc = QuantumCircuit(2)
+    vqc.ry(theta, 0)
+    vqc.cx(0, 1)
+    packed = pack_circuit(line_backend(), vqc, k=2)
+    assert len(packed.parameters) == 2
+
+    batch = [0.4, 1.3]
+    values = packed.parameter_values([[t] for t in batch])
+    obs = packed.observable("ZI")  # <Z> of block qubit 1 (little-endian)
+    estimator = aer_primitives.EstimatorV2()
+    evs = estimator.run([(packed.isa, obs, values)], precision=0).result()[0].data.evs
+    for got, t in zip(evs, batch):
+        assert abs(got - math.cos(t)) < 1e-6
+
+    with pytest.raises(ValueError, match="2 copies"):
+        packed.parameter_values([[0.1]])
+    with pytest.raises(ValueError, match="takes 1"):
+        packed.parameter_values([[0.1, 0.2], [0.3, 0.4]])
+
+
+def test_pooled_mean_observable():
+    aer_primitives = pytest.importorskip("qiskit_aer.primitives")
+
+    packed = pack_circuit(line_backend(), bell(), k=2)
+    pooled = packed.observable("ZZ", "mean")
+    estimator = aer_primitives.EstimatorV2()
+    value = estimator.run([(packed.isa, pooled)], precision=0).result()[0].data.evs
+    assert abs(float(value) - 1.0) < 1e-9
+    with pytest.raises(ValueError, match="no parameters"):
+        packed.parameter_values([[1.0], [1.0]])
