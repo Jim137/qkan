@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import warnings
 
 import torch
 
@@ -115,14 +116,67 @@ def _load_jit():
     return _ext
 
 
+_INCOMPATIBLE_IMAGE_MARKERS = (
+    "no kernel image is available",
+    "invalid device function",
+)
+
+
+def _supports_current_device(ext) -> bool:
+    """Whether the extension has a kernel image usable on the current GPU.
+
+    A prebuilt wheel carries SASS for the architectures it was compiled
+    for plus PTX for the newest; the driver JIT-compiles the PTX on newer
+    GPUs, but a wheel built only for a *newer* architecture than the
+    local GPU (e.g. an sm_120 build on an A100), or one whose PTX cannot
+    be JIT-compiled, fails at first launch. The embedded images cannot be
+    enumerated reliably (fatbin sections are compressed), so probe with a
+    one-element kernel launch and catch exactly that failure here rather
+    than mid-training.
+    """
+    if not torch.cuda.is_available():
+        return True
+    try:
+        ext.activation_forward(torch.zeros(1, device="cuda"), 3)  # relu
+        return True
+    except RuntimeError as error:
+        message = str(error).lower()
+        if any(marker in message for marker in _INCOMPATIBLE_IMAGE_MARKERS):
+            return False
+        return True  # some other runtime issue — not an architecture mismatch
+    except Exception:
+        return True
+
+
 def _get_ext():
-    global _ext
+    global _ext, _CUTE_KERNELS_AVAILABLE
     if _ext is not None:
         return _ext
     # Try pre-built first (instant), then JIT (slow first time)
-    _ext = _load_prebuilt()
-    if _ext is None:
-        _ext = _load_jit()
+    prebuilt = _load_prebuilt()
+    if prebuilt is not None:
+        if _supports_current_device(prebuilt):
+            return prebuilt
+        capability = torch.cuda.get_device_capability()
+        _ext = None
+        _CUTE_KERNELS_AVAILABLE = False
+        warnings.warn(
+            "qkan._C was built without kernels for this GPU (compute "
+            f"capability {capability[0]}.{capability[1]}); attempting a "
+            "JIT rebuild for the local architecture. Reinstall with "
+            f"QKAN_CUDA_ARCHS={capability[0]}{capability[1]} "
+            "QKAN_FORCE_BUILD=TRUE to avoid the rebuild.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+        try:
+            return _load_jit()
+        except ImportError as error:
+            raise ImportError(
+                "the prebuilt qkan._C does not support this GPU and a JIT "
+                f"rebuild is unavailable: {error}"
+            ) from error
+    _ext = _load_jit()
     return _ext
 
 
