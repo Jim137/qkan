@@ -18,17 +18,16 @@ Multi-qubit circuit packing.
 
 Run ``k`` independent copies of a small circuit in parallel on one QPU,
 placed on disjoint calibration-aware tiles selected by
-:func:`~qkan.solver.layout.tile_disjoint`:
+:func:`~qkan.solver.layout.tile_disjoint`.
 
-- :func:`pack_circuit` packs a qiskit circuit into one swap-free ISA
-  circuit pinned to the tiles, with per-tile observable mapping.
-- :func:`pack_kernel` packs a plain CUDA-Q kernel into one kernel that
-  applies each copy at its tile's physical indices (gates are extracted
-  from the compiled Quake IR and rebuilt with the kernel builder), with
-  per-tile Z-parity readout from sampled counts and basis-change kernels
-  for X/Y observables.
+:func:`pack_circuit` is the single entry point for both stacks and every
+result is one :class:`PackedCircuit`: a qiskit ``QuantumCircuit`` becomes
+a swap-free ISA circuit pinned to the tiles with per-tile observable
+mapping, and a plain CUDA-Q kernel is rebuilt (gates extracted from the
+compiled Quake IR) into one kernel applying each copy at its tile's
+physical indices, with per-tile readout from sampled counts.
 
-Both build on :class:`~qkan.solver.layout.DeviceProfile` and are
+Everything builds on :class:`~qkan.solver.layout.DeviceProfile` and is
 torch-free.
 """
 
@@ -41,11 +40,9 @@ from .layout import DeviceProfile, tile_disjoint
 
 __all__ = [
     "PackedCircuit",
-    "PackedKernel",
     "interaction_of",
     "kernel_interaction_of",
     "pack_circuit",
-    "pack_kernel",
 ]
 
 
@@ -109,25 +106,47 @@ def _validate_tile(tile: int, copies: int) -> None:
 
 @dataclass(frozen=True)
 class PackedCircuit:
-    """A packed qiskit job: ``copies`` circuit copies pinned to disjoint tiles.
+    """A packed job: ``copies`` circuit copies pinned to disjoint tiles.
 
-    ``circuit`` is the merged logical circuit (copy ``t`` on logical qubits
-    ``t*block_qubits .. (t+1)*block_qubits-1``), ``isa`` its transpilation
-    pinned to ``layout`` (the tile-major flattening of ``tiles``). For a
-    parameterized block, each copy carries its own renamed parameters
-    (``parameters[t]``, in the source ``circuit.parameters`` order) so one
-    packed job evaluates a whole batch — bind with :meth:`parameter_values`.
+    One class serves both stacks — :func:`pack_circuit` fills the half
+    that applies, and the placement accessors are shared.
+
+    qiskit (estimator-driven): ``circuit`` is the merged logical circuit
+    (copy ``t`` on logical qubits ``t*block_qubits ..``) and ``isa`` its
+    transpilation pinned to ``layout``; map observables per tile with
+    :meth:`observable` and bind parameter batches with
+    :meth:`parameter_values` (each copy carries its own renamed
+    parameters, ``parameters[t]`` in the source ``circuit.parameters``
+    order) or :meth:`rebind`.
+
+    CUDA-Q (counts-driven): ``kernel`` applies the block at each tile's
+    physical indices and (in automatic mode) measures the full register;
+    sample it and read per-tile results with :meth:`expectation`,
+    X/Y observables through :meth:`basis_kernel` (hardware-safe) or
+    :meth:`observable` (simulator ``observe``), and bind argument
+    batches with :meth:`rebind`. ``gates`` holds one extracted gate
+    list per tile and ``block`` the source kernel.
     """
 
-    circuit: Any
-    isa: Any
     tiles: tuple[tuple[int, ...], ...]
+    # qiskit half
+    circuit: Any = None
+    isa: Any = None
     parameters: tuple[tuple[str, ...], ...] = ()
+    # CUDA-Q half
+    kernel: Any = None
+    gates: Optional[tuple] = None
+    block: Any = None
 
     @property
     def layout(self) -> tuple[int, ...]:
         """Tile-major flattening of ``tiles`` (the pinned initial layout)."""
         return tuple(q for tile in self.tiles for q in tile)
+
+    @property
+    def width(self) -> int:
+        """Register width of the packed CUDA-Q kernel (max index + 1)."""
+        return max(self.layout) + 1
 
     @property
     def block_qubits(self) -> int:
@@ -151,6 +170,11 @@ class PackedCircuit:
         name-to-value mapping for an ``EstimatorV2`` PUB alongside ``isa``,
         so a variational loop packs once and re-binds every step.
         """
+        if self.kernel is not None:
+            raise TypeError(
+                "parameter_values applies to qiskit packs; CUDA-Q packs "
+                "bind argument batches with rebind(batch)"
+            )
         if not self.parameters:
             raise ValueError("the packed circuit has no parameters")
         if len(batch) != self.copies:
@@ -169,17 +193,24 @@ class PackedCircuit:
         return values
 
     def observable(self, obs, tile: Union[int, str, None] = None):
-        """Map a block-level observable onto the packed ISA circuit.
+        """Map a block-level observable onto the packed placement.
 
-        ``obs`` is a Pauli string or ``SparsePauliOp`` over the block's
-        ``block_qubits`` qubits. Returns the ISA-mapped operator for one
-        ``tile``, the list over all copies (``None``), or their average
-        (``"mean"``) — ready to pass to an ``EstimatorV2`` PUB alongside
-        ``isa``. When every tile runs the same circuit, the mean pools
-        the tiles into one estimate at ``copies``-fold shots.
+        Returns the mapped operator for one ``tile``, the list over all
+        copies (``None``), or their average (``"mean"``) — when every
+        tile runs the same circuit, the mean pools the tiles into one
+        estimate at ``copies``-fold shots.
+
+        qiskit packs take a Pauli string (little-endian) or
+        ``SparsePauliOp`` over the block's ``block_qubits`` qubits and
+        return the ISA-mapped operator, ready for an ``EstimatorV2`` PUB
+        alongside ``isa``. CUDA-Q packs take a Pauli string in index
+        order (``pauli[i]`` acts on block qubit ``i``) and return a
+        ``cudaq.spin`` operator at the tile's physical indices, for
+        ``cudaq.observe(packed.observe_kernel(), ...)``. That is the
+        simulator route — hardware targets that compact idle qubits
+        reject sparse-index observables; use :meth:`basis_kernel` plus
+        :meth:`expectation` there.
         """
-        from qiskit.quantum_info import SparsePauliOp  # type: ignore
-
         if tile is None:
             return [self.observable(obs, t) for t in range(self.copies)]
         if isinstance(tile, str):
@@ -193,6 +224,14 @@ class PackedCircuit:
                 pooled = pooled + op
             return pooled * (1.0 / self.copies)
         _validate_tile(tile, self.copies)
+        if self.isa is not None:
+            return self._isa_observable(obs, tile)
+        return self._spin_observable(obs, tile)
+
+    def _isa_observable(self, obs, tile: int):
+        """qiskit leaf of :meth:`observable`: embed and pin to the ISA layout."""
+        from qiskit.quantum_info import SparsePauliOp  # type: ignore
+
         op = obs if isinstance(obs, SparsePauliOp) else SparsePauliOp(obs)
         if op.num_qubits != self.block_qubits:
             raise ValueError(
@@ -205,6 +244,163 @@ class PackedCircuit:
             num_qubits=self.block_qubits * self.copies,
         )
         return embedded.apply_layout(self.isa.layout)
+
+    def _spin_observable(self, obs, tile: int):
+        """CUDA-Q leaf of :meth:`observable`: spin operator at physical indices."""
+        import cudaq  # type: ignore
+
+        if not isinstance(obs, str):
+            raise TypeError(
+                "CUDA-Q packs map Pauli strings; got "
+                f"'{type(obs).__name__}'"
+            )
+        pauli = self._validated_pauli(obs)
+        factors = {"X": cudaq.spin.x, "Y": cudaq.spin.y, "Z": cudaq.spin.z}
+        op = None
+        for i, letter in enumerate(pauli):
+            if letter == "I":
+                continue
+            term = factors[letter](self.tiles[tile][i])
+            op = term if op is None else op * term
+        if op is None:
+            op = cudaq.spin.i(self.tiles[tile][0])
+        return op
+
+    def _validated_pauli(self, pauli: str) -> str:
+        pauli = pauli.upper()
+        if len(pauli) != self.block_qubits:
+            raise ValueError(
+                f"'{pauli}' has {len(pauli)} entries but the packed block "
+                f"has {self.block_qubits} qubits"
+            )
+        if any(letter not in "IXYZ" for letter in pauli):
+            raise ValueError("Pauli strings may only contain I, X, Y, or Z")
+        return pauli
+
+    def _require_kernel(self, method: str) -> None:
+        if self.kernel is None:
+            raise TypeError(
+                f"{method} applies to CUDA-Q packs; qiskit packs read "
+                "results through observable/parameter_values"
+            )
+
+    def rebind(self, batch) -> "PackedCircuit":
+        """Re-pack the same tiles with a new batch of values.
+
+        The per-step call of a variational loop — tile selection is
+        reused. CUDA-Q packs re-extract the block per tile (``batch``
+        holds one runtime-argument set per tile, as ``block_args_batch``
+        in :func:`pack_circuit`; milliseconds per step). qiskit packs
+        return a copy with the parameters bound (``batch`` rows as in
+        :meth:`parameter_values`; prefer ``parameter_values`` in
+        estimator PUBs, which keeps the circuit parametric).
+        """
+        if self.kernel is not None:
+            if self.block is None:
+                raise ValueError(
+                    "rebind requires automatic packing (a plain block kernel)"
+                )
+            return _pack_cudaq(
+                None, self.block, tiles=self.tiles, block_args_batch=batch
+            )
+        values = self.parameter_values(batch)
+        return PackedCircuit(
+            tiles=self.tiles,
+            circuit=self.circuit.assign_parameters(
+                {p: values[p.name] for p in self.circuit.parameters}
+            ),
+            isa=self.isa.assign_parameters(
+                {p: values[p.name] for p in self.isa.parameters}
+            ),
+        )
+
+    def basis_kernel(self, bases: str):
+        """Packed kernel with per-qubit basis rotations before measurement.
+
+        ``bases`` has one letter per block qubit, position ``i`` acting on
+        block qubit ``i``: ``X`` and ``Y`` append that basis change (``H``,
+        or ``RZ(-pi/2)`` then ``H``) on the corresponding physical qubit of
+        every tile; ``Z`` and ``I`` leave it untouched. Sample the returned
+        kernel and read Pauli expectations with :meth:`expectation` — the
+        hardware-safe observable path (sparse-index ``observe`` fails on
+        targets that compact idle qubits).
+        """
+        self._require_kernel("basis_kernel")
+        if self.gates is None:
+            raise ValueError(
+                "basis_kernel requires automatic packing (a plain block "
+                "kernel); legacy convention blocks apply basis changes "
+                "inside the block"
+            )
+        bases = self._validated_pauli(bases)
+        return _recompose(self.gates, self.tiles, self.width, bases=bases)
+
+    def expectation(self, result, pauli: str, tile: Union[int, str, None] = None):
+        """Pauli expectation values from a sample of the matching basis.
+
+        ``pauli[i]`` acts on block qubit ``i``; ``result`` must come from
+        sampling :meth:`basis_kernel` for that string (the plain
+        :attr:`kernel` suffices when it only contains ``Z`` and ``I``).
+        The value is the Z-parity of the non-identity positions — for one
+        ``tile``, the list over all copies (``None``), or their average
+        (``"mean"``): when every tile runs the same circuit, the mean
+        pools the tiles into one estimate at ``copies``-fold shots.
+        """
+        self._require_kernel("expectation")
+        pauli = self._validated_pauli(pauli)
+        if isinstance(tile, str) and tile != "mean":
+            raise ValueError(f"tile must be an index, None, or 'mean'; got {tile!r}")
+        positions = [i for i, letter in enumerate(pauli) if letter != "I"]
+        if not positions:
+            if tile is None:
+                return [1.0] * self.copies
+            if isinstance(tile, int):
+                _validate_tile(tile, self.copies)
+            return 1.0
+        if tile is None:
+            return [self._tile_parity(result, positions, t) for t in range(self.copies)]
+        if isinstance(tile, str):
+            values = [
+                self._tile_parity(result, positions, t) for t in range(self.copies)
+            ]
+            return sum(values) / len(values)
+        return self._tile_parity(result, positions, tile)
+
+    def _tile_parity(self, result, positions, tile: int) -> float:
+        """Z-parity of a tile's block positions from full-register counts."""
+        _validate_tile(tile, self.copies)
+        physical = [self.tiles[tile][p] for p in positions]
+        acc = 0
+        total = 0
+        for bits, count in result.items():
+            if len(bits) != self.width:
+                raise ValueError(
+                    f"bitstrings span {len(bits)} bits but the packed "
+                    f"register has {self.width} qubits — the block kernel "
+                    "must not measure (explicit mz compacts the sampled "
+                    "register; sampling the packed kernel measures the "
+                    "full register implicitly)"
+                )
+            total += count
+            parity = sum(bits[p] == "1" for p in physical) % 2
+            acc += count if parity == 0 else -count
+        return acc / total if total else 0.0
+
+    def observe_kernel(self):
+        """Measurement-free packed kernel for ``cudaq.observe``.
+
+        ``observe`` rejects kernels with measurements, so the sampled
+        :attr:`kernel` (which measures the full register) cannot be used
+        with :meth:`observable`; this rebuild omits the measurement.
+        Simulator route only — without the full-register measurement,
+        hardware pipelines may compact idle qubits.
+        """
+        self._require_kernel("observe_kernel")
+        if self.gates is None:
+            raise ValueError(
+                "observe_kernel requires automatic packing (a plain block kernel)"
+            )
+        return _recompose(self.gates, self.tiles, self.width, measure=False)
 
 
 def _select_tiles(
@@ -230,6 +426,7 @@ def pack_circuit(
     circuit,
     k: Union[int, Literal["max"]] = "max",
     *,
+    tiles: Optional[Sequence[Sequence[int]]] = None,
     profile: Optional[DeviceProfile] = None,
     block_args: Sequence[Any] = (),
     block_args_batch: Optional[Sequence[Sequence[Any]]] = None,
@@ -240,7 +437,7 @@ def pack_circuit(
     buffer_hops: int = 0,
     strict: bool = True,
     optimization_level: int = 1,
-) -> "Union[PackedCircuit, PackedKernel]":
+) -> "PackedCircuit":
     """Pack ``k`` copies of a circuit onto disjoint calibrated tiles.
 
     Overloaded over both supported stacks, with the same selection logic
@@ -257,11 +454,14 @@ def pack_circuit(
       ``backend``) raises ``RuntimeError``.
     - CUDA-Q: ``pack_circuit(profile, kernel, k)`` with a plain
       ``@cudaq.kernel`` and a :class:`~qkan.solver.layout.DeviceProfile`
-      returns a :class:`PackedKernel` — the kernel's gates are extracted
-      from the compiled Quake IR (``block_args`` bind runtime arguments)
-      and rebuilt at the tiles' physical indices with a full-register
-      measurement. Explicit tiles or convention blocks go through
-      :func:`pack_kernel`.
+      — the kernel's gates are extracted from the compiled Quake IR
+      (``block_args`` bind runtime arguments) and rebuilt at the tiles'
+      physical indices with a full-register measurement. A block written
+      over the legacy ``(q: cudaq.qview, layout: list[int], offset:
+      int)`` convention is composed by sub-kernel calls exactly as
+      written instead (explicit ``tiles`` required); to thread runtime
+      arguments through to sample time, write the whole packed kernel
+      by hand (see the packing guide).
 
     Both stacks require measurement-free inputs: readout belongs to the
     primitive (qiskit) or is appended automatically (CUDA-Q). Selection
@@ -272,15 +472,24 @@ def pack_circuit(
     circuit gets per-copy parameters (bind with
     :meth:`PackedCircuit.parameter_values`), and a CUDA-Q kernel takes one
     runtime-argument set per tile via ``block_args_batch`` (re-bind the
-    same tiles with :meth:`PackedKernel.rebind`).
+    same tiles with :meth:`PackedCircuit.rebind`). Explicit ``tiles``
+    (hand-picked or from :func:`~qkan.solver.layout.tile_disjoint`) skip
+    the calibration-driven selection on either stack.
     """
     is_qiskit = hasattr(circuit, "find_bit") and hasattr(circuit, "num_qubits")
-    is_kernel = callable(circuit) and hasattr(circuit, "signature")
+    # prepare_call filters callables that merely carry a `signature`
+    # attribute (e.g. numpy.vectorize) as well as builder PyKernels.
+    is_kernel = (
+        callable(circuit)
+        and hasattr(circuit, "signature")
+        and hasattr(circuit, "prepare_call")
+    )
     if not (is_qiskit or is_kernel):
         raise TypeError(
             f"pack_circuit: unsupported circuit type "
             f"'{type(circuit).__name__}' — expected a qiskit QuantumCircuit "
-            "or a @cudaq.kernel"
+            "or a @cudaq.kernel (kernel-builder PyKernels cannot be "
+            "introspected; pass the decorated kernel)"
         )
     thresholds: dict[str, Any] = dict(
         max_readout_error=max_readout_error,
@@ -307,20 +516,22 @@ def pack_circuit(
             backend,
             circuit,
             k,
+            tiles=tiles,
             profile=profile,
             optimization_level=optimization_level,
             **thresholds,
         )
     calibration = backend if isinstance(backend, DeviceProfile) else profile
-    if calibration is None:
+    if calibration is None and tiles is None:
         raise TypeError(
             "pack_circuit: CUDA-Q kernels pack against calibration — "
-            "pass a DeviceProfile as the first argument"
+            "pass a DeviceProfile as the first argument (or explicit tiles)"
         )
-    return pack_kernel(
+    return _pack_cudaq(
+        calibration,
         circuit,
-        profile=calibration,
-        k=k,
+        k,
+        tiles=tiles,
         block_args=block_args,
         block_args_batch=block_args_batch,
         **thresholds,
@@ -332,6 +543,7 @@ def _pack_qiskit(
     circuit,
     k: Union[int, Literal["max"]],
     *,
+    tiles: Optional[Sequence[Sequence[int]]],
     profile: Optional[DeviceProfile],
     optimization_level: int,
     **thresholds,
@@ -351,12 +563,20 @@ def _pack_qiskit(
             "remove measurements and read results via observable() or the "
             "sampler that runs the packed circuit"
         )
-    if profile is None:
-        profile = DeviceProfile.from_qiskit(backend)
     m = circuit.num_qubits
-    tiles = _select_tiles(
-        profile, interaction_of(circuit), m, k, "pack_circuit", **thresholds
-    )
+    if tiles is not None:
+        interaction_of(circuit)  # >2-qubit gates fail identically in both modes
+        tiles, m_tiles, _flat, _width, _copies = _validated_tiles(tiles)
+        if m_tiles != m:
+            raise ValueError(
+                f"pack_circuit: tiles have {m_tiles} qubits but the block has {m}"
+            )
+    else:
+        if profile is None:
+            profile = DeviceProfile.from_qiskit(backend)
+        tiles = _select_tiles(
+            profile, interaction_of(circuit), m, k, "pack_circuit", **thresholds
+        )
     copies = len(tiles)
     merged = QuantumCircuit(m * copies)
     # Each copy gets its own renamed parameters so one packed job can
@@ -396,196 +616,6 @@ def _pack_qiskit(
     )
 
 
-def _z_parity(counts, positions, width: Optional[int] = None) -> float:
-    """Z-parity expectation over register positions from bitstring counts."""
-    acc = 0
-    total = 0
-    for bits, count in counts.items():
-        if width is not None and len(bits) != width:
-            raise ValueError(
-                f"bitstrings span {len(bits)} bits but the packed register "
-                f"has {width} qubits — the block kernel must not measure "
-                "(explicit mz compacts the sampled register; sampling the "
-                "packed kernel measures the full register implicitly)"
-            )
-        total += count
-        parity = sum(bits[p] == "1" for p in positions) % 2
-        acc += count if parity == 0 else -count
-    if total == 0:
-        return 0.0
-    return acc / total
-
-
-@dataclass(frozen=True)
-class PackedKernel:
-    """A packed CUDA-Q kernel: ``copies`` block copies at disjoint tiles.
-
-    ``kernel`` allocates ``width`` qubits, applies the block at each
-    tile's physical indices, and (in automatic mode) measures the full
-    register. Sample it with ``cudaq.sample`` and read per-tile results
-    with :meth:`expectation` / :meth:`z_parity`; X/Y observables go
-    through :meth:`basis_kernel` (hardware-safe) or :meth:`spin_op`
-    (simulator ``observe``); a new per-tile argument batch on the same
-    tiles is :meth:`rebind`. In automatic mode ``gates`` holds one
-    extracted gate list per tile and ``block`` the source kernel.
-    """
-
-    kernel: Any
-    tiles: tuple[tuple[int, ...], ...]
-    gates: Optional[tuple] = None
-    block: Any = None
-
-    @property
-    def flat(self) -> tuple[int, ...]:
-        """Tile-major flattening of ``tiles``."""
-        return tuple(q for tile in self.tiles for q in tile)
-
-    @property
-    def width(self) -> int:
-        """Register width of the packed kernel."""
-        return max(self.flat) + 1
-
-    @property
-    def block_qubits(self) -> int:
-        """Qubits per block copy."""
-        return len(self.tiles[0])
-
-    @property
-    def copies(self) -> int:
-        """Number of packed block copies."""
-        return len(self.tiles)
-
-    def physical_qubits(self, tile: int) -> list[int]:
-        """Physical qubit indices hosting block copy ``tile``."""
-        return list(self.tiles[tile])
-
-    def _validated_pauli(self, pauli: str) -> str:
-        pauli = pauli.upper()
-        if len(pauli) != self.block_qubits:
-            raise ValueError(
-                f"'{pauli}' has {len(pauli)} entries but the packed block "
-                f"has {self.block_qubits} qubits"
-            )
-        if any(letter not in "IXYZ" for letter in pauli):
-            raise ValueError("Pauli strings may only contain I, X, Y, or Z")
-        return pauli
-
-    def rebind(self, block_args_batch) -> "PackedKernel":
-        """Re-pack the same block on the same tiles with a new batch.
-
-        ``block_args_batch`` holds one runtime-argument set per tile (see
-        :func:`pack_kernel`) — the per-step call of a variational loop:
-        tile selection is reused, only extraction and the kernel rebuild
-        run (milliseconds).
-        """
-        if self.block is None:
-            raise ValueError("rebind requires automatic packing (a plain block kernel)")
-        return pack_kernel(self.block, self.tiles, block_args_batch=block_args_batch)
-
-    def basis_kernel(self, bases: str):
-        """Packed kernel with per-qubit basis rotations before measurement.
-
-        ``bases`` has one letter per block qubit, position ``i`` acting on
-        block qubit ``i``: ``X`` and ``Y`` append that basis change (``H``,
-        or ``RZ(-pi/2)`` then ``H``) on the corresponding physical qubit of
-        every tile; ``Z`` and ``I`` leave it untouched. Sample the returned
-        kernel and read Pauli expectations with :meth:`expectation` — the
-        hardware-safe observable path (sparse-index ``observe`` fails on
-        targets that compact idle qubits).
-        """
-        if self.gates is None:
-            raise ValueError(
-                "basis_kernel requires automatic packing (a plain block "
-                "kernel); legacy convention blocks apply basis changes "
-                "inside the block"
-            )
-        bases = self._validated_pauli(bases)
-        return _recompose(self.gates, self.tiles, self.width, bases=bases)
-
-    def expectation(self, result, pauli: str, tile: Union[int, str, None] = None):
-        """Pauli expectation values from a sample of the matching basis.
-
-        ``pauli[i]`` acts on block qubit ``i``; ``result`` must come from
-        sampling :meth:`basis_kernel` for that string (the plain
-        :attr:`kernel` suffices when it only contains ``Z`` and ``I``).
-        The value is the Z-parity of the non-identity positions — for one
-        ``tile``, the list over all copies (``None``), or their average
-        (``"mean"``): when every tile runs the same circuit, the mean
-        pools the tiles into one estimate at ``copies``-fold shots.
-        """
-        pauli = self._validated_pauli(pauli)
-        if isinstance(tile, str) and tile != "mean":
-            raise ValueError(f"tile must be an index, None, or 'mean'; got {tile!r}")
-        positions = [i for i, letter in enumerate(pauli) if letter != "I"]
-        if not positions:
-            if tile is None:
-                return [1.0] * self.copies
-            if isinstance(tile, int):
-                _validate_tile(tile, self.copies)
-            return 1.0
-        if isinstance(tile, str):
-            values = self.z_parity(result, positions)
-            return sum(values) / len(values)
-        return self.z_parity(result, positions, tile)
-
-    def observe_kernel(self):
-        """Measurement-free packed kernel for ``cudaq.observe``.
-
-        ``observe`` rejects kernels with measurements, so the sampled
-        :attr:`kernel` (which measures the full register) cannot be used
-        with :meth:`spin_op`; this rebuild omits the measurement.
-        Simulator route only — without the full-register measurement,
-        hardware pipelines may compact idle qubits.
-        """
-        if self.gates is None:
-            raise ValueError(
-                "observe_kernel requires automatic packing (a plain block kernel)"
-            )
-        return _recompose(self.gates, self.tiles, self.width, measure=False)
-
-    def spin_op(self, pauli: str, tile: Optional[int] = None):
-        """CUDA-Q spin operator for a block-level Pauli string at a tile.
-
-        ``pauli`` has one letter per block qubit, position ``i`` acting on
-        block qubit ``i`` (index order — unlike qiskit's little-endian
-        strings). Returns the operator at ``tile``'s physical indices, or
-        the list over all copies when ``tile`` is None, for
-        ``cudaq.observe(packed.observe_kernel(), ...)``. Simulator route:
-        hardware targets that compact idle qubits reject sparse-index
-        observables — use :meth:`basis_kernel` plus :meth:`z_parity` there.
-        """
-        import cudaq  # type: ignore
-
-        if tile is None:
-            return [self.spin_op(pauli, t) for t in range(self.copies)]
-        _validate_tile(tile, self.copies)
-        pauli = self._validated_pauli(pauli)
-        factors = {"X": cudaq.spin.x, "Y": cudaq.spin.y, "Z": cudaq.spin.z}
-        op = None
-        for i, letter in enumerate(pauli):
-            if letter == "I":
-                continue
-            term = factors[letter](self.tiles[tile][i])
-            op = term if op is None else op * term
-        if op is None:
-            op = cudaq.spin.i(self.tiles[tile][0])
-        return op
-
-    def z_parity(self, result, positions: Sequence[int], tile: Optional[int] = None):
-        """Z-parity of the block-local ``positions`` from a sample result.
-
-        ``positions`` index qubits within the block (0..block_qubits-1).
-        Returns the correlator for one ``tile``, or the list over all
-        copies when ``tile`` is None. A single position yields that
-        qubit's ``<Z>`` marginal; several yield ``<Z...Z>``.
-        """
-        if tile is None:
-            return [self.z_parity(result, positions, t) for t in range(self.copies)]
-        _validate_tile(tile, self.copies)
-        physical = [self.tiles[tile][p] for p in positions]
-        return _z_parity(result, physical, width=self.width)
-
-
 def _recompose(
     gates_per_tile,
     tiles,
@@ -603,7 +633,7 @@ def _recompose(
             method = getattr(kernel, name, None)
             if method is None:
                 raise ValueError(
-                    f"pack_kernel: gate '{name}' has no cudaq kernel-builder equivalent"
+                    f"pack_circuit: gate '{name}' has no cudaq kernel-builder equivalent"
                 )
             method(*params, *(q[tile[i]] for i in qubits))
         if bases is not None:
@@ -627,34 +657,29 @@ def _validated_tiles(
     """Normalize and validate tiles; return (tiles, size, flat, width, copies)."""
     norm = tuple(tuple(operator.index(q) for q in tile) for tile in tiles)
     if not norm:
-        raise ValueError("pack_kernel: tiles must be non-empty")
+        raise ValueError("packing: tiles must be non-empty")
     m = len(norm[0])
     if any(len(t) != m for t in norm):
-        raise ValueError("pack_kernel: all tiles must have the same size")
+        raise ValueError("packing: all tiles must have the same size")
     flat = [q for tile in norm for q in tile]
     if any(q < 0 for q in flat):
-        raise ValueError("pack_kernel: tile indices must be non-negative")
+        raise ValueError("packing: tile indices must be non-negative")
     if len(set(flat)) != len(flat):
-        raise ValueError("pack_kernel: tiles overlap")
+        raise ValueError("packing: tiles overlap")
     return norm, m, flat, max(flat) + 1, len(norm)
 
 
-def pack_kernel(
+def _pack_cudaq(
+    profile: Optional[DeviceProfile],
     block,
-    tiles: Optional[Sequence[Sequence[int]]] = None,
-    *,
-    profile: Optional[DeviceProfile] = None,
     k: Union[int, Literal["max"]] = "max",
+    *,
+    tiles: Optional[Sequence[Sequence[int]]] = None,
     block_args: Sequence[Any] = (),
     block_args_batch: Optional[Sequence[Sequence[Any]]] = None,
-    max_readout_error: Optional[float] = None,
-    qubit_error_threshold: Optional[float] = None,
-    edge_error_threshold: Optional[float] = None,
-    tile_score_threshold: Optional[float] = None,
-    buffer_hops: int = 0,
-    strict: bool = True,
-) -> PackedKernel:
-    """Pack ``k`` copies of a CUDA-Q kernel onto disjoint calibrated tiles.
+    **thresholds,
+) -> PackedCircuit:
+    """CUDA-Q half of :func:`pack_circuit`: extract + recompose pinned.
 
     Automatic mode (the default): ``block`` is a plain ``@cudaq.kernel``
     that allocates its own qubits — no signature convention. Its gate
@@ -669,21 +694,10 @@ def pack_kernel(
     (readout is added automatically) or branch on measurement results,
     and must not call sub-kernels.
 
-    Runtime arguments bind through ``block_args`` (one set, every copy
-    identical) or ``block_args_batch`` (one set per tile — a batch of
-    evaluations in one job; ``k`` defaults to the batch size). All batch
-    entries must preserve the block's qubit count and interaction graph;
-    per-tile 1-qubit structure may differ. Rebinding the same tiles to a
-    new batch is :meth:`PackedKernel.rebind`.
-
     Legacy mode: with explicit ``tiles`` and a block written over
     ``(q: cudaq.qview, layout: list[int], offset: int)``, the copies are
     composed by sub-kernel calls exactly as written; runtime-parameterized
     packed kernels can be hand-written this way (see the packing guide).
-
-    Whether the physical indices survive to hardware depends on the
-    CUDA-Q target (see the packing guide); on simulators the placement
-    is exact.
     """
     import cudaq  # type: ignore
 
@@ -695,18 +709,18 @@ def pack_kernel(
             arg_types[1].startswith("!cc.stdvec<i") and arg_types[2].startswith("i")
         ):
             raise ValueError(
-                "pack_kernel: blocks taking a qview must use the legacy "
+                "pack_circuit: blocks taking a qview must use the legacy "
                 "convention (q: cudaq.qview, layout: list[int], offset: "
                 "int); for runtime-parameterized packing write the packed "
                 "kernel by hand (see the packing guide)"
             )
         if tiles is None:
             raise ValueError(
-                "pack_kernel: automatic tiling requires a plain kernel; "
+                "pack_circuit: automatic tiling requires a plain kernel; "
                 "blocks over (qview, layout, offset) need explicit tiles"
             )
         if block_args or block_args_batch is not None:
-            raise ValueError("pack_kernel: block_args only apply to plain kernels")
+            raise ValueError("pack_circuit: block_args only apply to plain kernels")
         tiles, m, flat, width, copies = _validated_tiles(tiles)
 
         @cudaq.kernel
@@ -718,26 +732,19 @@ def pack_kernel(
             # hardware pipelines that compact untouched qubits (dqe).
             mz(q)  # noqa: F821
 
-        return PackedKernel(kernel=packed, tiles=tiles)
-
-    if not hasattr(block, "prepare_call"):
-        raise TypeError(
-            f"pack_kernel: expected a @cudaq.kernel, got "
-            f"'{type(block).__name__}' — kernel-builder PyKernels cannot "
-            "be introspected; pass the decorated kernel"
-        )
+        return PackedCircuit(kernel=packed, tiles=tiles)
 
     from ._quake import kernel_ops
 
     if block_args_batch is not None:
         if block_args:
             raise ValueError(
-                "pack_kernel: pass block_args (one set for every copy) or "
+                "pack_circuit: pass block_args (one set for every copy) or "
                 "block_args_batch (one set per tile), not both"
             )
         arg_sets = [tuple(args) for args in block_args_batch]
         if not arg_sets:
-            raise ValueError("pack_kernel: block_args_batch must be non-empty")
+            raise ValueError("pack_circuit: block_args_batch must be non-empty")
     else:
         arg_sets = [tuple(block_args)]
 
@@ -746,12 +753,12 @@ def pack_kernel(
         ops, m, flags = kernel_ops(block, *args)
         if "measurements" in flags:
             raise ValueError(
-                "pack_kernel: the block measures — packing measures the full "
+                "pack_circuit: the block measures — packing measures the full "
                 "register automatically; remove mz/reset from the block"
             )
         if "conditionals" in flags:
             raise ValueError(
-                "pack_kernel: mid-circuit conditionals are not supported by "
+                "pack_circuit: mid-circuit conditionals are not supported by "
                 "automatic packing"
             )
         extracted.append((ops, m, _edges_of_ops(ops)))
@@ -760,12 +767,12 @@ def pack_kernel(
     for ops_t, m_t, edges_t in extracted[1:]:
         if m_t != m:
             raise ValueError(
-                "pack_kernel: block_args_batch entries change the block's "
+                "pack_circuit: block_args_batch entries change the block's "
                 f"qubit count ({m_t} vs {m})"
             )
         if {tuple(sorted(edge)) for edge in edges_t} != coupling:
             raise ValueError(
-                "pack_kernel: block_args_batch entries change the block's "
+                "pack_circuit: block_args_batch entries change the block's "
                 "interaction graph — every tile must host the same coupling"
             )
 
@@ -774,32 +781,16 @@ def pack_kernel(
             k = len(arg_sets)
         elif k != len(arg_sets):
             raise ValueError(
-                f"pack_kernel: k={k} but block_args_batch has {len(arg_sets)} entries"
+                f"pack_circuit: k={k} but block_args_batch has {len(arg_sets)} entries"
             )
 
     if tiles is None:
-        if profile is None:
-            raise ValueError(
-                "pack_kernel: automatic tiling needs calibration — pass "
-                "profile=DeviceProfile.from_...(...) or explicit tiles"
-            )
-        tiles = _select_tiles(
-            profile,
-            edges0,
-            m,
-            k,
-            "pack_kernel",
-            max_readout_error=max_readout_error,
-            qubit_error_threshold=qubit_error_threshold,
-            edge_error_threshold=edge_error_threshold,
-            tile_score_threshold=tile_score_threshold,
-            buffer_hops=buffer_hops,
-            strict=strict,
-        )
+        assert profile is not None  # pack_circuit guarantees calibration or tiles
+        tiles = _select_tiles(profile, edges0, m, k, "pack_circuit", **thresholds)
     tiles, m_tiles, flat, width, copies = _validated_tiles(tiles)
     if m_tiles != m:
         raise ValueError(
-            f"pack_kernel: tiles have {m_tiles} qubits but the block has {m}"
+            f"pack_circuit: tiles have {m_tiles} qubits but the block has {m}"
         )
     normalized = [
         tuple((name, tuple(params), tuple(qubits)) for name, params, qubits in ops)
@@ -808,13 +799,13 @@ def pack_kernel(
     if block_args_batch is not None:
         if copies != len(normalized):
             raise ValueError(
-                f"pack_kernel: {copies} tiles but block_args_batch has "
+                f"pack_circuit: {copies} tiles but block_args_batch has "
                 f"{len(normalized)} entries"
             )
         gates = tuple(normalized)
     else:
         gates = (normalized[0],) * copies
-    return PackedKernel(
+    return PackedCircuit(
         kernel=_recompose(gates, tiles, width),
         tiles=tiles,
         gates=gates,

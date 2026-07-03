@@ -7,7 +7,7 @@ Circuit Packing and Calibration-Aware Layouts
 Packing serves two repeated-execution patterns.
 The first is the variational batch: one parameterized circuit evaluated at ``k`` parameter sets per job, so a training loop advances ``k`` evaluations per round trip instead of one.
 The second is shot reduction for a single circuit: only one circuit needs to run, but packing it ``k`` times collects statistics in parallel, so each job needs only ``shots/k`` shots — 8 copies at 256 shots match 2048 shots of a single placement at one eighth of the QPU time, at the cost of tying the estimate to ``k`` tiles' average noise instead of one tile's.
-:func:`~qkan.solver.packing.pack_circuit` is overloaded over both supported stacks with the same selection logic: a qiskit ``QuantumCircuit`` packs against a backend, a plain ``@cudaq.kernel`` packs against a :class:`~qkan.solver.layout.DeviceProfile`; :func:`~qkan.solver.packing.pack_kernel` covers explicit tiles and hand-written composition.
+:func:`~qkan.solver.packing.pack_circuit` is the single entry point, overloaded over both supported stacks with the same selection logic: a qiskit ``QuantumCircuit`` packs against a backend, a plain ``@cudaq.kernel`` packs against a :class:`~qkan.solver.layout.DeviceProfile`, and both return one :class:`~qkan.solver.packing.PackedCircuit` type whose placement accessors and ``rebind`` are shared.
 Everything is torch-free and usable independently of QKAN models.
 
 Device profiles
@@ -53,7 +53,8 @@ Selection is stack-neutral, and CUDA-Q kernels reach it through the same :func:`
 
    placed = pack_circuit(profile, ghz20, k=1)   # one copy on the best-calibrated path
    result = cudaq.sample(placed.kernel, shots_count=1000)
-   zz = [placed.z_parity(result, [i, i + 1], 0) for i in range(19)]
+   pairs = ["I" * i + "ZZ" + "I" * (18 - i) for i in range(19)]
+   zz = [placed.expectation(result, pair, 0) for pair in pairs]
 
 The QKAN CUDA-Q solver applies the same selection to its own packed single-qubit jobs via ``initial_layout="auto"`` (see the solver guide).
 
@@ -149,20 +150,23 @@ Shot reduction for a single circuit packs identical copies (``block_args`` or no
    xx = packed.expectation(xx_result, "XX", "mean")
 
 ``packed.expectation(result, pauli, tile)`` is the observable mapping: it reads ``<pauli>`` from a sample of the matching basis (the plain ``kernel`` for Z/I strings, ``basis_kernel(pauli)`` otherwise) — one ``tile``, the list over copies (``None``), or the pooled ``"mean"``.
-``packed.basis_kernel(bases)`` rebuilds the packed kernel with per-qubit basis changes before the measurement, so X/Y observables read as Z-parities — the hardware-safe observable path; ``packed.z_parity`` remains the positional primitive underneath.
-``packed.spin_op(pauli, tile)`` builds ``cudaq.spin`` operators at a tile's physical indices for ``cudaq.observe`` on ``packed.observe_kernel()``; hardware targets that compact idle qubits reject sparse-index observables, so treat that as the simulator route.
+``packed.basis_kernel(bases)`` rebuilds the packed kernel with per-qubit basis changes before the measurement, so X/Y observables read as Z-parities — the hardware-safe observable path.
+``packed.observable(pauli, tile)`` — the same call that maps qiskit observables — builds ``cudaq.spin`` operators at a tile's physical indices for ``cudaq.observe`` on ``packed.observe_kernel()``; hardware targets that compact idle qubits reject sparse-index observables, so treat that as the simulator route on the native cudaq pipelines.
+Through the Braket target the observe route does run end-to-end: exact on SV1 (sparse indices and idle qubits included), and on Rigetti hardware a 20-qubit random circuit returned program-indexed expectations whose strongest observable came back sign-correct under realistic noise decay (weak ``|<P>| < 0.15`` observables drown at 500 shots).
+Each Pauli term submits one Braket task, so multi-term operators multiply task fees — ``basis_kernel`` plus ``expectation`` reads every tile from one counts set per basis and stays the cheaper hardware route.
 This path is verified numerically on the ``qpp-cpu`` simulator (exact Bell/GHZ correlations at sparse physical tiles; parameterized blocks match ``cos(theta)`` per tile) and at the wire level (the OpenQASM submitted through the ``quantum_machines`` target carries the gates on the exact tile indices over the full register).
 Whether a hardware target honors the physical indices matches the single-qubit case: Braket's vendor compiler may rewire (verified on Rigetti hardware for single-qubit packing and for a packed 20-qubit job, whose compiled Quil ran on a different chip region than requested) and ``quantum_machines`` mapping is decided by the Qoperator server.
 The native ``iqm`` / ``oqc`` / ``anyon`` pipelines compact untouched qubits, and the packed kernel's full-register measurement is the verified mitigation — gates stay at the exact physical indices through the emulated ``iqm`` codegen.
 
-For explicit control, :func:`~qkan.solver.packing.pack_kernel` accepts hand-picked ``tiles`` (from :func:`~qkan.solver.layout.tile_disjoint` or :func:`~qkan.solver.layout.best_subgraph`) with a plain kernel, or a legacy block written over ``(q: cudaq.qview, layout: list[int], offset: int)`` composed by sub-kernel calls.
-Automatic mode bakes argument values at pack time (per tile via ``block_args_batch``, refreshed with ``rebind``); to thread runtime arguments through to sample time unchanged, write the packed kernel by hand following the legacy pattern (a parameterized block kernel plus per-tile argument offsets).
+For explicit control, ``pack_circuit(..., tiles=...)`` pins hand-picked tiles (from :func:`~qkan.solver.layout.tile_disjoint` or :func:`~qkan.solver.layout.best_subgraph`) on either stack, skipping the calibration-driven selection.
+Automatic mode bakes argument values at pack time (per tile via ``block_args_batch``, refreshed with ``rebind``); to thread runtime arguments through to sample time unchanged, write the packed kernel by hand — a top-level kernel that takes the runtime arguments and calls a ``(q: cudaq.qview, layout: list[int], offset: int)`` block at each tile's argument offset.
+For a fixed hand-written block over that convention, ``pack_circuit(..., tiles=...)`` composes the copies by sub-kernel calls exactly as written, skipping the Quake extraction.
 
 Caveats
 -------
 
 - The interaction graph must be connected and embed in the coupling map without routing; pre-transpile and extract the routed interaction graph for circuits that need SWAPs.
-- Inputs are measurement-free: ``pack_circuit`` rejects circuits with classical bits (copies would share clbits and in-circuit measurements corrupt estimator values) and kernels that measure (the packed kernel measures the full register itself); ``z_parity`` rejects results whose bitstrings are narrower than the packed register.
+- Inputs are measurement-free: ``pack_circuit`` rejects circuits with classical bits (copies would share clbits and in-circuit measurements corrupt estimator values) and kernels that measure (the packed kernel measures the full register itself); ``expectation`` rejects results whose bitstrings are narrower than the packed register.
 - CUDA-Q introspection covers flat kernels: sub-kernel calls, mid-circuit conditionals, and qubit indices that stay dynamic after constant folding are rejected with clear errors, and parameterized kernels are extracted per bound argument set (angles are baked at pack time; ``block_args_batch`` extracts once per tile and ``rebind`` once per step, all entries preserving the block's qubit count and interaction graph).
 - The Quake extraction uses internal-but-stable ``cudaq.mlir`` entry points (the same ones cudaq's kernel builder uses) and is pinned per cudaq release by the packing test suite (verified on cudaq 0.15).
 - Crosstalk between neighboring tiles is not modeled by public calibration data; ``buffer_hops=1`` leaves a one-qubit shell between tiles at the cost of fewer tiles (52 to 31 Bell tiles on ``FakeSherbrooke``).

@@ -162,3 +162,44 @@ def test_pooled_mean_observable():
     assert abs(float(value) - 1.0) < 1e-9
     with pytest.raises(ValueError, match="no parameters"):
         packed.parameter_values([[1.0], [1.0]])
+
+
+def test_rebind_and_cross_stack_guards():
+    import math
+
+    aer_primitives = pytest.importorskip("qiskit_aer.primitives")
+    from qiskit.circuit import Parameter
+
+    from qkan.solver.packing import PackedCircuit
+
+    theta = Parameter("theta")
+    vqc = QuantumCircuit(2)
+    vqc.ry(theta, 0)
+    vqc.cx(0, 1)
+    packed = pack_circuit(line_backend(), vqc, k=2)
+
+    bound = packed.rebind([[0.4], [1.3]])
+    assert isinstance(bound, PackedCircuit)
+    assert not bound.isa.parameters
+    estimator = aer_primitives.EstimatorV2()
+    evs = (
+        estimator.run([(bound.isa, bound.observable("ZI"))], precision=0)
+        .result()[0]
+        .data.evs
+    )
+    for got, t in zip(evs, [0.4, 1.3]):
+        assert abs(got - math.cos(t)) < 1e-6
+
+    with pytest.raises(TypeError, match="CUDA-Q packs"):
+        packed.expectation({}, "ZZ")
+    with pytest.raises(TypeError, match="CUDA-Q packs"):
+        packed.basis_kernel("ZZ")
+
+
+def test_pack_circuit_explicit_tiles_qiskit():
+    packed = pack_circuit(line_backend(), bell(), tiles=[(4, 5), (0, 1)])
+    assert packed.tiles == ((4, 5), (0, 1))
+    perm = packed.isa.layout.routing_permutation()
+    assert perm == list(range(len(perm)))
+    with pytest.raises(ValueError, match="block has 2"):
+        pack_circuit(line_backend(), bell(), tiles=[(0, 1, 2)])

@@ -41,9 +41,7 @@ from .qkan import QKAN, QKANLayer
 from .solver import (
     DeviceProfile,
     PackedCircuit,
-    PackedKernel,
     pack_circuit,
-    pack_kernel,
     tile_disjoint,
 )
 from .torch_qc import StateVector, TorchGates
@@ -69,7 +67,6 @@ __all__ = [
     "CompiledInference",
     "DeviceProfile",
     "PackedCircuit",
-    "PackedKernel",
     "LBFGSFinisher",
     "TritonAdaBelief",
     "adam_then_lbfgs",
@@ -80,7 +77,6 @@ __all__ = [
     "tile_disjoint",
     "graph_submodules",
     "pack_circuit",
-    "pack_kernel",
     "make_graphed_inference",
     "make_graphed_train_step",
     "print0",

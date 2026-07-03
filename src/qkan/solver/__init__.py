@@ -44,11 +44,9 @@ from .layout import (
 )
 from .packing import (
     PackedCircuit,
-    PackedKernel,
     interaction_of,
     kernel_interaction_of,
     pack_circuit,
-    pack_kernel,
 )
 from .qiskit import best_qubits, qiskit_solver
 from .qml import qml_solver
@@ -59,7 +57,6 @@ __all__ = [
     "_FLASH_AVAILABLE",
     "DeviceProfile",
     "PackedCircuit",
-    "PackedKernel",
     "QKANSolver",
     "best_qubits",
     "best_subgraph",
@@ -74,7 +71,6 @@ __all__ = [
     "kernel_interaction_of",
     "make_base_activation",
     "pack_circuit",
-    "pack_kernel",
     "qiskit_solver",
     "qml_solver",
     "rank_qubits",

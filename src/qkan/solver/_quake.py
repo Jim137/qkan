@@ -17,7 +17,7 @@
 CUDA-Q kernel introspection via the Quake MLIR representation.
 
 Extracts a ``(gate, params, qubits)`` list from a plain ``@cudaq.kernel``
-so :func:`~qkan.solver.packing.pack_kernel` can derive the interaction
+so :func:`~qkan.solver.packing.pack_circuit` can derive the interaction
 graph and rebuild the kernel at tile physical indices with no signature
 convention. The pipeline resolves closure captures and runtime arguments
 (``prepare_call`` + ``synthesize``), unrolls loops, and constant-folds
