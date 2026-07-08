@@ -126,9 +126,9 @@ Instructions
 - Real-hardware extras: `pip install qkan[real-device]` = qiskit +
   qiskit-ibm-runtime + cuda-quantum.
 - Contributors: `git clone https://github.com/Jim137/qkan && pip install -e
-  .[dev]`; `make lint` (ruff + mypy) is the CI gate, and `pytest tests/`
-  runs the packing/layout suite (qiskit and cudaq cases skip automatically
-  when those extras are missing).
+  .[dev]`; `make lint` (ruff + mypy) is the CI gate, and
+  `pytest skills/tests/` runs the packing/layout suite (qiskit and cudaq
+  cases skip automatically when those extras are missing).
 - Always validate the install:
 
   ```bash
@@ -427,8 +427,8 @@ experiments.
 - Packing requires the block's interaction graph to embed in the coupling
   map without routing; whether physical indices survive to hardware is
   provider-dependent
-- The test suite (`pytest tests/`) covers the packing/layout toolkit;
-  `make lint` is the CI quality gate
+- The test suite (`pytest skills/tests/`) covers the packing/layout
+  toolkit; `make lint` is the CI quality gate
 
 ## Troubleshooting
 
