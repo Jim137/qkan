@@ -251,8 +251,7 @@ class PackedCircuit:
 
         if not isinstance(obs, str):
             raise TypeError(
-                "CUDA-Q packs map Pauli strings; got "
-                f"'{type(obs).__name__}'"
+                f"CUDA-Q packs map Pauli strings; got '{type(obs).__name__}'"
             )
         pauli = self._validated_pauli(obs)
         factors = {"X": cudaq.spin.x, "Y": cudaq.spin.y, "Z": cudaq.spin.z}
