@@ -323,10 +323,16 @@ class QKANMuon(Optimizer):
                     self._muon_update_(muon_params[owned], g, group)
             if ws > 1:
                 for k in range(len(muon_params)):
-                    # group_src (not src) keeps the index group-local, matching
-                    # rk = get_rank(pg) — correct for sub-groups, not just world.
-                    dist.broadcast(
-                        muon_params[k].data, group_src=k % ws, group=self._pg
+                    # The owner index k % ws is group-local (matching
+                    # rk = get_rank(pg)); translate it to the global rank that
+                    # broadcast's src expects — correct for sub-groups, and
+                    # unlike broadcast(group_src=...) it works on torch < 2.6.
+                    owner = k % ws
+                    src = (
+                        owner
+                        if self._pg is None
+                        else dist.get_global_rank(self._pg, owner)
                     )
+                    dist.broadcast(muon_params[k].data, src=src, group=self._pg)
 
         return loss

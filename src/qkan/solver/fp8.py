@@ -228,7 +228,7 @@ class Fp8Linear(nn.Module):
         # _scaled_mm: y = (x_fp8 * x_scale) @ (W_fp8.t() * w_scale) + bias
         # Shapes: x_fp8 (M, K), W_fp8 (N, K) -> W_fp8.t() (K, N).
         x_flat = x_fp8.reshape(-1, self.in_features)
-        y = torch._scaled_mm(
+        mm_out = torch._scaled_mm(
             x_flat,
             self.weight.t(),
             scale_a=x_scale,
@@ -236,6 +236,8 @@ class Fp8Linear(nn.Module):
             bias=self.bias,
             out_dtype=self.activation_dtype,
         )
+        # torch < 2.5 returns (out, amax); newer versions return the tensor.
+        y = mm_out[0] if isinstance(mm_out, tuple) else mm_out
         return y.reshape(*leading_shape, self.out_features)
 
     def _load_from_state_dict(self, *args, **kwargs) -> None:  # type: ignore[override]
