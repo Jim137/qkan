@@ -28,6 +28,7 @@ Environment variables:
   QKAN_FORCE_BUILD    — TRUE to skip pre-built wheel download and compile locally
   QKAN_SKIP_CUDA_BUILD — TRUE to skip CUDA compilation entirely (sdist builds)
   QKAN_LOCAL_VERSION  — local version suffix (e.g. "cu126torch2.6")
+  QKAN_NO_GIT_VERSION — TRUE to omit the git hash from dev versions
   NVCC_THREADS        — parallel nvcc compilation threads (default: 4)
 
 Usage:
@@ -71,8 +72,47 @@ WHEEL_BASE_URL = "https://github.com/Jim137/qkan/releases/download"
 # ---------------------------------------------------------------------------
 
 
+def get_git_revision():
+    """Short git hash of HEAD, or None outside a git checkout.
+
+    The .git existence check keeps this source tree's own revision: without
+    it, git discovery walks up to any enclosing repository (a vendored copy
+    or extracted tarball inside an unrelated checkout would report the
+    parent repo's HEAD). Never applied to sdists — the tarball rebuilds
+    without .git, and a hash baked into the sdist metadata would disagree
+    with the wheel pip builds from it (pip rejects the mismatch).
+    """
+    if os.getenv("QKAN_NO_GIT_VERSION", "FALSE") == "TRUE":
+        return None
+    if "sdist" in sys.argv[1:]:
+        return None
+    if not (THIS_DIR / ".git").exists():
+        return None
+    try:
+        return (
+            subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=THIS_DIR,
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
 def get_package_version():
-    """Read version from qkan/__init__.py, optionally append local version."""
+    """Read version from qkan/__init__.py, optionally append local version.
+
+    Dev versions (base version ending in "dev") also carry the git commit
+    hash as a local segment — 0.2.3dev+g1a2b3c4, or combined with
+    QKAN_LOCAL_VERSION, 0.2.3dev+cu126torch2.6.g1a2b3c4 — so an installed
+    dev build identifies its exact source commit. Release versions never
+    get the hash (PyPI rejects local versions, so a forgotten dev-marker
+    bump fails loudly at upload instead of publishing silently); tarball
+    builds without .git fall back to the plain version.
+    """
     init_path = THIS_DIR / "src" / "qkan" / "__init__.py"
     with open(init_path, "r") as f:
         version_match = re.search(
@@ -81,9 +121,16 @@ def get_package_version():
     if version_match is None:
         raise RuntimeError("Cannot find __version__ in qkan/__init__.py")
     public_version = version_match.group(1)
+    local_parts = []
     local_version = os.environ.get("QKAN_LOCAL_VERSION")
     if local_version:
-        return f"{public_version}+{local_version}"
+        local_parts.append(local_version)
+    if public_version.endswith("dev"):
+        revision = get_git_revision()
+        if revision:
+            local_parts.append(f"g{revision}")
+    if local_parts:
+        return f"{public_version}+{'.'.join(local_parts)}"
     return public_version
 
 
