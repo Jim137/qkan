@@ -184,6 +184,22 @@ def _reallocate_params_on_stream(
         group["params"] = new_params
     if new_state:
         optimizer.state.update(new_state)
+    # QKAN-aware optimizers (QKANMuon, QKANAdamMini, QKANBeliefMini,
+    # QKANSpectralMini) route updates by parameter NAME via an
+    # id(param)-keyed side dict; migrate it so routing survives the swap.
+    # Popping old ids matters: once the old Parameters are collected,
+    # CPython can reuse their ids for unrelated tensors.
+    param_names = getattr(optimizer, "_param_names", None)
+    if isinstance(param_names, dict):
+        for old_id, new_p in old_to_new.items():
+            name = param_names.pop(old_id, None)
+            if name is not None:
+                param_names[id(new_p)] = name
+    # QKANMuon caches per-group (muon, adamw) partitions of the old
+    # Parameter objects; drop the cache so it rebuilds on the next step.
+    partition_cache = getattr(optimizer, "_partition_cache", None)
+    if isinstance(partition_cache, dict):
+        partition_cache.clear()
 
 
 def make_graphed_train_step(

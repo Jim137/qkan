@@ -38,6 +38,7 @@ import torch.nn.functional as F
 from tqdm import tqdm  # type: ignore
 
 from .info import get_dist_info, print0, print_version
+from .optim.lbfgs import LBFGSFinisher
 from .qkan_epilogue import QKANEpilogue, qkan_epilogue_forward
 from .solver import get_registry, get_solver, make_base_activation, qml_solver
 
@@ -333,6 +334,11 @@ class QKANLayer(nn.Module):
             torch.zeros(*oi_shape, device=device, dtype=p_dtype),
             requires_grad=self.postact_bias_trainable,
         )
+        # Track whether a *frozen* postact_bias holds nonzero values (e.g.
+        # loaded from a checkpoint trained with postact_bias_trainable=True)
+        # so the bias-skip fast paths can't drop stored values. Refreshed on
+        # checkpoint load and by ``reset_parameters``.
+        self._pb_is_nonzero: bool = False
 
         # -- mask --
         self.mask = nn.Parameter(
@@ -341,7 +347,8 @@ class QKANLayer(nn.Module):
         )
         # Track whether mask is still the all-ones identity so the forward
         # hot path can skip the `* mask` multiplies. Flipped to False by
-        # ``prune_edge`` / ``reset_parameters`` restores it to True.
+        # ``prune_edge``; ``reset_parameters`` restores it to True and
+        # checkpoint loads recompute it from the loaded tensor.
         self._mask_is_identity: bool = True
 
         # -- batchnorm --
@@ -539,6 +546,12 @@ class QKANLayer(nn.Module):
             unexpected_keys,
             error_msgs,
         )
+        # The checkpoint may carry a pruned (non-identity) mask or a nonzero
+        # frozen bias — recompute the fast-path flags so the forward routes
+        # don't silently skip the `* mask` / `+ postact_bias` terms.
+        with torch.no_grad():
+            self._mask_is_identity = bool((self.mask == 1).all())
+            self._pb_is_nonzero = bool(self.postact_bias.data.any())
 
     def to(self, *args, **kwargs):
         """
@@ -556,6 +569,8 @@ class QKANLayer(nn.Module):
                 break
             elif isinstance(arg, torch.dtype):
                 self.p_dtype = arg
+        if isinstance(kwargs.get("dtype"), torch.dtype):
+            self.p_dtype = kwargs["dtype"]
         if "device" in kwargs:
             device = kwargs["device"]
         if device:
@@ -566,6 +581,9 @@ class QKANLayer(nn.Module):
         # Param storage may have moved — rebuild cached views over the new
         # storage. No-op under p_dim=4.
         self._init_view_caches()
+        # p_dtype may have changed — refresh the cached dtype-cast flag so
+        # solver outputs are cast to the live parameter dtype.
+        self._needs_dtype_cast = self.c_dtype != self.p_dtype
         return ret
 
     def train(self, mode: bool = True):
@@ -596,7 +614,7 @@ class QKANLayer(nn.Module):
                     m_2d = self._as_oi(self.mask)
                     self._eff_pw = pw_2d * m_2d
                     self._eff_base_w = bw_2d * m_2d
-                if self.postact_bias_trainable:
+                if self.postact_bias_trainable or self._pb_is_nonzero:
                     pb_2d = self._as_oi(self.postact_bias)
                     self._bias_sum = (pb_2d * self._eff_pw).sum(dim=1)
                 else:
@@ -649,7 +667,8 @@ class QKANLayer(nn.Module):
             fn = self.solver
         self._solver_fn: Optional[Callable] = fn
         # Cast is a no-op when dtypes match — skip the `.to()` Python call.
-        self._needs_dtype_cast: bool = self.c_dtype != self.p_dtype
+        # (Also refreshed by ``to()`` when a dtype move changes p_dtype.)
+        self._needs_dtype_cast = self.c_dtype != self.p_dtype
 
     def _run_solver(
         self,
@@ -754,10 +773,11 @@ class QKANLayer(nn.Module):
         # kernel and keeps the two matmul-shaped gradients on cuBLAS (~4
         # launches vs ~7 eager dispatches).
 
+        use_pb = self.postact_bias_trainable or self._pb_is_nonzero
         if self._use_fused_epilogue and postacts.is_cuda:
-            pb = self._pb_oi if self.postact_bias_trainable else None
+            pb = self._pb_oi if use_pb else None
             return QKANEpilogue.apply(postacts, eff_pw, pb, base_input, base_w)
-        if self.postact_bias_trainable:
+        if use_pb:
             main = torch.sum((postacts + self._pb_oi) * eff_pw, dim=2)
         else:
             main = (postacts * eff_pw).sum(dim=2)
@@ -802,6 +822,7 @@ class QKANLayer(nn.Module):
 
         self.postact_weights.data.fill_(1)
         self.postact_bias.data.zero_()
+        self._pb_is_nonzero = False
 
         self.mask.data.fill_(1)
         self._mask_is_identity = True
@@ -1206,6 +1227,8 @@ class QKAN(nn.Module):
                 break
             elif isinstance(arg, torch.dtype):
                 self.p_dtype = arg
+        if isinstance(kwargs.get("dtype"), torch.dtype):
+            self.p_dtype = kwargs["dtype"]
         if "device" in kwargs:
             device = kwargs["device"]
         if device:
@@ -1704,8 +1727,9 @@ class QKAN(nn.Module):
             prune_every : int
                 If > 0, every ``prune_every`` steps, set ``mask[o,i]=0``
                 wherever ``theta[o,i].abs().sum() < prune_threshold`` and
-                flip ``_mask_is_identity=False`` on affected layers. Default
-                0 (no auto-pruning).
+                flip ``_mask_is_identity=False`` on affected layers. Layers
+                with grouped (shared) theta are skipped — no per-edge
+                magnitude exists. Default 0 (no auto-pruning).
             prune_threshold : float
                 Threshold for the per-edge theta-magnitude check used by
                 ``prune_every``. Default 1e-3.
@@ -1786,7 +1810,9 @@ class QKAN(nn.Module):
             _clip_theta_grads()
             return objective
 
-        if closure is None and isinstance(optimizer, torch.optim.LBFGS):
+        if closure is None and isinstance(
+            optimizer, (torch.optim.LBFGS, LBFGSFinisher)
+        ):
             closure = _closure
 
         for _ in pbar:
@@ -1798,7 +1824,7 @@ class QKAN(nn.Module):
                 dataset["test_input"].shape[0], batch_size_test, replace=False
             )
 
-            if isinstance(optimizer, torch.optim.LBFGS):
+            if isinstance(optimizer, (torch.optim.LBFGS, LBFGSFinisher)):
                 optimizer.step(closure)
             else:
                 optimizer.zero_grad()
@@ -1835,6 +1861,10 @@ class QKAN(nn.Module):
                         if not bool(kill.any()):
                             continue
                         mask_2d = layer._as_oi(layer.mask).data
+                        if kill.numel() != mask_2d.numel():
+                            # Grouped theta (group != -1) is shared across
+                            # edges — no per-edge magnitude exists; skip.
+                            continue
                         if kill.shape != mask_2d.shape:
                             kill = kill.reshape(mask_2d.shape)
                         mask_2d[kill] = 0.0

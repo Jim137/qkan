@@ -70,7 +70,7 @@ To use the CuTe DSL solver (`solver="cute"`) with pre-built CUDA kernels:
 ```bash
 # Pre-built wheel (recommended — no compilation needed). Pick the CUDA
 # family matching the torch you already have installed:
-pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/cu12/
+pip install qkan[cute-cu12] --extra-index-url https://qkan.jimq.cc/whl/cu12/
 # or, for CUDA 13:
 pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/cu13/
 

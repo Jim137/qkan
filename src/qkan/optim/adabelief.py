@@ -79,7 +79,11 @@ def adabelief_step_(
     """
     if wd != 0.0:
         p.mul_(1.0 - lr * wd)
-    m.lerp_(g, 1.0 - b1)
+    # lerp_ requires matching dtypes; when the state dtype differs from the
+    # grad (e.g. TritonAdaBelief's eager fallback with bf16 state and fp32
+    # params, or the reverse), cast g for the EMA update.
+    g_for_m = g.to(m.dtype) if g.dtype != m.dtype else g
+    m.lerp_(g_for_m, 1.0 - b1)
     resid = g - m
     s.mul_(b2).addcmul_(resid, resid, value=1.0 - b2)
     denom = s.sqrt().add_(eps * sqrt_bc2)

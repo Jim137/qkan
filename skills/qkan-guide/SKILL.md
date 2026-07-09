@@ -118,7 +118,8 @@ Instructions
   `pip install qkan[flash,cutile,cutn-cu12,cute-cu12]`.
 - The CuTe solver ships pre-built wheels per CUDA family:
   `pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/cu13/`
-  (or `.../whl/cu12/`). Compiling locally instead requires a CUDA toolkit
+  (CUDA 12: `qkan[cute-cu12]` + `.../whl/cu12/` — the bare `cute` extra
+  aliases the cu13 runtime wheels). Compiling locally instead requires a CUDA toolkit
   matching torch: `pip install --no-build-isolation qkan[cute]` — CUTLASS
   headers are auto-downloaded when absent (env knobs: `CUTLASS_PATH`,
   `QKAN_CUDA_ARCHS="80;90;120"`, `QKAN_FORCE_BUILD=TRUE`,
