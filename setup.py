@@ -448,9 +448,9 @@ if BUILD_CUTE:
         CUDAExtension(
             name="qkan._C",
             sources=[
-                "csrc/cute_kernels.cu",
-                "csrc/cute_activations.cu",
-                "csrc/cute_linear.cu",
+                "src/qkan/csrc/cute_kernels.cu",
+                "src/qkan/csrc/cute_activations.cu",
+                "src/qkan/csrc/cute_linear.cu",
             ],
             extra_compile_args={
                 "cxx": ["-O3", "-std=c++17"],

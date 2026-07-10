@@ -131,5 +131,11 @@ Homepage = "https://github.com/Jim137/qkan"
 # __version__ string into wheel metadata, causing pip to reject wheels with
 # local-tagged filenames.
 
+[tool.setuptools.package-data]
+# Ship the CUDA sources inside the package: the runtime GPU-compatibility
+# guard in solver/cute/cute_ops.py JIT-rebuilds from them when the prebuilt
+# kernel does not match the local GPU — including from installed wheels.
+qkan = ["csrc/*.cu"]
+
 [tool.ruff]
 lint.select = ["F", "I"]

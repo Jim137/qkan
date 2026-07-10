@@ -17,7 +17,7 @@
 Each backend mirrors ``torch.nn.Linear`` (init, bias handling, leading-dim
 preservation) but routes the matmul through a backend-matched kernel:
 
-- :class:`CuTeLinear`   — cuTe DSL CUDA kernel (``csrc/cute_linear.cu``)
+- :class:`CuTeLinear`   — cuTe DSL CUDA kernel (``src/qkan/csrc/cute_linear.cu``)
 - :class:`TritonLinear` — Triton kernel (``triton_linear.py``)
 - :class:`CuTileLinear` — cuTile kernel (``cutile_linear.py``)
 - :class:`Fp8Linear`    — cuBLASLt fp8 GEMM (Hopper / Blackwell only)

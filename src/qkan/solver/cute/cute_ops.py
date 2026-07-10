@@ -91,7 +91,10 @@ def _load_jit():
 
     from torch.utils.cpp_extension import load
 
-    csrc_dir = pathlib.Path(__file__).resolve().parents[4] / "csrc"
+    # The .cu sources ship inside the package (src/qkan/csrc, included in
+    # wheels via package-data), so the JIT rebuild works from installed
+    # packages as well as source checkouts.
+    csrc_dir = pathlib.Path(__file__).resolve().parents[2] / "csrc"
     sources = [
         str(csrc_dir / "cute_kernels.cu"),
         str(csrc_dir / "cute_activations.cu"),
@@ -374,7 +377,7 @@ def cute_real_backward(
 # Pointwise activation kernels (used by QKANLayer's base path)
 # ---------------------------------------------------------------------------
 
-# Must match the ActKind enum in csrc/cute_activations.cu.
+# Must match the ActKind enum in src/qkan/csrc/cute_activations.cu.
 _ACTIVATION_KIND_MAP: dict[str, int] = {
     "silu": 0,
     "gelu_exact": 1,

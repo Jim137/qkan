@@ -14,7 +14,7 @@
 
 """nn.Linear drop-in for QKAN's CuTe solver family.
 
-The forward in ``csrc/cute_linear.cu`` deliberately delegates to
+The forward in ``src/qkan/csrc/cute_linear.cu`` deliberately delegates to
 ``at::addmm`` / ``at::matmul`` (cuBLAS) rather than reimplementing a tuned
 bf16/f32 GEMM with MMA atoms.  That means the cuTe kernel wrapper offers
 zero kernel-level benefit over ``torch.nn.functional.linear`` — and on tiny
