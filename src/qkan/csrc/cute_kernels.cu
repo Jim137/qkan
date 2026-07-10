@@ -23,6 +23,9 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAException.h>
+
+#include <limits>
 
 #include <cute/tensor.hpp>
 #include <cutlass/float8.h>
@@ -44,10 +47,12 @@ static constexpr float INV_SQRT2 = 0.7071067811865476f;
 // Row-major layout macros (CuTe defaults to column-major / LayoutLeft).
 // PyTorch tensors are contiguous in the LAST dimension, so we must
 // provide explicit strides matching C order.
+// The leading stride is int64_t: batch-scaled offsets (b * out_dim * in_dim)
+// exceed 2^31 at realistic sizes and would wrap negative in int32.
 #define ROWMAJOR2(d0, d1) \
-    make_layout(make_shape((d0), (d1)), make_stride((d1), 1))
+    make_layout(make_shape((d0), (d1)), make_stride((int64_t)(d1), 1))
 #define ROWMAJOR3(d0, d1, d2) \
-    make_layout(make_shape((d0), (d1), (d2)), make_stride((d1)*(d2), (d2), 1))
+    make_layout(make_shape((d0), (d1), (d2)), make_stride((int64_t)(d1)*(d2), (d2), 1))
 
 __device__ __forceinline__ float warp_reduce_sum(float val) {
     #pragma unroll
@@ -278,7 +283,9 @@ __global__ void cute_pz_bwd_kernel(
     // ── State buffer: (n_programs, n_states, 4, BLOCK_B) with StateT elements ──
     int n_states = 3 * reps + 3;
     int n_b_blocks = (batch_size + BLOCK_B - 1) / BLOCK_B;
-    int program_idx = pid_oi * n_b_blocks + pid_b;
+    // int64: the states buffer holds batch*out*in-scaled element counts, so
+    // program base offsets pass 2^31 at a few thousand rows for 128x128.
+    int64_t program_idx = (int64_t)pid_oi * n_b_blocks + pid_b;
     int state_stride_n = n_states * 4 * BLOCK_B;
     int state_stride_s = 4 * BLOCK_B;
     int state_stride_c = BLOCK_B;
@@ -499,8 +506,11 @@ __global__ void cute_pz_bwd_kernel(
     }
 
     // grad_x: atomic because multiple (o,i) programs accumulate to the same x element
-    if (valid && grad_x_local != 0.0f)
-        atomicAdd(&grad_x_ptr[b * in_dim + idx_i], grad_x_local);
+    if (valid && grad_x_local != 0.0f) {
+        auto gGradX = make_tensor(make_gmem_ptr(grad_x_ptr),
+                        ROWMAJOR2(batch_size, in_dim));
+        atomicAdd(&gGradX(b, idx_i), grad_x_local);
+    }
 
     #undef STATE_ADDR
     #undef SAVE_STATE
@@ -653,7 +663,7 @@ __global__ void cute_rpz_bwd_kernel(
 
     int n_states = 2 * reps + 2;
     int n_b_blocks = (batch_size + BLOCK_B - 1) / BLOCK_B;
-    int program_idx = pid_oi * n_b_blocks + pid_b;
+    int64_t program_idx = (int64_t)pid_oi * n_b_blocks + pid_b;
     StateT* my_states = states_ptr + program_idx * n_states * 4 * BLOCK_B;
     int state_stride_s = 4 * BLOCK_B, state_stride_c = BLOCK_B;
 
@@ -764,8 +774,11 @@ __global__ void cute_rpz_bwd_kernel(
         }
     }
 
-    if (valid && grad_x_local != 0.0f)
-        atomicAdd(&grad_x_ptr[b * in_dim + idx_i], grad_x_local);
+    if (valid && grad_x_local != 0.0f) {
+        auto gGradX = make_tensor(make_gmem_ptr(grad_x_ptr),
+                        ROWMAJOR2(batch_size, in_dim));
+        atomicAdd(&gGradX(b, idx_i), grad_x_local);
+    }
 
     #undef STATE_ADDR
     #undef SAVE_STATE
@@ -925,7 +938,7 @@ __global__ void cute_real_bwd_kernel(
 
     int n_states = 3 * reps + 1;
     int n_b_blocks = (batch_size + BLOCK_B - 1) / BLOCK_B;
-    int program_idx = pid_oi * n_b_blocks + pid_b;
+    int64_t program_idx = (int64_t)pid_oi * n_b_blocks + pid_b;
     // n_components = 2 for bf16 path, 4 for full complex
     StateT* my_states = states_ptr + program_idx * n_states * n_components * BLOCK_B;
     int state_stride_s = n_components * BLOCK_B;
@@ -1143,8 +1156,11 @@ __global__ void cute_real_bwd_kernel(
         #undef LOAD4
     }
 
-    if (valid && grad_x_local != 0.0f)
-        atomicAdd(&grad_x_ptr[b * in_dim + idx_i], grad_x_local);
+    if (valid && grad_x_local != 0.0f) {
+        auto gGradX = make_tensor(make_gmem_ptr(grad_x_ptr),
+                        ROWMAJOR2(batch_size, in_dim));
+        atomicAdd(&gGradX(b, idx_i), grad_x_local);
+    }
 
     #undef STATE_ADDR
 }
@@ -1178,6 +1194,7 @@ static int select_block_b(int n_oi, int batch, int base = 32) {
             case 256: KERNEL<IOT_TYPE, 256><<<grid, 256, smem, stream>>>(__VA_ARGS__); break; \
             default:  KERNEL<IOT_TYPE, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
         } \
+        C10_CUDA_KERNEL_LAUNCH_CHECK(); \
     } while(0)
 
 // Backward kernels: template<typename StateT, int BLOCK_B>
@@ -1191,6 +1208,7 @@ static int select_block_b(int n_oi, int batch, int base = 32) {
             case 256: KERNEL<STATE_T, 256><<<grid, 256, smem, stream>>>(__VA_ARGS__); break; \
             default:  KERNEL<STATE_T, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
         } \
+        C10_CUDA_KERNEL_LAUNCH_CHECK(); \
     } while(0)
 
 // ====================================================================
@@ -1204,6 +1222,36 @@ static inline torch::Tensor prep(torch::Tensor t, torch::ScalarType dtype) {
     return t;
 }
 
+/// The kernels keep parameter-tensor offsets and the out*in program count in
+/// int32 (only batch-scaled offsets are widened to 64-bit in the views), so
+/// sizes past int32 must fail loudly here instead of corrupting memory.
+static inline void check_int32_sizes(
+    const torch::Tensor& x, const torch::Tensor& theta, const torch::Tensor& pw)
+{
+    constexpr int64_t kIntMax = std::numeric_limits<int>::max();
+    TORCH_CHECK(theta.numel() <= kIntMax,
+        "CuTe solver: theta has ", theta.numel(), " elements, exceeds int32 range");
+    TORCH_CHECK(pw.numel() <= kIntMax,
+        "CuTe solver: preacts have ", pw.numel(), " elements, exceeds int32 range");
+    // The numel checks are vacuous for zero-element params (reps == 0), so
+    // bound the n_oi = out_dim * in_dim program count directly.
+    TORCH_CHECK(theta.size(0) * x.size(1) <= kIntMax,
+        "CuTe solver: out_dim * in_dim = ", theta.size(0) * x.size(1),
+        " exceeds int32 range");
+}
+
+/// Ceil-div of batch into grid.y blocks, in 64-bit on the untruncated
+/// x.size(0): grid.y is capped at 65535 by CUDA, and without this check an
+/// oversized batch fails the launch with a cryptic error (or wraps int32
+/// batch arithmetic first).
+static inline int checked_n_b_blocks(int64_t batch, int block_b) {
+    int64_t n_b_blk = (batch + block_b - 1) / block_b;
+    TORCH_CHECK(n_b_blk <= 65535,
+        "CuTe solver: batch size ", batch, " needs ", n_b_blk,
+        " grid.y blocks (CUDA max 65535); split the batch into chunks");
+    return (int)n_b_blk;
+}
+
 // ====================================================================
 // Python-facing launchers
 // ====================================================================
@@ -1213,6 +1261,7 @@ torch::Tensor cute_pz_forward(
     torch::Tensor pw, torch::Tensor pb,
     bool preacts_trainable, bool fast_measure, bool use_bf16)
 {
+    check_int32_sizes(x, theta, pw);
     int batch   = x.size(0);
     int in_dim  = x.size(1);
     int out_dim = theta.size(0);
@@ -1228,7 +1277,8 @@ torch::Tensor cute_pz_forward(
         torch::TensorOptions().device(x.device()).dtype(io_dtype));
     int n_oi = out_dim * in_dim;
     int block_b = select_block_b(n_oi, batch);
-    dim3 grid(n_oi, (batch + block_b - 1) / block_b);
+    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
+    dim3 grid(n_oi, n_b_blk);
     int smem = (reps + 1) * 2 * 2 * sizeof(float);
 
     if (use_bf16) {
@@ -1259,6 +1309,7 @@ std::vector<torch::Tensor> cute_pz_backward(
     bool preacts_trainable, bool fast_measure, int state_bits)
 {
     // state_bits: 32 = f32 states, 8 = fp8 prescaled, 4 = fp4 prescaled (experimental)
+    check_int32_sizes(x, theta, pw);
     int batch   = x.size(0);
     int in_dim  = x.size(1);
     int out_dim = theta.size(0);
@@ -1272,8 +1323,9 @@ std::vector<torch::Tensor> cute_pz_backward(
 
     int n_oi    = out_dim * in_dim;
     int block_b = select_block_b(n_oi, batch);
-    int n_b_blk = (batch + block_b - 1) / block_b;
-    int n_prog  = n_oi * n_b_blk;
+    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
+    // int64: the product overflows int at large batch although both factors fit.
+    int64_t n_prog = (int64_t)n_oi * n_b_blk;
     int n_states = 3 * reps + 3;
 
     // State dtype & prescale selection
@@ -1347,6 +1399,7 @@ torch::Tensor cute_rpz_forward(
     torch::Tensor pw, torch::Tensor pb,
     bool fast_measure, bool use_bf16)
 {
+    check_int32_sizes(x, theta, pw);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2) - 1;
 
@@ -1360,7 +1413,8 @@ torch::Tensor cute_rpz_forward(
         torch::TensorOptions().device(x.device()).dtype(io_dtype));
     int n_oi = out_dim * in_dim;
     int block_b = select_block_b(n_oi, batch);
-    dim3 grid(n_oi, (batch + block_b - 1) / block_b);
+    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
+    dim3 grid(n_oi, n_b_blk);
     int smem = (reps + 1) * 2 * sizeof(float);
 
     if (use_bf16) {
@@ -1388,6 +1442,7 @@ std::vector<torch::Tensor> cute_rpz_backward(
     torch::Tensor grad_output,
     bool fast_measure, int state_bits)
 {
+    check_int32_sizes(x, theta, pw);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2) - 1;
 
@@ -1399,8 +1454,8 @@ std::vector<torch::Tensor> cute_rpz_backward(
 
     int n_oi = out_dim * in_dim;
     int block_b = select_block_b(n_oi, batch);
-    int n_b_blk = (batch + block_b - 1) / block_b;
-    int n_prog = n_oi * n_b_blk;
+    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
+    int64_t n_prog = (int64_t)n_oi * n_b_blk;
     int n_states = 2 * reps + 2;
 
     auto dev_opts = torch::TensorOptions().device(x.device());
@@ -1464,6 +1519,7 @@ torch::Tensor cute_real_forward(
     bool preacts_trainable, bool fast_measure, bool compute_bf16,
     bool use_bf16)
 {
+    check_int32_sizes(x, theta, pw);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2);
 
@@ -1477,7 +1533,8 @@ torch::Tensor cute_real_forward(
         torch::TensorOptions().device(x.device()).dtype(io_dtype));
     int n_oi = out_dim * in_dim;
     int block_b = select_block_b(n_oi, batch, compute_bf16 ? 32 : 32);
-    dim3 grid(n_oi, (batch + block_b - 1) / block_b);
+    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
+    dim3 grid(n_oi, n_b_blk);
     int smem = reps * 2 * sizeof(float);
 
     if (use_bf16) {
@@ -1508,6 +1565,7 @@ std::vector<torch::Tensor> cute_real_backward(
     bool preacts_trainable, bool fast_measure, bool compute_bf16,
     int state_bits)
 {
+    check_int32_sizes(x, theta, pw);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2);
 
@@ -1519,8 +1577,8 @@ std::vector<torch::Tensor> cute_real_backward(
 
     int n_oi = out_dim * in_dim;
     int block_b = select_block_b(n_oi, batch, compute_bf16 ? 32 : 32);
-    int n_b_blk = (batch + block_b - 1) / block_b;
-    int n_prog = n_oi * n_b_blk;
+    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
+    int64_t n_prog = (int64_t)n_oi * n_b_blk;
     int n_states = 3 * reps + 1;
     int n_components = compute_bf16 ? 2 : 4;
 

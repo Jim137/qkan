@@ -24,6 +24,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAException.h>
 
 #include <cute/tensor.hpp>
 
@@ -172,15 +173,19 @@ __device__ __forceinline__ float act_bwd(float x, float gy) {
 // 8 bf16 or 4 f32 elements per thread — to saturate HBM bandwidth on the
 // large-tensor case. A scalar tail kernel handles the remainder.
 
+// Element counts and thread indices are int64_t throughout: tensors past
+// 2^31 elements are reachable (batch tokens x d_model), and int32 truncation
+// here silently skipped the launch, returning uninitialized memory.
+
 template <typename IOT, ActKind KIND>
 __global__ void cute_act_fwd_kernel_vec(
     const IOT* __restrict__ x_ptr,
     IOT* __restrict__ y_ptr,
-    int n_vec)
+    int64_t n_vec)
 {
     // n_vec = floor(n / VEC); each thread handles one VEC-wide chunk.
     constexpr int VEC = vec_traits<IOT>::VEC;
-    int idx = blockIdx.x * BLOCK_B + threadIdx.x;
+    int64_t idx = (int64_t)blockIdx.x * BLOCK_B + threadIdx.x;
     if (idx >= n_vec) return;
 
     // 128-bit aligned load (PyTorch CUDA allocations are 256-byte aligned).
@@ -202,9 +207,9 @@ template <typename IOT, ActKind KIND>
 __global__ void cute_act_fwd_kernel_tail(
     const IOT* __restrict__ x_ptr,
     IOT* __restrict__ y_ptr,
-    int n_start, int n)
+    int64_t n_start, int64_t n)
 {
-    int idx = n_start + blockIdx.x * BLOCK_B + threadIdx.x;
+    int64_t idx = n_start + (int64_t)blockIdx.x * BLOCK_B + threadIdx.x;
     if (idx >= n) return;
     y_ptr[idx] = IOT(act_fwd<KIND>(float(x_ptr[idx])));
 }
@@ -214,10 +219,10 @@ __global__ void cute_act_bwd_kernel_vec(
     const IOT* __restrict__ x_ptr,
     const IOT* __restrict__ grad_y_ptr,
     IOT* __restrict__ grad_x_ptr,
-    int n_vec)
+    int64_t n_vec)
 {
     constexpr int VEC = vec_traits<IOT>::VEC;
-    int idx = blockIdx.x * BLOCK_B + threadIdx.x;
+    int64_t idx = (int64_t)blockIdx.x * BLOCK_B + threadIdx.x;
     if (idx >= n_vec) return;
 
     const int4* xv4  = reinterpret_cast<const int4*>(x_ptr)      + idx;
@@ -241,9 +246,9 @@ __global__ void cute_act_bwd_kernel_tail(
     const IOT* __restrict__ x_ptr,
     const IOT* __restrict__ grad_y_ptr,
     IOT* __restrict__ grad_x_ptr,
-    int n_start, int n)
+    int64_t n_start, int64_t n)
 {
-    int idx = n_start + blockIdx.x * BLOCK_B + threadIdx.x;
+    int64_t idx = n_start + (int64_t)blockIdx.x * BLOCK_B + threadIdx.x;
     if (idx >= n) return;
     grad_x_ptr[idx] = IOT(act_bwd<KIND>(float(x_ptr[idx]), float(grad_y_ptr[idx])));
 }
@@ -270,6 +275,7 @@ __global__ void cute_act_bwd_kernel_tail(
             case ActKind::Sigmoid: \
                 KERNEL<IOT, ActKind::Sigmoid>  <<<grid, BLOCK_B, 0, stream>>>(__VA_ARGS__); break; \
         } \
+        C10_CUDA_KERNEL_LAUNCH_CHECK(); \
     } while (0)
 
 static inline ActKind to_act_kind(int kind_int) {
@@ -292,34 +298,34 @@ static inline ActKind to_act_kind(int kind_int) {
 // Launch vec kernel for the aligned prefix and a scalar tail kernel for the
 // remainder (if any). Both kernels are no-ops when their grid is 0.
 template <typename IOT>
-static inline void launch_fwd(ActKind kind, const IOT* x, IOT* y, int n,
+static inline void launch_fwd(ActKind kind, const IOT* x, IOT* y, int64_t n,
                               cudaStream_t stream) {
     constexpr int VEC = vec_traits<IOT>::VEC;
-    int n_vec = n / VEC;
-    int n_aligned = n_vec * VEC;
+    int64_t n_vec = n / VEC;
+    int64_t n_aligned = n_vec * VEC;
     if (n_vec > 0) {
-        dim3 grid((n_vec + BLOCK_B - 1) / BLOCK_B);
+        dim3 grid(static_cast<unsigned int>((n_vec + BLOCK_B - 1) / BLOCK_B));
         DISPATCH_KIND(kind, IOT, cute_act_fwd_kernel_vec, grid, n_vec, x, y, n_vec);
     }
     if (n_aligned < n) {
-        dim3 grid((n - n_aligned + BLOCK_B - 1) / BLOCK_B);
+        dim3 grid(static_cast<unsigned int>((n - n_aligned + BLOCK_B - 1) / BLOCK_B));
         DISPATCH_KIND(kind, IOT, cute_act_fwd_kernel_tail, grid, n, x, y, n_aligned, n);
     }
 }
 
 template <typename IOT>
 static inline void launch_bwd(ActKind kind, const IOT* x, const IOT* gy,
-                              IOT* gx, int n, cudaStream_t stream) {
+                              IOT* gx, int64_t n, cudaStream_t stream) {
     constexpr int VEC = vec_traits<IOT>::VEC;
-    int n_vec = n / VEC;
-    int n_aligned = n_vec * VEC;
+    int64_t n_vec = n / VEC;
+    int64_t n_aligned = n_vec * VEC;
     if (n_vec > 0) {
-        dim3 grid((n_vec + BLOCK_B - 1) / BLOCK_B);
+        dim3 grid(static_cast<unsigned int>((n_vec + BLOCK_B - 1) / BLOCK_B));
         DISPATCH_KIND(kind, IOT, cute_act_bwd_kernel_vec, grid, n_vec,
                       x, gy, gx, n_vec);
     }
     if (n_aligned < n) {
-        dim3 grid((n - n_aligned + BLOCK_B - 1) / BLOCK_B);
+        dim3 grid(static_cast<unsigned int>((n - n_aligned + BLOCK_B - 1) / BLOCK_B));
         DISPATCH_KIND(kind, IOT, cute_act_bwd_kernel_tail, grid, n,
                       x, gy, gx, n_aligned, n);
     }
@@ -328,7 +334,7 @@ static inline void launch_bwd(ActKind kind, const IOT* x, const IOT* gy,
 torch::Tensor cute_activation_forward(torch::Tensor x, int kind_int) {
     TORCH_CHECK(x.is_cuda(), "x must be CUDA");
     auto x_c = x.is_contiguous() ? x : x.contiguous();
-    int n = static_cast<int>(x_c.numel());
+    int64_t n = x_c.numel();
     auto y = torch::empty_like(x_c);
     if (n == 0) return y;
 
@@ -356,7 +362,7 @@ torch::Tensor cute_activation_backward(torch::Tensor grad_y, torch::Tensor x, in
                 "x and grad_y must have the same dtype");
     auto x_c  = x.is_contiguous() ? x : x.contiguous();
     auto gy_c = grad_y.is_contiguous() ? grad_y : grad_y.contiguous();
-    int n = static_cast<int>(x_c.numel());
+    int64_t n = x_c.numel();
     auto gx = torch::empty_like(x_c);
     if (n == 0) return gx;
 
