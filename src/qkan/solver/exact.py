@@ -14,8 +14,10 @@
 
 
 import torch
+from torch.utils.checkpoint import checkpoint
 
 from ..torch_qc import StateVector, TorchGates
+from ._base import QKANSolver, register
 
 
 def torch_exact_solver(
@@ -58,6 +60,10 @@ def torch_exact_solver(
     fast_measure = kwargs.get("fast_measure", True)
     out_dim: int = kwargs.get("out_dim", in_dim)
     dtype = kwargs.get("dtype", torch.complex64)
+    # Opt-in activation checkpointing: recompute per-rep state in backward
+    # instead of storing it. Trades ~1 extra forward pass for reps× less
+    # rep-state memory. Only meaningful when grad is required.
+    checkpoint_reps = kwargs.get("checkpoint_reps", False) and torch.is_grad_enabled()
 
     if len(theta.shape) != 4:
         theta = theta.unsqueeze(0)
@@ -98,17 +104,30 @@ def torch_exact_solver(
         psi.h()
         if not preacts_trainable:
             rug = TorchGates.rz_gate(x, dtype=dtype)
-        for l in range(reps):
-            psi.rz(theta[:, :, l, 0])
-            psi.ry(theta[:, :, l, 1])
+
+        def _step(state, th0, th1, data_gate):
+            psi.state = state
+            psi.rz(th0)
+            psi.ry(th1)
             if not preacts_trainable:
-                psi.state = torch.einsum("mnbi,boin->boim", rug, psi.state)
+                psi.state = torch.einsum("mnbi,boin->boim", data_gate, psi.state)
             else:
-                psi.state = torch.einsum(
-                    "mnboi,boin->boim",
-                    TorchGates.rz_gate(encoded_x[:, :, :, l], dtype=dtype),
-                    psi.state,
+                psi.state = torch.einsum("mnboi,boin->boim", data_gate, psi.state)
+            return psi.state
+
+        for l in range(reps):
+            th0 = theta[:, :, l, 0]
+            th1 = theta[:, :, l, 1]
+            if preacts_trainable:
+                data_gate = TorchGates.rz_gate(encoded_x[:, :, :, l], dtype=dtype)
+            else:
+                data_gate = rug
+            if checkpoint_reps:
+                psi.state = checkpoint(
+                    _step, psi.state, th0, th1, data_gate, use_reentrant=False
                 )
+            else:
+                psi.state = _step(psi.state, th0, th1, data_gate)
 
         psi.rz(theta[:, :, reps, 0])
         psi.ry(theta[:, :, reps, 1])
@@ -129,13 +148,22 @@ def torch_exact_solver(
             dtype=dtype,
         )
         psi.h()
+
+        def _step(state, th0, data_gate):
+            psi.state = state
+            psi.ry(th0)
+            psi.state = torch.einsum("mnboi,boin->boim", data_gate, psi.state)
+            return psi.state
+
         for l in range(reps):
-            psi.ry(theta[:, :, l, 0])
-            psi.state = torch.einsum(
-                "mnboi,boin->boim",
-                TorchGates.rz_gate(encoded_x[:, :, :, l], dtype=dtype),
-                psi.state,
-            )
+            th0 = theta[:, :, l, 0]
+            data_gate = TorchGates.rz_gate(encoded_x[:, :, :, l], dtype=dtype)
+            if checkpoint_reps:
+                psi.state = checkpoint(
+                    _step, psi.state, th0, data_gate, use_reentrant=False
+                )
+            else:
+                psi.state = _step(psi.state, th0, data_gate)
         psi.ry(theta[:, :, reps, 0])
         return psi.measure_z(fast_measure)  # shape: (batch_size, out_dim, in_dim)
 
@@ -154,21 +182,24 @@ def torch_exact_solver(
             dtype=dtype,
         )  # psi.state: torch.Tensor, shape: (batch_size * g, out_dim, n_group, 2)
         psi.h()
+
+        def _step(state, th0, data_gate):
+            psi.state = state
+            psi.rz(th0)
+            psi.state = torch.einsum("mnboi,boin->boim", data_gate, psi.state)
+            return psi.state
+
         for l in range(reps):
-            psi.rz(theta[:, :, l, 0])
-            psi.state = torch.einsum(
-                "mnboi,boin->boim",
-                TorchGates.rx_gate(
-                    torch.acos(
-                        # torch.sin(
-                        encoded_x[:, :, :, l]
-                        # )
-                        # add sin to prevent input from exceeding pm 1
-                    ),
-                    dtype=dtype,
-                ),
-                psi.state,
+            th0 = theta[:, :, l, 0]
+            data_gate = TorchGates.rx_gate(
+                torch.acos(encoded_x[:, :, :, l]), dtype=dtype
             )
+            if checkpoint_reps:
+                psi.state = checkpoint(
+                    _step, psi.state, th0, data_gate, use_reentrant=False
+                )
+            else:
+                psi.state = _step(psi.state, th0, data_gate)
             """
             # complex extension implementation
             psi.state = torch.einsum(
@@ -199,19 +230,30 @@ def torch_exact_solver(
         psi.h()
         if not preacts_trainable:
             rug = TorchGates.ry_gate(x, dtype=dtype)
-        for l in range(reps):
+
+        def _step(state, th0, data_gate):
+            psi.state = state
             psi.x()
-            # psi.z()
-            psi.ry(theta[:, :, l, 0])
+            psi.ry(th0)
             psi.z()
             if not preacts_trainable:
-                psi.state = torch.einsum("mnbi,boin->boim", rug, psi.state)
+                psi.state = torch.einsum("mnbi,boin->boim", data_gate, psi.state)
             else:
-                psi.state = torch.einsum(
-                    "mnboi,boin->boim",
-                    TorchGates.ry_gate(encoded_x[:, :, :, l], dtype=dtype),
-                    psi.state,
+                psi.state = torch.einsum("mnboi,boin->boim", data_gate, psi.state)
+            return psi.state
+
+        for l in range(reps):
+            th0 = theta[:, :, l, 0]
+            if preacts_trainable:
+                data_gate = TorchGates.ry_gate(encoded_x[:, :, :, l], dtype=dtype)
+            else:
+                data_gate = rug
+            if checkpoint_reps:
+                psi.state = checkpoint(
+                    _step, psi.state, th0, data_gate, use_reentrant=False
                 )
+            else:
+                psi.state = _step(psi.state, th0, data_gate)
         return psi.measure_z(fast_measure)  # shape: (batch_size, out_dim, in_dim)
 
     def _mix(theta: torch.Tensor):
@@ -231,17 +273,30 @@ def torch_exact_solver(
         psi.h()
         if not preacts_trainable:
             rug_y = TorchGates.ry_gate(x, dtype=dtype)
-        for l in range(reps):
-            psi.rz(theta[:, :, l, 0])
-            psi.rx(theta[:, :, l, 1])
+
+        def _step(state, th0, th1, data_gate):
+            psi.state = state
+            psi.rz(th0)
+            psi.rx(th1)
             if not preacts_trainable:
-                psi.state = torch.einsum("mnbi,boin->boim", rug_y, psi.state)
+                psi.state = torch.einsum("mnbi,boin->boim", data_gate, psi.state)
             else:
-                psi.state = torch.einsum(
-                    "mnboi,boin->boim",
-                    TorchGates.ry_gate(encoded_x[:, :, :, l], dtype=dtype),
-                    psi.state,
+                psi.state = torch.einsum("mnboi,boin->boim", data_gate, psi.state)
+            return psi.state
+
+        for l in range(reps):
+            th0 = theta[:, :, l, 0]
+            th1 = theta[:, :, l, 1]
+            if preacts_trainable:
+                data_gate = TorchGates.ry_gate(encoded_x[:, :, :, l], dtype=dtype)
+            else:
+                data_gate = rug_y
+            if checkpoint_reps:
+                psi.state = checkpoint(
+                    _step, psi.state, th0, th1, data_gate, use_reentrant=False
                 )
+            else:
+                psi.state = _step(psi.state, th0, th1, data_gate)
         psi.rz(theta[:, :, reps, 0])
         psi.rx(theta[:, :, reps, 1])
         return psi.measure_z(fast_measure)  # shape: (batch_size, out_dim, in_dim)
@@ -262,3 +317,25 @@ def torch_exact_solver(
         raise NotImplementedError()
     x = circuit(theta)  # shape: (batch_size, out_dim, in_dim)
     return x
+
+
+class ExactTorchSolver(QKANSolver):
+    """Pure-PyTorch reference solver (registered as ``"exact"``)."""
+
+    name = "exact"
+
+    def __call__(
+        self,
+        x: torch.Tensor,
+        theta: torch.Tensor,
+        preacts_weight: torch.Tensor,
+        preacts_bias: torch.Tensor,
+        reps: int,
+        **kwargs,
+    ) -> torch.Tensor:
+        return torch_exact_solver(
+            x, theta, preacts_weight, preacts_bias, reps, **kwargs
+        )
+
+
+register(ExactTorchSolver())

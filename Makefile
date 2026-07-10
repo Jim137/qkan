@@ -23,7 +23,7 @@ docs-clean:
 
 clean:
 	rm -rf __pycache__
-	rm -rf tests/__pycache__
+	rm -rf skills/tests/__pycache__
 	rm -rf src/qkan/__pycache__
 	rm -rf build
 	rm -rf dist

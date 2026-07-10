@@ -19,9 +19,11 @@ QKAN solver for real quantum device execution via Qiskit Runtime.
 
 import math
 import warnings
-from typing import Optional
+from typing import Any, Callable, Optional
 
 import torch
+
+from ._base import QKANSolver, register
 
 try:
     from qiskit import QuantumCircuit  # type: ignore
@@ -58,8 +60,22 @@ except ImportError:
 
 from ._mitigation import _apply_mitigation
 
+JobEventCallback = Callable[[dict[str, Any]], None]
 
-def _configure_estimator(rt_estimator, shots, resilience_level, twirling):
+
+class _JobEventCallbackError(RuntimeError):
+    """Raised when a job event cannot be persisted by its callback."""
+
+
+def _configure_estimator(
+    rt_estimator,
+    shots,
+    resilience_level,
+    twirling,
+    *,
+    max_execution_time=None,
+    job_tags=None,
+):
     """Apply shots, resilience, and twirling options to an EstimatorV2."""
     if shots is not None:
         rt_estimator.options.default_shots = shots
@@ -74,6 +90,98 @@ def _configure_estimator(rt_estimator, shots, resilience_level, twirling):
             rt_estimator.options.twirling.num_randomizations = twirling[
                 "num_randomizations"
             ]
+    if max_execution_time is not None:
+        rt_estimator.options.max_execution_time = max_execution_time
+    if job_tags is not None:
+        rt_estimator.options.environment.job_tags = job_tags
+
+
+def _job_event_context(base_context, **updates):
+    """Return a fresh context dict for one Runtime job event."""
+    context = dict(base_context or {})
+    context.update(updates)
+    return context
+
+
+def _emit_job_event(
+    job_event_callback: JobEventCallback | None,
+    job,
+    event: str,
+    context: dict[str, Any] | None = None,
+    error: Exception | None = None,
+):
+    """Emit a serializable submission/finalization event for a primitive job."""
+    if job_event_callback is None:
+        return
+
+    record = _job_event_context(context, event=event, job_id=job.job_id())
+    if error is not None:
+        record["error"] = {
+            "type": type(error).__name__,
+            "message": str(error),
+        }
+
+    if event != "submitted":
+        metrics = None
+        try:
+            metrics = job.metrics()
+            record["metrics"] = metrics
+        except Exception as metadata_error:
+            record["metrics_error"] = {
+                "type": type(metadata_error).__name__,
+                "message": str(metadata_error),
+            }
+
+        usage_seconds = None
+        if isinstance(metrics, dict):
+            usage = metrics.get("usage")
+            if isinstance(usage, dict):
+                usage_seconds = usage.get("quantum_seconds")
+        elif metrics is None:
+            # job.usage() re-fetches the same metrics payload, so only fall
+            # back to it when the metrics fetch itself failed.
+            try:
+                usage_seconds = job.usage()
+            except Exception as usage_error:
+                record["usage_error"] = {
+                    "type": type(usage_error).__name__,
+                    "message": str(usage_error),
+                }
+        record["usage_seconds"] = usage_seconds
+
+    try:
+        job_event_callback(record)
+    except Exception as callback_error:
+        raise _JobEventCallbackError("job event callback failed") from callback_error
+
+
+def _submit_job(
+    est,
+    pubs,
+    *,
+    job_event_callback: JobEventCallback | None = None,
+    context: dict[str, Any] | None = None,
+):
+    """Submit one primitive job and expose its ID before waiting for results."""
+    job = est.run(pubs)
+    _emit_job_event(job_event_callback, job, "submitted", context)
+    return job
+
+
+def _collect_job(
+    job,
+    *,
+    job_event_callback: JobEventCallback | None = None,
+    context: dict[str, Any] | None = None,
+):
+    """Collect one primitive job and expose its final metrics and usage."""
+    try:
+        result = job.result()
+    except Exception as error:
+        _emit_job_event(job_event_callback, job, "failed", context, error)
+        raise
+    _emit_job_event(job_event_callback, job, "completed", context)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +404,14 @@ class _QiskitParamShift(torch.autograd.Function):
         return None, grad_theta, grad_pw, grad_pb, None, None
 
 
-def _probe_max_pubs(est, probe_pubs, max_pubs):
+def _probe_max_pubs(
+    est,
+    probe_pubs,
+    max_pubs,
+    *,
+    job_event_callback: JobEventCallback | None = None,
+    job_context: dict[str, Any] | None = None,
+):
     """
     Binary-search for the largest PUB batch the QPU accepts.
 
@@ -304,12 +419,32 @@ def _probe_max_pubs(est, probe_pubs, max_pubs):
     halves and retries until a working size is found. Returns (result, max_pubs)
     where result is the successful job result for the probe batch.
     """
+    attempt = 1
     while max_pubs >= 1:
         batch = probe_pubs[:max_pubs]
+        context = _job_event_context(
+            job_context,
+            phase="probe",
+            attempt=attempt,
+            pub_start=0,
+            pub_end=max_pubs,
+            pub_count=len(batch),
+        )
         try:
-            job = est.run(batch)
-            result = job.result()
+            job = _submit_job(
+                est,
+                batch,
+                job_event_callback=job_event_callback,
+                context=context,
+            )
+            result = _collect_job(
+                job,
+                job_event_callback=job_event_callback,
+                context=context,
+            )
             return result, max_pubs
+        except _JobEventCallbackError:
+            raise
         except Exception as e:
             err_str = str(e)
             if "6073" in err_str or "memory" in err_str.lower():
@@ -321,12 +456,21 @@ def _probe_max_pubs(est, probe_pubs, max_pubs):
                     f"  [qsolver] Job memory limit hit at {old_max} PUBs/job, "
                     f"trying {max_pubs}"
                 )
+                attempt += 1
             else:
                 raise
     raise RuntimeError("Could not find a working PUB batch size")
 
 
-def _submit_and_collect(est, all_pubs, all_chunk_sizes, max_pubs):
+def _submit_and_collect(
+    est,
+    all_pubs,
+    all_chunk_sizes,
+    max_pubs,
+    *,
+    job_event_callback: JobEventCallback | None = None,
+    job_context: dict[str, Any] | None = None,
+):
     """
     Submit PUBs with the largest batch size the QPU can handle.
 
@@ -340,12 +484,18 @@ def _submit_and_collect(est, all_pubs, all_chunk_sizes, max_pubs):
     n_total = len(all_pubs)
     if max_pubs <= 0:
         max_pubs = n_total
-    expvals = [None] * n_total
+    expvals: list[Optional[list[float]]] = [None] * n_total
 
     # Step 1: Probe with first batch to discover working max_pubs
     first_batch_size = min(max_pubs, n_total)
     first_batch = all_pubs[:first_batch_size]
-    probe_result, max_pubs = _probe_max_pubs(est, first_batch, first_batch_size)
+    probe_result, max_pubs = _probe_max_pubs(
+        est,
+        first_batch,
+        first_batch_size,
+        job_event_callback=job_event_callback,
+        job_context=job_context,
+    )
 
     # Collect probe results (first max_pubs PUBs)
     probed_count = min(max_pubs, n_total)
@@ -356,28 +506,66 @@ def _submit_and_collect(est, all_pubs, all_chunk_sizes, max_pubs):
     # Step 2: Submit remaining batches asynchronously
     remaining_start = probed_count
     if remaining_start < n_total:
-        jobs = []
-        job_ranges = []
+        jobs: list[Any] = []
+        job_ranges: list[tuple[int, int]] = []
+        job_contexts: list[dict[str, Any]] = []
         for batch_start in range(remaining_start, n_total, max_pubs):
             batch_end = min(batch_start + max_pubs, n_total)
             job_pubs = all_pubs[batch_start:batch_end]
-            jobs.append(est.run(job_pubs))
+            context = _job_event_context(
+                job_context,
+                phase="batch",
+                batch_index=len(jobs),
+                pub_start=batch_start,
+                pub_end=batch_end,
+                pub_count=len(job_pubs),
+                logical_circuit_count=sum(all_chunk_sizes[batch_start:batch_end]),
+            )
+            jobs.append(
+                _submit_job(
+                    est,
+                    job_pubs,
+                    job_event_callback=job_event_callback,
+                    context=context,
+                )
+            )
             job_ranges.append((batch_start, batch_end))
+            job_contexts.append(context)
 
         n_jobs = len(jobs)
         print(f"  [qsolver] Submitting {n_jobs} async job(s), {max_pubs} PUBs/job")
 
-        # Collect all async results
-        for job, (batch_start, batch_end) in zip(jobs, job_ranges):
-            result = job.result()
+        # Collect all async results. When accounting is enabled, finalize every
+        # already-submitted job before re-raising the first execution failure.
+        first_job_error: Optional[Exception] = None
+        for job, (batch_start, batch_end), context in zip(
+            jobs, job_ranges, job_contexts
+        ):
+            try:
+                result = _collect_job(
+                    job,
+                    job_event_callback=job_event_callback,
+                    context=context,
+                )
+            except _JobEventCallbackError:
+                raise
+            except Exception as job_error:
+                if job_event_callback is None:
+                    raise
+                if first_job_error is None:
+                    first_job_error = job_error
+                continue
             for i, global_idx in enumerate(range(batch_start, batch_end)):
                 evs = result[i].data.evs
                 expvals[global_idx] = [float(v) for v in evs]
+        if first_job_error is not None:
+            raise first_job_error
 
     # Flatten
-    flat = []
+    flat: list[float] = []
     for ev_list in expvals:
-        flat.extend(ev_list)
+        if ev_list is not None:
+            flat.extend(ev_list)
     return flat, max_pubs
 
 
@@ -385,7 +573,14 @@ def _submit_and_collect(est, all_pubs, all_chunk_sizes, max_pubs):
 _MAX_PUBS_CACHE: dict = {}
 
 
-def best_qubits(backend, n: int) -> list:
+def best_qubits(
+    backend,
+    n: int,
+    *,
+    max_readout_error: float | None = None,
+    qubit_error_threshold: float | None = None,
+    strict: bool = True,
+) -> list[int]:
     """Return the ``n`` best-calibrated qubit indices on ``backend``.
 
     When packing ``n`` independent single-qubit QKAN circuits onto ``n``
@@ -421,15 +616,32 @@ def best_qubits(backend, n: int) -> list:
     ----------
     backend : qiskit Backend
         Backend with a ``properties()`` method (FakeProvider or real IBM).
-        Returns an empty list if the backend exposes no calibration.
+        Returns an empty list if the backend exposes no calibration and
+        no threshold was requested.
     n : int
         Number of qubits to select. Must be a positive integer and must
         not exceed ``backend.num_qubits``.
+    max_readout_error : float, optional
+        Keep only qubits with readout error at or below this value.
+    qubit_error_threshold : float, optional
+        Keep only qubits whose single-qubit ``sx`` gate error is at or
+        below this value; e.g. ``0.001`` means fidelity >= 99.9%.
+    strict : bool
+        When a threshold leaves fewer than ``n`` usable qubits, raise
+        ``ValueError`` if true (default); otherwise return all usable
+        qubits.
 
     Returns
     -------
     list[int]
         Top-``n`` physical qubit indices, sorted by ascending score.
+
+    Raises
+    ------
+    ValueError
+        If ``n`` is out of range, if a requested threshold cannot be
+        enforced because calibration is unavailable, or (with ``strict``)
+        if fewer than ``n`` qubits satisfy the thresholds.
 
     Examples
     --------
@@ -448,11 +660,22 @@ def best_qubits(backend, n: int) -> list:
     """
     if not isinstance(n, int) or n < 1:
         raise ValueError(f"best_qubits: n must be a positive integer, got {n!r}")
+    has_threshold = max_readout_error is not None or qubit_error_threshold is not None
     try:
         props = backend.properties()
-    except Exception:
+    except Exception as exc:
+        if has_threshold:
+            raise ValueError(
+                "best_qubits: backend calibration is unavailable; "
+                "cannot enforce qubit calibration thresholds"
+            ) from exc
         return []
     if props is None:
+        if has_threshold:
+            raise ValueError(
+                "best_qubits: backend calibration is unavailable; "
+                "cannot enforce qubit calibration thresholds"
+            )
         return []
     try:
         num_qubits = backend.num_qubits
@@ -470,20 +693,29 @@ def best_qubits(backend, n: int) -> list:
         except Exception:
             pass
         # Faulty qubits report NaN calibration values; NaN compares False
-        # everywhere and corrupts sorting, so treat NaN exactly like
-        # missing data.
+        # against any threshold and corrupts sorting, so treat NaN exactly
+        # like missing data: it fails an active threshold and falls back to
+        # a pessimistic constant when only ranking.
         try:
             ro = float(props.readout_error(q))
         except Exception:
             ro = float("nan")
         if math.isnan(ro):
+            if max_readout_error is not None:
+                continue
             ro = 0.5
+        if max_readout_error is not None and ro > max_readout_error:
+            continue
         try:
             sx = float(props.gate_error("sx", [q]))
         except Exception:
             sx = float("nan")
         if math.isnan(sx):
+            if qubit_error_threshold is not None:
+                continue
             sx = 1e-2
+        if qubit_error_threshold is not None and sx > qubit_error_threshold:
+            continue
         try:
             t2_us = float(props.t2(q)) * 1e6
         except Exception:
@@ -492,6 +724,19 @@ def best_qubits(backend, n: int) -> list:
             t2_us = 50.0
         score = ro + sx + 1e-4 / max(t2_us, 1.0)
         scored.append((score, q))
+    if len(scored) < n:
+        thresholds = []
+        if max_readout_error is not None:
+            thresholds.append(f"max_readout_error<={max_readout_error:.6g}")
+        if qubit_error_threshold is not None:
+            thresholds.append(f"single_qubit_sx_error<={qubit_error_threshold:.6g}")
+        threshold_text = " and ".join(thresholds) if thresholds else "ranking"
+        if not strict and scored:
+            scored.sort()
+            return [q for _score, q in scored]
+        raise ValueError(
+            f"best_qubits: only {len(scored)} qubits satisfy {threshold_text}; need {n}"
+        )
     scored.sort()
     return [q for _score, q in scored[:n]]
 
@@ -537,6 +782,10 @@ def _qiskit_run_parallel(
     max_pubs_per_job=0,
     resilience_level=None,
     twirling=None,
+    max_execution_time=None,
+    job_tags=None,
+    job_event_callback: JobEventCallback | None = None,
+    job_context: dict[str, Any] | None = None,
 ):
     """
     Pack single-qubit circuits into multi-qubit batches and submit async.
@@ -576,7 +825,12 @@ def _qiskit_run_parallel(
 
         initial_max = max_pubs_per_job if max_pubs_per_job > 0 else len(all_pubs)
         expvals, _ = _submit_and_collect(
-            estimator, all_pubs, all_chunk_sizes, initial_max
+            estimator,
+            all_pubs,
+            all_chunk_sizes,
+            initial_max,
+            job_event_callback=job_event_callback,
+            job_context=job_context,
         )
         return expvals
 
@@ -585,7 +839,14 @@ def _qiskit_run_parallel(
         # than n_qubits, and qiskit pins the layout length at construction.
         pm_cache: dict = {}
         rt_estimator = Estimator(mode=backend)
-        _configure_estimator(rt_estimator, shots, resilience_level, twirling)
+        _configure_estimator(
+            rt_estimator,
+            shots,
+            resilience_level,
+            twirling,
+            max_execution_time=max_execution_time,
+            job_tags=job_tags,
+        )
 
         for start in range(0, total, n_qubits):
             end = min(start + n_qubits, total)
@@ -614,7 +875,12 @@ def _qiskit_run_parallel(
             else _MAX_PUBS_CACHE.get(cache_key, len(all_pubs))
         )
         expvals, actual_max = _submit_and_collect(
-            rt_estimator, all_pubs, all_chunk_sizes, initial_max
+            rt_estimator,
+            all_pubs,
+            all_chunk_sizes,
+            initial_max,
+            job_event_callback=job_event_callback,
+            job_context=job_context,
         )
         _MAX_PUBS_CACHE[cache_key] = actual_max
         return expvals
@@ -714,6 +980,9 @@ def _qiskit_evaluate(
     # Pre-build resources that don't change across ZNE/repeat calls
     _rl = config.get("resilience_level")
     _tw = config.get("twirling")
+    _max_execution_time = config.get("max_execution_time")
+    _job_tags = config.get("job_tags")
+    _job_event_callback = config.get("job_event_callback")
     _pm = None
     _rt_est = None
     if (
@@ -729,9 +998,24 @@ def _qiskit_evaluate(
             initial_layout=_initial_layout_for_circuit(initial_layout, 1),
         )
         _rt_est = Estimator(mode=backend)
-        _configure_estimator(_rt_est, shots, _rl, _tw)
+        _configure_estimator(
+            _rt_est,
+            shots,
+            _rl,
+            _tw,
+            max_execution_time=_max_execution_time,
+            job_tags=_job_tags,
+        )
+
+    execution_index = 0
 
     def _run_qiskit(scale_factor=1):
+        nonlocal execution_index
+        job_context = {
+            "execution_index": execution_index,
+            "scale_factor": scale_factor,
+        }
+        execution_index += 1
         run_circuits = (
             [_fold_qiskit_circuit(qc, scale_factor) for qc in circuits]
             if scale_factor > 1
@@ -749,11 +1033,32 @@ def _qiskit_evaluate(
                 max_pubs_per_job=max_pubs,
                 resilience_level=_rl,
                 twirling=_tw,
+                max_execution_time=_max_execution_time,
+                job_tags=_job_tags,
+                job_event_callback=_job_event_callback,
+                job_context=job_context,
             )
         elif estimator is not None:
             pubs = list(zip(run_circuits, observables))
-            job = estimator.run(pubs)
-            result = job.result()
+            context = _job_event_context(
+                job_context,
+                phase="direct",
+                pub_start=0,
+                pub_end=len(pubs),
+                pub_count=len(pubs),
+                logical_circuit_count=len(run_circuits),
+            )
+            job = _submit_job(
+                estimator,
+                pubs,
+                job_event_callback=_job_event_callback,
+                context=context,
+            )
+            result = _collect_job(
+                job,
+                job_event_callback=_job_event_callback,
+                context=context,
+            )
             return [float(r.data.evs) for r in result]
         elif _rt_est is not None:
             isa_circuits = _pm.run(run_circuits)
@@ -762,8 +1067,25 @@ def _qiskit_evaluate(
                 for obs, qc in zip(observables, isa_circuits)
             ]
             pubs = list(zip(isa_circuits, isa_observables))
-            job = _rt_est.run(pubs)
-            result = job.result()
+            context = _job_event_context(
+                job_context,
+                phase="direct",
+                pub_start=0,
+                pub_end=len(pubs),
+                pub_count=len(pubs),
+                logical_circuit_count=len(run_circuits),
+            )
+            job = _submit_job(
+                _rt_est,
+                pubs,
+                job_event_callback=_job_event_callback,
+                context=context,
+            )
+            result = _collect_job(
+                job,
+                job_event_callback=_job_event_callback,
+                context=context,
+            )
             return [float(r.data.evs) for r in result]
         else:
             raise ValueError("No estimator or backend provided.")
@@ -850,7 +1172,8 @@ def qiskit_solver(
             )
 
     # Auto-detect QPU size from backend if parallel_qubits="auto"
-    if parallel_qubits == "auto" and backend is not None:
+    auto_parallel_qubits = parallel_qubits == "auto"
+    if auto_parallel_qubits and backend is not None:
         parallel_qubits = backend.num_qubits
 
     # Resolve initial_layout:
@@ -868,6 +1191,11 @@ def qiskit_solver(
         # best_qubits returns [] when calibration is unavailable; qiskit
         # treats an empty layout like None, so normalize it here too.
         initial_layout = None
+    max_readout_error = kwargs.get("max_readout_error", None)
+    qubit_error_threshold = kwargs.get("qubit_error_threshold", None)
+    has_layout_threshold = (
+        max_readout_error is not None or qubit_error_threshold is not None
+    )
     if isinstance(initial_layout, str):
         if initial_layout != "auto":
             raise ValueError(
@@ -880,7 +1208,15 @@ def qiskit_solver(
                 "to score qubit calibration."
             )
         n_layout = parallel_qubits if (parallel_qubits and parallel_qubits > 1) else 1
-        initial_layout = best_qubits(backend, n_layout)
+        initial_layout = best_qubits(
+            backend,
+            n_layout,
+            max_readout_error=max_readout_error,
+            qubit_error_threshold=qubit_error_threshold,
+            # With parallel_qubits="auto" the packing width follows the
+            # calibration quality instead of failing the threshold check.
+            strict=not (auto_parallel_qubits and has_layout_threshold),
+        )
         if not initial_layout:
             # No calibration available — fall back to transpiler default.
             warnings.warn(
@@ -889,6 +1225,10 @@ def qiskit_solver(
                 stacklevel=2,
             )
             initial_layout = None
+        elif auto_parallel_qubits and has_layout_threshold:
+            parallel_qubits = len(initial_layout)
+    elif auto_parallel_qubits and isinstance(initial_layout, list):
+        parallel_qubits = len(initial_layout)
     if initial_layout is not None and estimator is not None:
         warnings.warn(
             "initial_layout is ignored when execution goes through an "
@@ -912,6 +1252,9 @@ def qiskit_solver(
         "max_pubs_per_job": max_pubs_per_job,
         "resilience_level": kwargs.get("resilience_level", None),
         "twirling": kwargs.get("twirling", None),
+        "max_execution_time": kwargs.get("max_execution_time", None),
+        "job_tags": kwargs.get("job_tags", None),
+        "job_event_callback": kwargs.get("job_event_callback", None),
         "mitigation": kwargs.get("mitigation", {}),
     }
 
@@ -927,3 +1270,23 @@ def qiskit_solver(
         )
     else:
         return _qiskit_evaluate(x, theta, preacts_weight, preacts_bias, reps, config)
+
+
+class QiskitSolver(QKANSolver):
+    """Qiskit Runtime solver (registered as ``"qiskit"``)."""
+
+    name = "qiskit"
+
+    def __call__(
+        self,
+        x: torch.Tensor,
+        theta: torch.Tensor,
+        preacts_weight: torch.Tensor,
+        preacts_bias: torch.Tensor,
+        reps: int,
+        **kwargs,
+    ) -> torch.Tensor:
+        return qiskit_solver(x, theta, preacts_weight, preacts_bias, reps, **kwargs)
+
+
+register(QiskitSolver())

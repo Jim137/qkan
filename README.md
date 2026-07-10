@@ -68,8 +68,11 @@ pip install qkan[gpu]
 To use the CuTe DSL solver (`solver="cute"`) with pre-built CUDA kernels:
 
 ```bash
-# Pre-built wheel (recommended — no compilation needed)
-pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/
+# Pre-built wheel (recommended — no compilation needed). Pick the CUDA
+# family matching the torch you already have installed:
+pip install qkan[cute-cu12] --extra-index-url https://qkan.jimq.cc/whl/cu12/
+# or, for CUDA 13:
+pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/cu13/
 
 # Or compile locally (auto-downloads CUTLASS headers if needed)
 pip install --no-build-isolation qkan[cute]
@@ -165,6 +168,49 @@ qkan = QKAN([10, 10], solver="cute", c_dtype=torch.float8_e4m3fn, p_dtype=torch.
 - All ansatzes (`pz`, `rpz`, `real`) are supported.
 
 See [#12](https://github.com/Jim137/qkan/issues/12) for full benchmarks (GPT-2 HQKANsformer, isolated kernel timings, and dtype performance matrix).
+
+## Training Acceleration
+
+Beyond the fused solvers and mixed precision above, four opt-in features speed up or shrink training (all default off; details in the [solver guide](https://jim137.github.io/qkan/solver_guide) and [optimizer guide](https://jim137.github.io/qkan/optim_guide)):
+
+**QKAN-aware optimizers** (`qkan.optim`) — block-shared second moments and name-based routing tuned to QKAN's parameter layout:
+
+```python
+from qkan.optim import QKANAdamMini, QKANBeliefMini, QKANMuon, adam_then_lbfgs
+
+opt = QKANAdamMini(model.named_parameters(), lr=1e-3)      # Adam-mini with QKAN-aware blocks
+opt = QKANBeliefMini(model.named_parameters(), lr=1e-3,    # AdaBelief + BF16 mini-state:
+                     state_dtype=torch.bfloat16)           #   ~2x less optimizer memory
+opt = QKANMuon(model.named_parameters(), lr=1e-3)          # Muon for QKAN-bearing transformers (DDP-sharded)
+
+# Function fitting: Adam warmup, then an L-BFGS polish — works directly in QKAN.train_
+opt = adam_then_lbfgs(model, total_steps=100, pct_adam=0.7)
+model.train_(dataset, steps=100, optimizer=opt)
+```
+
+**Rep-loop activation checkpointing** — recompute rep states in backward instead of saving them (~33% less saved-tensor memory for one extra forward):
+
+```python
+qkan = QKAN([10, 10], solver="flash", checkpoint_reps=True, device="cuda")
+```
+
+**Fused Triton epilogue** — collapses the post-activation sum and base-linear term into one fused forward + backward kernel (~4 launches vs ~7 eager dispatches):
+
+```python
+layer.set_fused_epilogue(True)        # per layer, or process-wide:
+# QKAN_FUSED_EPILOGUE=1 python train.py
+```
+
+**CUDA-graph train step** — capture forward + loss + backward into one graph replay (QKAN is launch-bound at small batch):
+
+```python
+from qkan import make_graphed_train_step
+
+step = make_graphed_train_step(model, sample_x, sample_y, loss_fn, optimizer)
+for x, y in loader:
+    loss = step(x, y)
+    optimizer.step()
+```
 
 ## Inference Acceleration
 

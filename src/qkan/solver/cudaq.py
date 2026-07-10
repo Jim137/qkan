@@ -19,8 +19,12 @@ QKAN solver for CUDA-Q GPU-accelerated simulation or QPU execution.
 """
 
 import math
+import warnings
+from typing import Optional
 
 import torch
+
+from ._base import QKANSolver, register
 
 try:
     import cudaq  # type: ignore
@@ -31,6 +35,7 @@ except ImportError:
 
 
 from ._mitigation import _apply_mitigation
+from .layout import DeviceProfile, rank_qubits
 
 # ---------------------------------------------------------------------------
 # CUDA-Q gate-folded kernel builders (for ZNE)
@@ -190,105 +195,122 @@ def _build_cudaq_real_preact_folded_kernel(reps: int, scale_factor: int):
     return kernel
 
 
-def _build_cudaq_parallel_pz_folded_kernel(n_qubits: int, reps: int, scale_factor: int):
+def _build_cudaq_parallel_pz_folded_kernel(
+    n_qubits: int,
+    reps: int,
+    scale_factor: int,
+    layout: list[int],
+):
     """Build a gate-folded parallel pz kernel for ZNE."""
     n_folds = (scale_factor - 1) // 2
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(x_vals: list[float], all_thetas: list[float]):
-        qubits = cudaq.qvector(n_qubits)
+        qubits = cudaq.qvector(width)
         params_per = 2 * (reps + 1)
         for q_idx in range(n_qubits):
+            phys = layout[q_idx]
             offset = q_idx * params_per
-            h(qubits[q_idx])
+            h(qubits[phys])
             for l in range(reps):
-                rz(all_thetas[offset + 2 * l], qubits[q_idx])
-                ry(all_thetas[offset + 2 * l + 1], qubits[q_idx])
-                rz(x_vals[q_idx], qubits[q_idx])
-            rz(all_thetas[offset + 2 * reps], qubits[q_idx])
-            ry(all_thetas[offset + 2 * reps + 1], qubits[q_idx])
+                rz(all_thetas[offset + 2 * l], qubits[phys])
+                ry(all_thetas[offset + 2 * l + 1], qubits[phys])
+                rz(x_vals[q_idx], qubits[phys])
+            rz(all_thetas[offset + 2 * reps], qubits[phys])
+            ry(all_thetas[offset + 2 * reps + 1], qubits[phys])
             for _f in range(n_folds):
-                ry(-all_thetas[offset + 2 * reps + 1], qubits[q_idx])
-                rz(-all_thetas[offset + 2 * reps], qubits[q_idx])
+                ry(-all_thetas[offset + 2 * reps + 1], qubits[phys])
+                rz(-all_thetas[offset + 2 * reps], qubits[phys])
                 for l in range(reps - 1, -1, -1):
-                    rz(-x_vals[q_idx], qubits[q_idx])
-                    ry(-all_thetas[offset + 2 * l + 1], qubits[q_idx])
-                    rz(-all_thetas[offset + 2 * l], qubits[q_idx])
-                h(qubits[q_idx])
-                h(qubits[q_idx])
+                    rz(-x_vals[q_idx], qubits[phys])
+                    ry(-all_thetas[offset + 2 * l + 1], qubits[phys])
+                    rz(-all_thetas[offset + 2 * l], qubits[phys])
+                h(qubits[phys])
+                h(qubits[phys])
                 for l in range(reps):
-                    rz(all_thetas[offset + 2 * l], qubits[q_idx])
-                    ry(all_thetas[offset + 2 * l + 1], qubits[q_idx])
-                    rz(x_vals[q_idx], qubits[q_idx])
-                rz(all_thetas[offset + 2 * reps], qubits[q_idx])
-                ry(all_thetas[offset + 2 * reps + 1], qubits[q_idx])
+                    rz(all_thetas[offset + 2 * l], qubits[phys])
+                    ry(all_thetas[offset + 2 * l + 1], qubits[phys])
+                    rz(x_vals[q_idx], qubits[phys])
+                rz(all_thetas[offset + 2 * reps], qubits[phys])
+                ry(all_thetas[offset + 2 * reps + 1], qubits[phys])
 
     return kernel
 
 
 def _build_cudaq_parallel_real_folded_kernel(
-    n_qubits: int, reps: int, scale_factor: int
+    n_qubits: int,
+    reps: int,
+    scale_factor: int,
+    layout: list[int],
 ):
     """Build a gate-folded parallel real kernel for ZNE."""
     n_folds = (scale_factor - 1) // 2
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(x_vals: list[float], all_thetas: list[float]):
-        qubits = cudaq.qvector(n_qubits)
+        qubits = cudaq.qvector(width)
         for q_idx in range(n_qubits):
+            phys = layout[q_idx]
             offset = q_idx * reps
-            h(qubits[q_idx])
+            h(qubits[phys])
             for l in range(reps):
-                x(qubits[q_idx])
-                ry(all_thetas[offset + l], qubits[q_idx])
-                z(qubits[q_idx])
-                ry(x_vals[q_idx], qubits[q_idx])
+                x(qubits[phys])
+                ry(all_thetas[offset + l], qubits[phys])
+                z(qubits[phys])
+                ry(x_vals[q_idx], qubits[phys])
             for _f in range(n_folds):
                 for l in range(reps - 1, -1, -1):
-                    ry(-x_vals[q_idx], qubits[q_idx])
-                    z(qubits[q_idx])
-                    ry(-all_thetas[offset + l], qubits[q_idx])
-                    x(qubits[q_idx])
-                h(qubits[q_idx])
-                h(qubits[q_idx])
+                    ry(-x_vals[q_idx], qubits[phys])
+                    z(qubits[phys])
+                    ry(-all_thetas[offset + l], qubits[phys])
+                    x(qubits[phys])
+                h(qubits[phys])
+                h(qubits[phys])
                 for l in range(reps):
-                    x(qubits[q_idx])
-                    ry(all_thetas[offset + l], qubits[q_idx])
-                    z(qubits[q_idx])
-                    ry(x_vals[q_idx], qubits[q_idx])
+                    x(qubits[phys])
+                    ry(all_thetas[offset + l], qubits[phys])
+                    z(qubits[phys])
+                    ry(x_vals[q_idx], qubits[phys])
 
     return kernel
 
 
 def _build_cudaq_parallel_rpz_folded_kernel(
-    n_qubits: int, reps: int, scale_factor: int
+    n_qubits: int,
+    reps: int,
+    scale_factor: int,
+    layout: list[int],
 ):
     """Build a gate-folded parallel rpz kernel for ZNE."""
     n_folds = (scale_factor - 1) // 2
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(encoded_xs: list[float], all_thetas: list[float]):
-        qubits = cudaq.qvector(n_qubits)
+        qubits = cudaq.qvector(width)
         t_per = reps + 1
         for q_idx in range(n_qubits):
+            phys = layout[q_idx]
             t_off = q_idx * t_per
             x_off = q_idx * reps
-            h(qubits[q_idx])
+            h(qubits[phys])
             for l in range(reps):
-                ry(all_thetas[t_off + l], qubits[q_idx])
-                rz(encoded_xs[x_off + l], qubits[q_idx])
-            ry(all_thetas[t_off + reps], qubits[q_idx])
+                ry(all_thetas[t_off + l], qubits[phys])
+                rz(encoded_xs[x_off + l], qubits[phys])
+            ry(all_thetas[t_off + reps], qubits[phys])
             for _f in range(n_folds):
-                ry(-all_thetas[t_off + reps], qubits[q_idx])
+                ry(-all_thetas[t_off + reps], qubits[phys])
                 for l in range(reps - 1, -1, -1):
-                    rz(-encoded_xs[x_off + l], qubits[q_idx])
-                    ry(-all_thetas[t_off + l], qubits[q_idx])
-                h(qubits[q_idx])
-                h(qubits[q_idx])
+                    rz(-encoded_xs[x_off + l], qubits[phys])
+                    ry(-all_thetas[t_off + l], qubits[phys])
+                h(qubits[phys])
+                h(qubits[phys])
                 for l in range(reps):
-                    ry(all_thetas[t_off + l], qubits[q_idx])
-                    rz(encoded_xs[x_off + l], qubits[q_idx])
-                ry(all_thetas[t_off + reps], qubits[q_idx])
+                    ry(all_thetas[t_off + l], qubits[phys])
+                    rz(encoded_xs[x_off + l], qubits[phys])
+                ry(all_thetas[t_off + reps], qubits[phys])
 
     return kernel
 
@@ -429,61 +451,91 @@ def _get_cudaq_kernel(
     return _CUDAQ_KERNEL_CACHE[key]
 
 
-def _build_cudaq_parallel_pz_kernel(n_qubits: int, reps: int):
+def _build_cudaq_parallel_pz_kernel(
+    n_qubits: int,
+    reps: int,
+    layout: list[int],
+):
     """Build a CUDA-Q kernel that runs N independent pz circuits in parallel."""
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(x_vals: list[float], all_thetas: list[float]):
-        qubits = cudaq.qvector(n_qubits)
+        qubits = cudaq.qvector(width)
         params_per = 2 * (reps + 1)
         for q_idx in range(n_qubits):
-            h(qubits[q_idx])
+            phys = layout[q_idx]
+            h(qubits[phys])
             offset = q_idx * params_per
             for l in range(reps):
-                rz(all_thetas[offset + 2 * l], qubits[q_idx])
-                ry(all_thetas[offset + 2 * l + 1], qubits[q_idx])
-                rz(x_vals[q_idx], qubits[q_idx])
-            rz(all_thetas[offset + 2 * reps], qubits[q_idx])
-            ry(all_thetas[offset + 2 * reps + 1], qubits[q_idx])
+                rz(all_thetas[offset + 2 * l], qubits[phys])
+                ry(all_thetas[offset + 2 * l + 1], qubits[phys])
+                rz(x_vals[q_idx], qubits[phys])
+            rz(all_thetas[offset + 2 * reps], qubits[phys])
+            ry(all_thetas[offset + 2 * reps + 1], qubits[phys])
 
     return kernel
 
 
-def _build_cudaq_parallel_real_kernel(n_qubits: int, reps: int):
+def _build_cudaq_parallel_real_kernel(
+    n_qubits: int,
+    reps: int,
+    layout: list[int],
+):
     """Build a CUDA-Q kernel that runs N independent real circuits in parallel."""
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(x_vals: list[float], all_thetas: list[float]):
-        qubits = cudaq.qvector(n_qubits)
+        qubits = cudaq.qvector(width)
         for q_idx in range(n_qubits):
-            h(qubits[q_idx])
+            phys = layout[q_idx]
+            h(qubits[phys])
             offset = q_idx * reps
             for l in range(reps):
-                x(qubits[q_idx])
-                ry(all_thetas[offset + l], qubits[q_idx])
-                z(qubits[q_idx])
-                ry(x_vals[q_idx], qubits[q_idx])
+                x(qubits[phys])
+                ry(all_thetas[offset + l], qubits[phys])
+                z(qubits[phys])
+                ry(x_vals[q_idx], qubits[phys])
 
     return kernel
 
 
-def _build_cudaq_parallel_rpz_kernel(n_qubits: int, reps: int):
+def _build_cudaq_parallel_rpz_kernel(
+    n_qubits: int,
+    reps: int,
+    layout: list[int],
+):
     """Build a CUDA-Q kernel that runs N independent rpz circuits in parallel."""
+    width = max(layout) + 1
 
     @cudaq.kernel
     def kernel(encoded_xs: list[float], all_thetas: list[float]):
-        qubits = cudaq.qvector(n_qubits)
+        qubits = cudaq.qvector(width)
         t_per = reps + 1
         for q_idx in range(n_qubits):
-            h(qubits[q_idx])
+            phys = layout[q_idx]
+            h(qubits[phys])
             t_off = q_idx * t_per
             x_off = q_idx * reps
             for l in range(reps):
-                ry(all_thetas[t_off + l], qubits[q_idx])
-                rz(encoded_xs[x_off + l], qubits[q_idx])
-            ry(all_thetas[t_off + reps], qubits[q_idx])
+                ry(all_thetas[t_off + l], qubits[phys])
+                rz(encoded_xs[x_off + l], qubits[phys])
+            ry(all_thetas[t_off + reps], qubits[phys])
 
     return kernel
+
+
+def _sample_z_marginals(result, positions, shots_count):
+    """Per-qubit <Z> from sampled bitstring counts at the given positions."""
+    acc = [0.0] * len(positions)
+    total = 0
+    for bits, count in result.items():
+        total += count
+        for i, pos in enumerate(positions):
+            acc[i] += count if bits[pos] == "0" else -count
+    total = total or shots_count
+    return [a / total for a in acc]
 
 
 def _cudaq_run_parallel(
@@ -494,40 +546,88 @@ def _cudaq_run_parallel(
     n_qubits,
     shots_count,
     scale_factor=1,
+    initial_layout=None,
+    expectation_via_sample=False,
 ):
     """
     Pack independent single-qubit circuits onto an N-qubit QPU.
 
     Runs ceil(total / n_qubits) multi-qubit jobs instead of `total` single-qubit jobs.
+
+    When `initial_layout` is a list of physical qubit indices, circuit slot j
+    is applied to register index `initial_layout[j]`, the register is
+    widened to max(layout)+1 qubits, and every idle register qubit receives
+    zero-angle padding gates so that compiler dead-code elimination cannot
+    renumber the indices (the iqm/oqc/anyon pipelines compact untouched
+    qubits). A layout longer than `n_qubits` keeps its first (best-ranked)
+    entries; whether the physical indices are honored end-to-end depends on
+    the target (see the solver docs).
     """
     total = len(all_args)
     expvals = []
 
-    # Build kernel once — all chunks pad to n_qubits
-    if ansatz in ("pz_encoding", "pz") and not preacts_trainable:
+    if initial_layout is not None:
+        if len(initial_layout) < n_qubits:
+            raise ValueError(
+                "initial_layout has fewer qubits than the packing width: "
+                f"{len(initial_layout)} < {n_qubits}"
+            )
+        # Entries were validated (ints, distinct) at the solver boundary.
+        layout = list(initial_layout[:n_qubits])
+    else:
+        layout = list(range(n_qubits))
+    width = max(layout) + 1
+    # Pad every register qubit below `width` with a zero-angle circuit slot:
+    # runtime-argument gates defeat dead-code elimination, which would
+    # otherwise compact the qubit indices on iqm/oqc/anyon targets.
+    used = set(layout)
+    slot_layout = layout + [q for q in range(width) if q not in used]
+    n_slots = width
+
+    # Build the kernel once per shape — construction recompiles MLIR, so
+    # cache on the full shape key alongside the single-qubit kernels.
+    cache_key = (
+        "parallel",
+        ansatz,
+        reps,
+        preacts_trainable,
+        scale_factor,
+        tuple(slot_layout),
+    )
+    par_kernel = _CUDAQ_KERNEL_CACHE.get(cache_key)
+    if par_kernel is not None:
+        pass
+    elif ansatz in ("pz_encoding", "pz") and not preacts_trainable:
         par_kernel = (
-            _build_cudaq_parallel_pz_folded_kernel(n_qubits, reps, scale_factor)
+            _build_cudaq_parallel_pz_folded_kernel(
+                n_slots, reps, scale_factor, slot_layout
+            )
             if scale_factor > 1
-            else _build_cudaq_parallel_pz_kernel(n_qubits, reps)
+            else _build_cudaq_parallel_pz_kernel(n_slots, reps, slot_layout)
         )
     elif ansatz == "real" and not preacts_trainable:
         par_kernel = (
-            _build_cudaq_parallel_real_folded_kernel(n_qubits, reps, scale_factor)
+            _build_cudaq_parallel_real_folded_kernel(
+                n_slots, reps, scale_factor, slot_layout
+            )
             if scale_factor > 1
-            else _build_cudaq_parallel_real_kernel(n_qubits, reps)
+            else _build_cudaq_parallel_real_kernel(n_slots, reps, slot_layout)
         )
     elif ansatz in ("rpz_encoding", "rpz") or preacts_trainable:
         par_kernel = (
-            _build_cudaq_parallel_rpz_folded_kernel(n_qubits, reps, scale_factor)
+            _build_cudaq_parallel_rpz_folded_kernel(
+                n_slots, reps, scale_factor, slot_layout
+            )
             if scale_factor > 1
-            else _build_cudaq_parallel_rpz_kernel(n_qubits, reps)
+            else _build_cudaq_parallel_rpz_kernel(n_slots, reps, slot_layout)
         )
     else:
         raise NotImplementedError(f"Parallel not supported for ansatz '{ansatz}'")
+    _CUDAQ_KERNEL_CACHE[cache_key] = par_kernel
 
-    spin_sum = cudaq.spin.z(0)
+    spin_sum = cudaq.spin.z(layout[0])
     for q_idx in range(1, n_qubits):
-        spin_sum += cudaq.spin.z(q_idx)
+        spin_sum += cudaq.spin.z(layout[q_idx])
 
     for start in range(0, total, n_qubits):
         end = min(start + n_qubits, total)
@@ -540,10 +640,10 @@ def _cudaq_run_parallel(
             all_thetas = []
             for a in chunk:
                 all_thetas.extend(a[1])
-            if chunk_size < n_qubits:
-                x_vals.extend([0.0] * (n_qubits - chunk_size))
+            if chunk_size < n_slots:
+                x_vals.extend([0.0] * (n_slots - chunk_size))
                 pad_thetas = [0.0] * (2 * (reps + 1))
-                for _ in range(n_qubits - chunk_size):
+                for _ in range(n_slots - chunk_size):
                     all_thetas.extend(pad_thetas)
             args = (x_vals, all_thetas)
 
@@ -552,9 +652,9 @@ def _cudaq_run_parallel(
             all_thetas = []
             for a in chunk:
                 all_thetas.extend(a[1])
-            if chunk_size < n_qubits:
-                x_vals.extend([0.0] * (n_qubits - chunk_size))
-                for _ in range(n_qubits - chunk_size):
+            if chunk_size < n_slots:
+                x_vals.extend([0.0] * (n_slots - chunk_size))
+                for _ in range(n_slots - chunk_size):
                     all_thetas.extend([0.0] * reps)
             args = (x_vals, all_thetas)
 
@@ -568,19 +668,27 @@ def _cudaq_run_parallel(
                 else:
                     encoded_xs.extend([enc] * reps)
                 all_thetas.extend(t)
-            if chunk_size < n_qubits:
-                for _ in range(n_qubits - chunk_size):
+            if chunk_size < n_slots:
+                for _ in range(n_slots - chunk_size):
                     encoded_xs.extend([0.0] * reps)
                     all_thetas.extend([0.0] * (reps + 1))
             args = (encoded_xs, all_thetas)
 
+        if expectation_via_sample:
+            # Some REST targets (quantum_machines) mis-handle multi-term
+            # observe; sample once and read per-qubit <Z> marginals instead.
+            result = cudaq.sample(par_kernel, *args, shots_count=shots_count)
+            expvals.extend(
+                _sample_z_marginals(result, layout[:chunk_size], shots_count)
+            )
+            continue
         if shots_count is not None:
             result = cudaq.observe(par_kernel, spin_sum, *args, shots_count=shots_count)
         else:
             result = cudaq.observe(par_kernel, spin_sum, *args)
 
         for q_idx in range(chunk_size):
-            expvals.append(result.expectation(cudaq.spin.z(q_idx)))
+            expvals.append(result.expectation(cudaq.spin.z(layout[q_idx])))
 
     return expvals
 
@@ -604,6 +712,7 @@ def _cudaq_evaluate(
     out_dim = config["out_dim"]
     shots_count = config["shots"]
     parallel_qubits = config.get("parallel_qubits", None)
+    initial_layout = config.get("initial_layout", None)
 
     # Broadcasting (same as other solvers)
     if len(theta.shape) != 4:
@@ -652,6 +761,7 @@ def _cudaq_evaluate(
                     all_args.append((x_py[b][i], t))
 
     mitigation = config.get("mitigation", {})
+    expectation_via_sample = config.get("expectation_via_sample", False)
 
     def _run_cudaq(scale_factor=1):
         if parallel_qubits and parallel_qubits > 1:
@@ -663,12 +773,18 @@ def _cudaq_evaluate(
                 parallel_qubits,
                 shots_count,
                 scale_factor=scale_factor,
+                initial_layout=initial_layout,
+                expectation_via_sample=expectation_via_sample,
             )
         else:
             kernel = _get_cudaq_kernel(ansatz, reps, preacts_trainable, scale_factor)
             spin_z = cudaq.spin.z(0)
             ev = []
             for args in all_args:
+                if expectation_via_sample:
+                    result = cudaq.sample(kernel, *args, shots_count=shots_count)
+                    ev.extend(_sample_z_marginals(result, [0], shots_count))
+                    continue
                 if shots_count is not None:
                     result = cudaq.observe(
                         kernel, spin_z, *args, shots_count=shots_count
@@ -763,6 +879,38 @@ class _CudaqParamShift(torch.autograd.Function):
         return None, grad_theta, grad_pw, grad_pb, None, None
 
 
+# Calibration snapshots fetched per machine ARN; cached for the process
+# lifetime so 'auto' does not issue one AWS GetDevice call per forward pass.
+_BRAKET_PROFILE_CACHE: dict = {}
+
+
+def _braket_device_profile(machine: str) -> Optional[DeviceProfile]:
+    """Fetch a calibration profile for a Braket machine ARN (best effort)."""
+    if machine in _BRAKET_PROFILE_CACHE:
+        return _BRAKET_PROFILE_CACHE[machine]
+    try:
+        from braket.aws import AwsDevice  # type: ignore
+    except ImportError:
+        warnings.warn(
+            "initial_layout='auto' on the braket target needs "
+            "amazon-braket-sdk for calibration data; proceeding without a "
+            "layout.",
+            stacklevel=3,
+        )
+        return None
+    try:
+        profile = DeviceProfile.from_braket(AwsDevice(machine))
+        _BRAKET_PROFILE_CACHE[machine] = profile
+        return profile
+    except Exception as exc:
+        warnings.warn(
+            f"could not fetch Braket calibration for {machine}: {exc}; "
+            "proceeding without a layout.",
+            stacklevel=3,
+        )
+        return None
+
+
 def cudaq_solver(
     x: torch.Tensor,
     theta: torch.Tensor,
@@ -796,10 +944,35 @@ def cudaq_solver(
         preacts_trainable : bool
         out_dim : int
         target : str, optional
-            CUDA-Q target (e.g., "nvidia", "nvidia-mqpu", "qpp-cpu").
+            CUDA-Q target (e.g., "nvidia", "nvidia-mqpu", "qpp-cpu",
+            "braket", "iqm", "quantum_machines").
             Set before calling via cudaq.set_target().
+        url / executor / api_key : optional
+            Forwarded to cudaq.set_target for REST hardware targets. For
+            "quantum_machines" these select the Qoperator server URL, the
+            executor name, and the X-API-Key credential (the
+            QUANTUM_MACHINES_API_KEY env var also works).
         shots : int, optional
             Number of shots. None for exact statevector expectation.
+            Required for the quantum_machines target.
+        expectation_via_sample : bool, optional
+            Compute <Z> from sampled bitstring marginals instead of
+            cudaq.observe. Defaults to True on the quantum_machines target,
+            whose REST helper mis-handles multi-term observe.
+        initial_layout : optional
+            None (default), "auto", or a list of physical qubit indices for
+            the packed `parallel_qubits` path on hardware targets. "auto"
+            ranks qubits from calibration data: pass `device_profile` (a
+            qkan.solver.layout.DeviceProfile) or use the braket target with
+            a machine ARN and amazon-braket-sdk installed. Applied by
+            construction (circuit slot j runs on register index layout[j]);
+            native iqm/oqc/anyon targets preserve these indices, while
+            Braket's vendor compiler may remap them.
+        device_profile : DeviceProfile, optional
+            Calibration snapshot used by initial_layout="auto" and for
+            layout bounds checking (see qkan.solver.layout).
+        max_readout_error / qubit_error_threshold : float, optional
+            Calibration thresholds forwarded to the "auto" qubit ranking.
 
     Returns
     -------
@@ -822,9 +995,136 @@ def cudaq_solver(
 
     if target is not None:
         target_kwargs = {}
-        if machine is not None:
-            target_kwargs["machine"] = machine
+        # Forward the target options CUDA-Q hardware backends accept:
+        # machine (braket/ionq/...), url/executor/api_key (quantum_machines).
+        for key in ("machine", "url", "executor", "api_key"):
+            if kwargs.get(key) is not None:
+                target_kwargs[key] = kwargs[key]
         cudaq.set_target(target, **target_kwargs)
+
+    # Resolve initial_layout (device-independent):
+    #   None (default) -> default placement
+    #   "auto"         -> rank qubits from a DeviceProfile calibration snapshot
+    #   list[int]      -> caller-supplied physical qubit indices
+    initial_layout = kwargs.get("initial_layout", None)
+    device_profile = kwargs.get("device_profile", None)
+    if isinstance(initial_layout, tuple):
+        initial_layout = list(initial_layout)
+    elif initial_layout is not None and hasattr(initial_layout, "tolist"):
+        # Normalize numpy arrays / torch tensors to a plain list.
+        initial_layout = list(initial_layout.tolist())
+    if isinstance(initial_layout, list) and not initial_layout:
+        initial_layout = None
+    if isinstance(initial_layout, str) and initial_layout != "auto":
+        raise ValueError(
+            "initial_layout must be None, 'auto', or a list of physical "
+            f"qubit indices; got {initial_layout!r}"
+        )
+    if isinstance(initial_layout, list):
+        entries = []
+        for q in initial_layout:
+            if int(q) != q or int(q) < 0:
+                raise ValueError(
+                    f"initial_layout entries must be non-negative integers; got {q!r}"
+                )
+            entries.append(int(q))
+        if len(set(entries)) != len(entries):
+            raise ValueError("initial_layout assigns the same physical qubit twice")
+        initial_layout = entries
+    if parallel_qubits == "auto":
+        # CUDA-Q exposes no device qubit count; resolve from the profile.
+        if device_profile is None:
+            raise ValueError(
+                "parallel_qubits='auto' with the cudaq solver requires "
+                "device_profile=DeviceProfile(...) to know the device size."
+            )
+        parallel_qubits = device_profile.num_qubits
+    if initial_layout is not None and not (
+        isinstance(parallel_qubits, int) and parallel_qubits > 1
+    ):
+        warnings.warn(
+            "the cudaq solver applies initial_layout only on the "
+            "parallel_qubits packing path; ignoring it.",
+            stacklevel=2,
+        )
+        initial_layout = None
+    if initial_layout is not None:
+        current = cudaq.get_target()
+        braket_simulator = machine is not None and "/quantum-simulator/" in str(machine)
+        if not current.is_remote() or current.is_emulated() or braket_simulator:
+            warnings.warn(
+                "initial_layout has no effect on simulator or emulated cudaq "
+                "targets; ignoring it.",
+                stacklevel=2,
+            )
+            initial_layout = None
+    if isinstance(initial_layout, str):
+        profile = device_profile
+        if profile is None and target == "braket" and machine is not None:
+            profile = _braket_device_profile(machine)
+        elif profile is None:
+            raise ValueError(
+                "initial_layout='auto' for the cudaq solver needs calibration "
+                "data: pass device_profile=DeviceProfile(...) (see "
+                "qkan.solver.layout) — required when the target was "
+                "configured globally — or use the braket target with a "
+                "machine ARN and amazon-braket-sdk installed."
+            )
+        if profile is None:
+            # Braket fetch failed; a warning was already emitted.
+            initial_layout = None
+        else:
+            initial_layout = rank_qubits(
+                profile,
+                parallel_qubits,
+                max_readout_error=kwargs.get("max_readout_error", None),
+                qubit_error_threshold=kwargs.get("qubit_error_threshold", None),
+            )
+            if not initial_layout:
+                warnings.warn(
+                    "initial_layout='auto': profile carries no calibration "
+                    "data; falling back to the default placement.",
+                    stacklevel=2,
+                )
+                initial_layout = None
+            device_profile = profile
+    if initial_layout is not None:
+        if (
+            device_profile is not None
+            and max(initial_layout) >= device_profile.num_qubits
+        ):
+            raise ValueError(
+                f"initial_layout index {max(initial_layout)} exceeds the "
+                f"device's {device_profile.num_qubits} qubits"
+            )
+        if target == "braket":
+            warnings.warn(
+                "CUDA-Q does not disable Braket's qubit rewiring: the vendor "
+                "compiler may remap the requested layout on braket targets "
+                "(verified on Rigetti). Native iqm/oqc/anyon targets "
+                "preserve it.",
+                stacklevel=2,
+            )
+        elif target == "quantum_machines":
+            warnings.warn(
+                "the requested physical indices are baked into the submitted "
+                "OpenQASM, but qubit mapping on quantum_machines is decided "
+                "by the Qoperator server; verify with your operator "
+                "configuration.",
+                stacklevel=2,
+            )
+
+    # quantum_machines executes via physical sampling and its REST helper
+    # mis-handles multi-term observe (first Z term returns full-register
+    # parity); route expectations through sample() marginals instead.
+    expectation_via_sample = kwargs.get(
+        "expectation_via_sample", target == "quantum_machines"
+    )
+    if target == "quantum_machines" and shots is None:
+        raise ValueError(
+            "the quantum_machines target requires explicit shots (results "
+            "come from physical sampling); pass shots=... in solver_kwargs."
+        )
 
     config = {
         "ansatz": ansatz,
@@ -832,6 +1132,8 @@ def cudaq_solver(
         "out_dim": out_dim,
         "shots": shots,
         "parallel_qubits": parallel_qubits,
+        "initial_layout": initial_layout,
+        "expectation_via_sample": expectation_via_sample,
         "mitigation": kwargs.get("mitigation", {}),
     }
 
@@ -847,3 +1149,23 @@ def cudaq_solver(
         )
     else:
         return _cudaq_evaluate(x, theta, preacts_weight, preacts_bias, reps, config)
+
+
+class CudaqSolver(QKANSolver):
+    """NVIDIA CUDA-Q solver (registered as ``"cudaq"``)."""
+
+    name = "cudaq"
+
+    def __call__(
+        self,
+        x: torch.Tensor,
+        theta: torch.Tensor,
+        preacts_weight: torch.Tensor,
+        preacts_bias: torch.Tensor,
+        reps: int,
+        **kwargs,
+    ) -> torch.Tensor:
+        return cudaq_solver(x, theta, preacts_weight, preacts_bias, reps, **kwargs)
+
+
+register(CudaqSolver())

@@ -7,8 +7,9 @@
 # 4. Publish sdist to PyPI
 # 5. Deploy wheel index to GitHub Pages (Cloudflare: qkan.jimq.cc/whl/)
 #
-# Install pre-built:
-#   pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/
+# Install pre-built (pick the CUDA family matching your installed torch):
+#   pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/cu12/
+#   pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/cu13/
 
 name: Build wheels and deploy
 
@@ -129,21 +130,68 @@ jobs:
       - name: Build PEP 503 index
         run: |
           cd gh-pages/whl
-          # Root index
-          printf '<!DOCTYPE html><html><body>\n<a href="qkan/">qkan</a>\n</body></html>\n' > index.html
-          # Package index with sha256
-          cd qkan
-          echo '<!DOCTYPE html><html><body>' > index.html
-          for whl in *.whl; do
-            [ -f "$whl" ] && echo "<a href=\"${whl}#sha256=$(sha256sum "$whl" | cut -d' ' -f1)\">${whl}</a><br>" >> index.html
+          # Top-level discovery page linking to per-CUDA-family indexes.
+          cat > index.html <<'EOF'
+          <!DOCTYPE html><html><body>
+          <a href="cu12/">cu12</a><br>
+          <a href="cu13/">cu13</a><br>
+          </body></html>
+          EOF
+
+          # Build a single sha256-annotated link list. The wheel files live
+          # under qkan/ so the cu12/cu13 indexes reference them via ../../qkan/<whl>
+          # — no duplication of the binaries.
+          mkdir -p cu12/qkan cu13/qkan
+          : > _all_links.html
+          : > _cu12_links.html
+          : > _cu13_links.html
+          for whl in qkan/*.whl; do
+            [ -f "$whl" ] || continue
+            base=$(basename "$whl")
+            sha=$(sha256sum "$whl" | cut -d' ' -f1)
+            # Legacy flat index links (relative to whl/qkan/).
+            echo "<a href=\"${base}#sha256=${sha}\">${base}</a><br>" >> _all_links.html
+            # Split indexes link back to the canonical wheel location under whl/qkan/.
+            case "$base" in
+              *+cu12*) echo "<a href=\"../../qkan/${base}#sha256=${sha}\">${base}</a><br>" >> _cu12_links.html ;;
+              *+cu13*) echo "<a href=\"../../qkan/${base}#sha256=${sha}\">${base}</a><br>" >> _cu13_links.html ;;
+            esac
           done
-          echo '</body></html>' >> index.html
+
+          # DEPRECATED: legacy flat index at /whl/qkan/. Kept for one more
+          # release so existing users on https://qkan.jimq.cc/whl/ don't break.
+          # New users should pin /whl/cu12/ or /whl/cu13/ instead.
+          {
+            echo '<!DOCTYPE html><html><body>'
+            cat _all_links.html
+            echo '</body></html>'
+          } > qkan/index.html
+
+          # cu12 sub-index.
+          printf '<!DOCTYPE html><html><body>\n<a href="qkan/">qkan</a>\n</body></html>\n' > cu12/index.html
+          {
+            echo '<!DOCTYPE html><html><body>'
+            cat _cu12_links.html
+            echo '</body></html>'
+          } > cu12/qkan/index.html
+
+          # cu13 sub-index.
+          printf '<!DOCTYPE html><html><body>\n<a href="qkan/">qkan</a>\n</body></html>\n' > cu13/index.html
+          {
+            echo '<!DOCTYPE html><html><body>'
+            cat _cu13_links.html
+            echo '</body></html>'
+          } > cu13/qkan/index.html
+
+          rm -f _all_links.html _cu12_links.html _cu13_links.html
+
           # Cloudflare headers: only override the wheels. Pip requests
           # /whl/qkan/ (trailing slash, not index.html) so any broader rule
           # like /whl/* also matches the directory and overrides its inferred
           # text/html with octet-stream. Narrow the override to *.whl only
           # and let Cloudflare auto-detect text/html from the .html extension.
-          cd ../..
+          # Wheels still live under /whl/qkan/ so this rule keeps matching.
+          cd ..
           cat > _headers <<'EOF'
           /whl/*.whl
             Content-Type: application/octet-stream

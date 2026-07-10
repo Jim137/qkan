@@ -22,10 +22,13 @@ Follows the flash-attention build pattern:
 
 Environment variables:
   CUTLASS_PATH        — root of CUTLASS checkout (containing include/cute/tensor.hpp)
-  QKAN_CUDA_ARCHS     — semicolon-separated SM list (default: auto-detect)
+  QKAN_CUDA_ARCHS     — semicolon-separated SM list (default: the local
+                        GPU's architecture, or 80;90;100;120 when no GPU
+                        is visible, e.g. on CI wheel builders)
   QKAN_FORCE_BUILD    — TRUE to skip pre-built wheel download and compile locally
   QKAN_SKIP_CUDA_BUILD — TRUE to skip CUDA compilation entirely (sdist builds)
   QKAN_LOCAL_VERSION  — local version suffix (e.g. "cu126torch2.6")
+  QKAN_NO_GIT_VERSION — TRUE to omit the git hash from dev versions
   NVCC_THREADS        — parallel nvcc compilation threads (default: 4)
 
 Usage:
@@ -68,17 +71,66 @@ WHEEL_BASE_URL = "https://github.com/Jim137/qkan/releases/download"
 # Version helpers (flash-attention pattern)
 # ---------------------------------------------------------------------------
 
+
+def get_git_revision():
+    """Short git hash of HEAD, or None outside a git checkout.
+
+    The .git existence check keeps this source tree's own revision: without
+    it, git discovery walks up to any enclosing repository (a vendored copy
+    or extracted tarball inside an unrelated checkout would report the
+    parent repo's HEAD). Never applied to sdists — the tarball rebuilds
+    without .git, and a hash baked into the sdist metadata would disagree
+    with the wheel pip builds from it (pip rejects the mismatch).
+    """
+    if os.getenv("QKAN_NO_GIT_VERSION", "FALSE") == "TRUE":
+        return None
+    if "sdist" in sys.argv[1:]:
+        return None
+    if not (THIS_DIR / ".git").exists():
+        return None
+    try:
+        return (
+            subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=THIS_DIR,
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
 def get_package_version():
-    """Read version from qkan/__init__.py, optionally append local version."""
+    """Read version from qkan/__init__.py, optionally append local version.
+
+    Dev versions (base version ending in "dev") also carry the git commit
+    hash as a local segment — 0.2.3dev+g1a2b3c4, or combined with
+    QKAN_LOCAL_VERSION, 0.2.3dev+cu126torch2.6.g1a2b3c4 — so an installed
+    dev build identifies its exact source commit. Release versions never
+    get the hash (PyPI rejects local versions, so a forgotten dev-marker
+    bump fails loudly at upload instead of publishing silently); tarball
+    builds without .git fall back to the plain version.
+    """
     init_path = THIS_DIR / "src" / "qkan" / "__init__.py"
     with open(init_path, "r") as f:
-        version_match = re.search(r'^__version__\s*=\s*["\'](.+?)["\']', f.read(), re.MULTILINE)
+        version_match = re.search(
+            r'^__version__\s*=\s*["\'](.+?)["\']', f.read(), re.MULTILINE
+        )
     if version_match is None:
         raise RuntimeError("Cannot find __version__ in qkan/__init__.py")
     public_version = version_match.group(1)
+    local_parts = []
     local_version = os.environ.get("QKAN_LOCAL_VERSION")
     if local_version:
-        return f"{public_version}+{local_version}"
+        local_parts.append(local_version)
+    if public_version.endswith("dev"):
+        revision = get_git_revision()
+        if revision:
+            local_parts.append(f"g{revision}")
+    if local_parts:
+        return f"{public_version}+{'.'.join(local_parts)}"
     return public_version
 
 
@@ -107,7 +159,11 @@ def get_wheel_url():
 
     # Platform tag
     plat = platform.machine()
-    platform_name = f"linux_{plat}" if platform.system() == "Linux" else f"{platform.system().lower()}_{plat}"
+    platform_name = (
+        f"linux_{plat}"
+        if platform.system() == "Linux"
+        else f"{platform.system().lower()}_{plat}"
+    )
 
     local_tag = f"cu{cuda_short}torch{torch_short}cxx11abi{cxx11_abi}"
     wheel_filename = (
@@ -122,6 +178,7 @@ def get_wheel_url():
 # ---------------------------------------------------------------------------
 # CUDA detection helpers
 # ---------------------------------------------------------------------------
+
 
 def get_cuda_bare_metal_version(cuda_dir):
     """Return (major, minor) of the nvcc at *cuda_dir*."""
@@ -170,21 +227,41 @@ def find_cutlass_include():
     dl_dir = str(THIS_DIR / ".cutlass")
     try:
         subprocess.check_call(
-            ["git", "clone", "--depth", "1", "--filter=blob:none", "--sparse",
-             "https://github.com/NVIDIA/cutlass.git", dl_dir],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "--filter=blob:none",
+                "--sparse",
+                "https://github.com/NVIDIA/cutlass.git",
+                dl_dir,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         subprocess.check_call(
             ["git", "sparse-checkout", "set", "include/"],
-            cwd=dl_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            cwd=dl_dir,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         inc = os.path.join(dl_dir, "include")
         if os.path.isfile(os.path.join(inc, "cute", "tensor.hpp")):
             print(f"[qkan] CUTLASS downloaded to {dl_dir}")
             return inc
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print("[qkan] WARNING: Failed to download CUTLASS. Install git or set CUTLASS_PATH.")
+        print(
+            "[qkan] WARNING: Failed to download CUTLASS. Install git or set CUTLASS_PATH."
+        )
     return None
+
+
+# Wheel-build coverage when no GPU is visible (CI builders): one binary
+# serving A100 (sm_80), H100 (sm_90), B200 (sm_100), and RTX 50 (sm_120),
+# with PTX forward-compatibility for newer chips. Architectures the
+# toolkit cannot compile are dropped with a warning in make_gencode_flags.
+DEFAULT_CUDA_ARCHS = ["80", "90", "100", "120"]
 
 
 def get_cuda_archs():
@@ -194,37 +271,46 @@ def get_cuda_archs():
         return [a.strip() for a in env.split(";") if a.strip()]
     try:
         import torch
+
         if torch.cuda.is_available():
             cap = torch.cuda.get_device_capability()
             return [f"{cap[0]}{cap[1]}"]
     except Exception:
         pass
-    return ["80"]
+    return list(DEFAULT_CUDA_ARCHS)
 
 
 def make_gencode_flags(archs, cuda_version):
-    """Build -gencode flags for the given architectures."""
+    """Build -gencode flags for the given architectures.
+
+    sm_90 needs CUDA >= 11.8 and sm_100/sm_120 need >= 12.8; requested
+    architectures the toolkit cannot compile are dropped with a warning.
+    On CUDA >= 12.9, sm >= 100 uses the family-specific 'f' variants so
+    the SASS also serves same-family chips (e.g. sm_103 alongside
+    sm_100). The newest kept architecture also gets a plain PTX entry
+    for driver-JIT forward compatibility on future GPUs.
+    """
     flags = []
     major, minor = cuda_version
     ver = major * 10 + minor
 
+    kept = []
     for sm in archs:
         sm_int = int(sm)
-        if sm_int >= 120 and ver < 128:
+        min_ver = 128 if sm_int >= 100 else 118 if sm_int >= 90 else 0
+        if ver < min_ver:
+            print(
+                f"[qkan] WARNING: sm_{sm} requires CUDA >= "
+                f"{min_ver // 10}.{min_ver % 10} but the toolkit is "
+                f"{major}.{minor}; dropping sm_{sm} from the build"
+            )
             continue
-        if sm_int >= 100 and ver < 128:
-            continue
-        if sm_int >= 90 and ver < 118:
-            continue
+        kept.append(sm)
+        suffix = "f" if sm_int >= 100 and ver >= 129 else ""
+        flags += ["-gencode", f"arch=compute_{sm}{suffix},code=sm_{sm}{suffix}"]
 
-        compute = f"compute_{sm}"
-        if sm_int >= 100 and ver >= 129:
-            compute = f"compute_{sm}f"
-
-        flags += ["-gencode", f"arch={compute},code=sm_{sm}"]
-
-    if archs:
-        newest = max(archs, key=int)
+    if kept:
+        newest = max(kept, key=int)
         flags += ["-gencode", f"arch=compute_{newest},code=compute_{newest}"]
 
     return flags
@@ -261,7 +347,9 @@ try:
                     os.makedirs(self.dist_dir)
 
                 impl_tag, abi_tag, plat_tag = self.get_tag()
-                archive_basename = f"{self.wheel_dist_name}-{impl_tag}-{abi_tag}-{plat_tag}"
+                archive_basename = (
+                    f"{self.wheel_dist_name}-{impl_tag}-{abi_tag}-{plat_tag}"
+                )
                 wheel_path = os.path.join(self.dist_dir, archive_basename + ".whl")
                 os.rename(wheel_filename, wheel_path)
                 print(f"[qkan] Using pre-built wheel: {wheel_path}")
@@ -314,18 +402,25 @@ if not SKIP_CUDA_BUILD:
     if BUILD_CUTE:
         try:
             import torch
+
             torch_cuda = torch.version.cuda
             if torch_cuda is not None:
-                torch_ver = int(torch_cuda.split(".")[0]) * 10 + int(torch_cuda.split(".")[1])
+                torch_ver = int(torch_cuda.split(".")[0]) * 10 + int(
+                    torch_cuda.split(".")[1]
+                )
                 sys_ver = cuda_version[0] * 10 + cuda_version[1]
                 if torch_ver != sys_ver:
-                    msg = (f"[qkan] System CUDA {cuda_version[0]}.{cuda_version[1]} "
-                           f"vs torch CUDA {torch_cuda}")
+                    msg = (
+                        f"[qkan] System CUDA {cuda_version[0]}.{cuda_version[1]} "
+                        f"vs torch CUDA {torch_cuda}"
+                    )
                     if FORCE_BUILD:
                         print(f"{msg} — proceeding (QKAN_FORCE_BUILD=TRUE)")
                     else:
-                        print(f"{msg} — skipping CuTe build "
-                              f"(use --no-build-isolation to match)")
+                        print(
+                            f"{msg} — skipping CuTe build "
+                            f"(use --no-build-isolation to match)"
+                        )
                         BUILD_CUTE = False
         except Exception:
             pass
@@ -352,7 +447,11 @@ if BUILD_CUTE:
     ext_modules.append(
         CUDAExtension(
             name="qkan._C",
-            sources=["csrc/cute_kernels.cu"],
+            sources=[
+                "src/qkan/csrc/cute_kernels.cu",
+                "src/qkan/csrc/cute_activations.cu",
+                "src/qkan/csrc/cute_linear.cu",
+            ],
             extra_compile_args={
                 "cxx": ["-O3", "-std=c++17"],
                 "nvcc": nvcc_flags + cc_flags,

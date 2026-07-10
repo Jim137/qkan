@@ -122,8 +122,12 @@ If you find this project useful in your research, please consider citing the fol
 
    intro
    solver_guide
+   packing_guide
+   optim_guide
+   graph_guide
    api
    examples
+   applications
 
 
 Indices and Tables

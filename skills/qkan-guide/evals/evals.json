@@ -1,0 +1,122 @@
+[
+  {
+    "id": "qkan-guide-install-001",
+    "question": "I have a Linux box with an NVIDIA GPU. How do I install QKAN for GPU training and confirm it works?",
+    "expected_skill": "qkan-guide",
+    "expected_script": null,
+    "ground_truth": "The agent recommends `pip install qkan[gpu]` (Triton/cuTile/cuQuantum extras on top of the base torch>=2.0 install), then validates with `python -c \"import qkan; print(qkan.__version__)\"` and the J_0(20x) Quick Start example, confirming the training loss decreases; GPU training should use solver=\"flash\".",
+    "expected_behavior": [
+      "The agent read skills/qkan-guide/SKILL.md before answering",
+      "The agent recommended installing QKAN via `pip install qkan[gpu]`",
+      "The agent included a validation step (version import and/or the J_0(20x) Quick Start) and mentioned the flash solver for GPU training"
+    ]
+  },
+  {
+    "id": "qkan-guide-test-program-001",
+    "question": "Help me write and run a minimal QKAN training example to check my setup is working.",
+    "expected_skill": "qkan-guide",
+    "expected_script": null,
+    "ground_truth": "The agent guides the user through the Quick Start: `create_dataset` on f(x)=sin(20x)/x/20, `QKAN([1, 1], reps=3, save_act=True, ...)`, training via `model.train_(dataset, steps=..., optimizer=LBFGS)`, and plotting with `model.plot(from_acts=True)`; save_act=True is needed for plotting/pruning.",
+    "expected_behavior": [
+      "The agent read skills/qkan-guide/SKILL.md before answering",
+      "The agent used create_dataset and QKAN([1, 1], reps=...) with save_act=True",
+      "The agent trained with model.train_ and mentioned plotting via model.plot(from_acts=True)"
+    ]
+  },
+  {
+    "id": "qkan-guide-solvers-001",
+    "question": "Which QKAN solver should I use to train on a single NVIDIA GPU, and which one if the layer is so large it nearly runs out of memory?",
+    "expected_skill": "qkan-guide",
+    "expected_script": null,
+    "ground_truth": "The agent recommends solver=\"flash\" (Triton fused kernels, qkan[gpu]) for standard single-GPU training and solver=\"cutn\" (tensor-network contraction via cuQuantum) for extremely large layers near OOM.",
+    "expected_behavior": [
+      "The agent read skills/qkan-guide/SKILL.md before answering",
+      "The agent recommended the flash solver for single-GPU training",
+      "The agent recommended the cutn solver for layers near out-of-memory"
+    ]
+  },
+  {
+    "id": "qkan-guide-qpu-ibm-001",
+    "question": "I trained a QKAN locally. How do I run it on real IBM Quantum hardware using the best-calibrated qubits?",
+    "expected_skill": "qkan-guide",
+    "expected_script": null,
+    "ground_truth": "The agent describes the train-locally/infer-on-QPU workflow: transfer weights with initialize_from_another_model to a solver=\"qiskit\" model constructed with fast_measure=False, pass a Qiskit Runtime backend with shots and parallel_qubits in solver_kwargs, and pin the best-calibrated qubits with initial_layout=\"auto\" (backed by qkan.solver.best_qubits scoring readout+sx error and T2).",
+    "expected_behavior": [
+      "The agent read skills/qkan-guide/SKILL.md before answering",
+      "The agent used solver=\"qiskit\" with fast_measure=False and initialize_from_another_model",
+      "The agent recommended initial_layout=\"auto\" (best_qubits) and parallel_qubits packing"
+    ]
+  },
+  {
+    "id": "qkan-guide-qpu-braket-001",
+    "question": "How do I run QKAN inference on an AWS Braket QPU, and what should I watch out for?",
+    "expected_skill": "qkan-guide",
+    "expected_script": null,
+    "ground_truth": "The agent uses solver=\"cudaq\" with fast_measure=False and solver_kwargs target=\"braket\", machine=<device ARN>, shots, parallel_qubits \u2014 and warns that cudaq.set_target is process-global, so a leaked braket target plus AWS credentials can submit paid QPU tasks; pin \"qpp-cpu\" when not spending and confirm cost before submission.",
+    "expected_behavior": [
+      "The agent read skills/qkan-guide/SKILL.md before answering",
+      "The agent used solver=\"cudaq\" with target=\"braket\" and a machine ARN in solver_kwargs, plus fast_measure=False",
+      "The agent warned about the process-global cudaq target / paid-task risk and advised confirming cost first"
+    ]
+  },
+  {
+    "id": "qkan-guide-mitigation-001",
+    "question": "My QKAN expectation values from real hardware are noisy. What error mitigation does QKAN offer and what does each option cost?",
+    "expected_skill": "qkan-guide",
+    "expected_script": null,
+    "ground_truth": "The agent describes solver_kwargs[\"mitigation\"]: clip_expvals (1x, always safe), n_repeats=3 (3x, shot noise), zne with scale_factors [1,3,5] (3x, gate noise via gate folding + Richardson extrapolation), ZNE+n_repeats (9x, inference only) \u2014 and notes the IBM-native resilience_level/twirling options are passed directly in solver_kwargs, not under mitigation.",
+    "expected_behavior": [
+      "The agent read skills/qkan-guide/SKILL.md before answering",
+      "The agent listed clip_expvals, n_repeats, and zne with their circuit-cost multipliers (1x/3x/3x, 9x combined)",
+      "The agent distinguished IBM-native resilience_level/twirling from the mitigation dict"
+    ]
+  },
+  {
+    "id": "qkan-guide-packing-001",
+    "question": "I need to evaluate the same small circuit at 8 different parameter sets on one QPU job. Does qkan help with that?",
+    "expected_skill": "qkan-guide",
+    "expected_script": null,
+    "ground_truth": "The agent points to the packing toolkit: pack_circuit(backend_or_profile, circuit_or_kernel, k=8) places 8 copies on disjoint calibration-aware tiles in one job (works for qiskit circuits and plain @cudaq.kernel); the variational-batch pattern binds one parameter set per copy (per-copy parameters / block_args_batch, re-bound each step with rebind), and results are read per tile via observable/expectation.",
+    "expected_behavior": [
+      "The agent read skills/qkan-guide/SKILL.md before answering",
+      "The agent recommended pack_circuit with k=8 on disjoint calibration-aware tiles",
+      "The agent described per-copy parameter binding (variational batch) and per-tile readout"
+    ]
+  },
+  {
+    "id": "qkan-guide-neg-001",
+    "question": "Write a short poem about the changing seasons.",
+    "expected_skill": null,
+    "expected_script": null,
+    "should_trigger": false,
+    "ground_truth": "The agent writes the poem directly and does not consult the QKAN guide skill.",
+    "expected_behavior": [
+      "The agent did not read skills/qkan-guide/SKILL.md",
+      "The agent answered the request directly with a poem"
+    ]
+  },
+  {
+    "id": "qkan-guide-neg-002",
+    "question": "Write a JavaScript function that debounces another function.",
+    "expected_skill": null,
+    "expected_script": null,
+    "should_trigger": false,
+    "ground_truth": "The agent provides a JavaScript debounce implementation without invoking the QKAN guide skill.",
+    "expected_behavior": [
+      "The agent did not read skills/qkan-guide/SKILL.md",
+      "The agent provided a JavaScript debounce function directly"
+    ]
+  },
+  {
+    "id": "qkan-guide-neg-003",
+    "question": "Install PyTorch with CUDA support on my Ubuntu machine.",
+    "expected_skill": null,
+    "expected_script": null,
+    "should_trigger": false,
+    "ground_truth": "The agent gives PyTorch + CUDA installation guidance without invoking the QKAN guide skill, since the request is about PyTorch itself rather than QKAN.",
+    "expected_behavior": [
+      "The agent did not read skills/qkan-guide/SKILL.md",
+      "The agent provided PyTorch installation steps for the requested CUDA setup"
+    ]
+  }
+]

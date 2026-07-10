@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import warnings
 
 import torch
 
@@ -45,8 +46,8 @@ _CUTE_KERNELS_AVAILABLE = False
 
 def _find_cutlass_include() -> str | None:
     """Locate CUTLASS include/ directory."""
-    # Project root: src/qkan/cute_ops.py → parents[2] = project root
-    project_root = pathlib.Path(__file__).resolve().parents[2]
+    # Project root: src/qkan/solver/cute/cute_ops.py → parents[4] = project root
+    project_root = pathlib.Path(__file__).resolve().parents[4]
     candidates = [
         os.environ.get("CUTLASS_PATH", ""),
         str(project_root.parent / "cutlass"),  # sibling checkout
@@ -90,12 +91,18 @@ def _load_jit():
 
     from torch.utils.cpp_extension import load
 
-    cu_src = str(
-        pathlib.Path(__file__).resolve().parents[2] / "csrc" / "cute_kernels.cu"
-    )
+    # The .cu sources ship inside the package (src/qkan/csrc, included in
+    # wheels via package-data), so the JIT rebuild works from installed
+    # packages as well as source checkouts.
+    csrc_dir = pathlib.Path(__file__).resolve().parents[2] / "csrc"
+    sources = [
+        str(csrc_dir / "cute_kernels.cu"),
+        str(csrc_dir / "cute_activations.cu"),
+        str(csrc_dir / "cute_linear.cu"),
+    ]
     _ext = load(
         name="qkan_cute_ops",
-        sources=[cu_src],
+        sources=sources,
         extra_include_paths=[cutlass_inc],
         extra_cflags=["-O3", "-std=c++17"],
         extra_cuda_cflags=[
@@ -112,14 +119,67 @@ def _load_jit():
     return _ext
 
 
+_INCOMPATIBLE_IMAGE_MARKERS = (
+    "no kernel image is available",
+    "invalid device function",
+)
+
+
+def _supports_current_device(ext) -> bool:
+    """Whether the extension has a kernel image usable on the current GPU.
+
+    A prebuilt wheel carries SASS for the architectures it was compiled
+    for plus PTX for the newest; the driver JIT-compiles the PTX on newer
+    GPUs, but a wheel built only for a *newer* architecture than the
+    local GPU (e.g. an sm_120 build on an A100), or one whose PTX cannot
+    be JIT-compiled, fails at first launch. The embedded images cannot be
+    enumerated reliably (fatbin sections are compressed), so probe with a
+    one-element kernel launch and catch exactly that failure here rather
+    than mid-training.
+    """
+    if not torch.cuda.is_available():
+        return True
+    try:
+        ext.activation_forward(torch.zeros(1, device="cuda"), 3)  # relu
+        return True
+    except RuntimeError as error:
+        message = str(error).lower()
+        if any(marker in message for marker in _INCOMPATIBLE_IMAGE_MARKERS):
+            return False
+        return True  # some other runtime issue — not an architecture mismatch
+    except Exception:
+        return True
+
+
 def _get_ext():
-    global _ext
+    global _ext, _CUTE_KERNELS_AVAILABLE
     if _ext is not None:
         return _ext
     # Try pre-built first (instant), then JIT (slow first time)
-    _ext = _load_prebuilt()
-    if _ext is None:
-        _ext = _load_jit()
+    prebuilt = _load_prebuilt()
+    if prebuilt is not None:
+        if _supports_current_device(prebuilt):
+            return prebuilt
+        capability = torch.cuda.get_device_capability()
+        _ext = None
+        _CUTE_KERNELS_AVAILABLE = False
+        warnings.warn(
+            "qkan._C was built without kernels for this GPU (compute "
+            f"capability {capability[0]}.{capability[1]}); attempting a "
+            "JIT rebuild for the local architecture. Reinstall with "
+            f"QKAN_CUDA_ARCHS={capability[0]}{capability[1]} "
+            "QKAN_FORCE_BUILD=TRUE to avoid the rebuild.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+        try:
+            return _load_jit()
+        except ImportError as error:
+            raise ImportError(
+                "the prebuilt qkan._C does not support this GPU and a JIT "
+                f"rebuild is unavailable: {error}"
+            ) from error
+    _ext = _load_jit()
     return _ext
 
 
@@ -311,6 +371,74 @@ def cute_real_backward(
         _state_bits(c_dtype),
     )
     return tuple(results)
+
+
+# ---------------------------------------------------------------------------
+# Pointwise activation kernels (used by QKANLayer's base path)
+# ---------------------------------------------------------------------------
+
+# Must match the ActKind enum in src/qkan/csrc/cute_activations.cu.
+_ACTIVATION_KIND_MAP: dict[str, int] = {
+    "silu": 0,
+    "gelu_exact": 1,
+    "gelu_tanh": 2,
+    "relu": 3,
+    "tanh": 4,
+    "sigmoid": 5,
+}
+
+
+def _activation_kind_int(kind: str) -> int:
+    try:
+        return _ACTIVATION_KIND_MAP[kind]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unknown CuTe activation kind '{kind}'. "
+            f"Supported: {sorted(_ACTIVATION_KIND_MAP)}"
+        ) from exc
+
+
+def cute_activation_forward(
+    x: torch.Tensor,
+    kind: str,
+    c_dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """CuTe pointwise activation forward.
+
+    Args:
+        x: input tensor (CUDA, contiguous-ish; will be made contiguous if not).
+            Computed in-kernel as f32; I/O in f32 or bf16 depending on ``x.dtype``.
+        kind: one of ``"silu"``, ``"gelu_exact"``, ``"gelu_tanh"``, ``"relu"``,
+            ``"tanh"``, ``"sigmoid"``.
+        c_dtype: compute dtype hint (kept for parity with the rest of cute_ops;
+            unused — the kernel always computes in f32 and matches I/O dtype to
+            ``x.dtype``).
+
+    Returns:
+        Tensor with the same shape and dtype as ``x``.
+    """
+    del c_dtype  # accepted for API parity; kernel computes in f32 internally
+    ext = _get_ext()
+    return ext.activation_forward(x, _activation_kind_int(kind))
+
+
+def cute_activation_backward(
+    grad_y: torch.Tensor,
+    x: torch.Tensor,
+    kind: str,
+    c_dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """CuTe pointwise activation backward (returns grad_x).
+
+    Args:
+        grad_y: upstream gradient with the same shape/dtype as ``x``.
+        x: forward input.
+        kind: see :func:`cute_activation_forward`.
+        c_dtype: compute dtype hint (unused, see :func:`cute_activation_forward`).
+    """
+    del c_dtype
+    ext = _get_ext()
+    return ext.activation_backward(grad_y, x, _activation_kind_int(kind))
 
 
 # ---------------------------------------------------------------------------

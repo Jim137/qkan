@@ -17,35 +17,65 @@
 QKAN solver backends.
 
 Each solver is implemented in its own module:
-- torch_exact: Pure PyTorch reference implementation
+- exact: Pure PyTorch reference implementation
 - flash: Triton fused kernels
+- cute: CuTe DSL CUDA fused kernels
 - cutile: cuTile (NVIDIA Tile Language) fused kernels
 - cutn: cuQuantum tensor network contraction
 - qml: PennyLane quantum circuits
-- qiskit_solver: IBM Quantum backends via Qiskit Runtime
-- cudaq_solver: NVIDIA CUDA-Q backends (GPU-accelerated simulation or QPU)
+- qiskit: IBM Quantum backends via Qiskit Runtime
+- cudaq: NVIDIA CUDA-Q backends (GPU-accelerated simulation or QPU)
 """
 
-from .cudaq_solver import cudaq_solver
+from ._activation import make_base_activation
+from ._base import QKANSolver, get_registry, get_solver, register
+from .cudaq import cudaq_solver
 from .cute import _CUTE_AVAILABLE, cute_exact_solver
 from .cutile import _CUTILE_AVAILABLE, cutile_flash_exact_solver
 from .cutn import cutn_solver
+from .exact import torch_exact_solver
 from .flash import _FLASH_AVAILABLE, flash_exact_solver
-from .qiskit_solver import best_qubits, qiskit_solver
+from .layout import (
+    DeviceProfile,
+    best_subgraph,
+    rank_qubits,
+    score_layout,
+    tile_disjoint,
+)
+from .packing import (
+    PackedCircuit,
+    interaction_of,
+    kernel_interaction_of,
+    pack_circuit,
+)
+from .qiskit import best_qubits, qiskit_solver
 from .qml import qml_solver
-from .torch_exact import torch_exact_solver
 
 __all__ = [
     "_CUTE_AVAILABLE",
     "_CUTILE_AVAILABLE",
     "_FLASH_AVAILABLE",
+    "DeviceProfile",
+    "PackedCircuit",
+    "QKANSolver",
     "best_qubits",
+    "best_subgraph",
     "cudaq_solver",
     "cute_exact_solver",
     "cutile_flash_exact_solver",
     "cutn_solver",
     "flash_exact_solver",
+    "get_registry",
+    "get_solver",
+    "interaction_of",
+    "kernel_interaction_of",
+    "make_base_activation",
+    "pack_circuit",
     "qiskit_solver",
     "qml_solver",
+    "rank_qubits",
+    "register",
+    "score_layout",
+    "tile_disjoint",
     "torch_exact_solver",
 ]

@@ -78,6 +78,9 @@ def torch_exact_solver(
 
 
 class DARUAN(nn.Module):
+    # Tensor names whose shape may differ between p_dim=2 and p_dim=4 storage.
+    _PDIM_RESHAPABLE_NAMES = ("theta",)
+
     def __init__(
         self,
         dim: int,
@@ -89,6 +92,7 @@ class DARUAN(nn.Module):
         postact_weight_trainable: bool = False,
         postact_bias_trainable: bool = False,
         seed=0,
+        p_dim: Literal[2, 4] = 4,
     ):
         super(DARUAN, self).__init__()
 
@@ -96,6 +100,9 @@ class DARUAN(nn.Module):
         np.random.seed(seed)
         random.seed(seed)
 
+        if p_dim not in (2, 4):
+            raise ValueError(f"p_dim must be 2 or 4, got {p_dim}")
+        self.p_dim: Literal[2, 4] = p_dim
         self.dim = dim
         self.reps = reps
         self.device = device
@@ -103,15 +110,22 @@ class DARUAN(nn.Module):
         self.ansatz = ansatz
 
         if ansatz == "pz_encoding":
-            self.theta = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(dim, reps + 1, 2, device=device))
-            )
+            self._theta_natural_shape: tuple[int, ...] = (dim, reps + 1, 2)
         elif ansatz == "px_encoding":
-            self.theta = nn.Parameter(
-                nn.init.xavier_normal_(torch.empty(dim, reps + 1, 1, device=device))
-            )
+            self._theta_natural_shape = (dim, reps + 1, 1)
         else:
             raise NotImplementedError()
+        if self.p_dim == 2:
+            storage_shape: tuple[int, ...] = (
+                dim,
+                self._theta_natural_shape[-2] * self._theta_natural_shape[-1],
+            )
+        else:
+            storage_shape = self._theta_natural_shape
+        theta_storage = torch.empty(*storage_shape, device=device)
+        # Init through the natural-rank view so fan-in/out matches today's draws.
+        nn.init.xavier_normal_(theta_storage.view(*self._theta_natural_shape))
+        self.theta = nn.Parameter(theta_storage)
 
         self.preacts_trainable = preact_trainable
         self.preacts_weight = nn.Parameter(
@@ -134,6 +148,43 @@ class DARUAN(nn.Module):
             requires_grad=postact_bias_trainable,
         )
 
+    def _theta_natural(self) -> torch.Tensor:
+        """Theta in its 3D natural shape ``(dim, reps+1, K)``."""
+        if self.p_dim == 4:
+            return self.theta
+        return self.theta.view(*self._theta_natural_shape)
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        # Reshape theta when a saved checkpoint used a different p_dim.
+        for name in self._PDIM_RESHAPABLE_NAMES:
+            key = prefix + name
+            if key not in state_dict:
+                continue
+            target = getattr(self, name, None)
+            if not isinstance(target, torch.Tensor):
+                continue
+            source = state_dict[key]
+            if source.shape != target.shape and source.numel() == target.numel():
+                state_dict[key] = source.reshape(target.shape)
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+
     def forward(self, x: torch.Tensor):
         assert x.shape[1] == self.dim, "Invalid input dimension"
 
@@ -143,7 +194,7 @@ class DARUAN(nn.Module):
         elif self.solver == "exact":
             postacts = torch_exact_solver(
                 x,
-                self.theta,
+                self._theta_natural(),
                 self.preacts_weight,
                 self.preacts_bias,
                 self.reps,

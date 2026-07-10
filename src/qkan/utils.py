@@ -27,7 +27,7 @@ Adapted from [KindXiaoming/pykan@GitHub 91a2f63](https://github.com/KindXiaoming
 """
 
 import numpy as np
-import sympy
+import sympy  # type: ignore[import-untyped]
 import torch
 
 # sigmoid = sympy.Function('sigmoid')

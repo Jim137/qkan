@@ -27,6 +27,10 @@ Return the symbol, expression, function, and ranges of the dataset.
 Adapted from [KindXiaoming/pykan@GitHub 11984f4](https://github.com/KindXiaoming/pykan/tree/11984f49216fc254c1dd40b5bee0a069ee63114a)
 """
 
+# mypy: disable-error-code="name-defined,import-untyped"
+# This file declares 120 Feynman equations as sympy expressions; the wildcard
+# `from sympy import *` is intentional to keep the table compact, and mypy
+# can't resolve names through wildcard imports without per-symbol stubs.
 from typing import Union as TyUnion
 
 import torch

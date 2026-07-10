@@ -1,0 +1,74 @@
+name: release-prep
+
+# Prepares a release without ever taking master out of dev state:
+# dispatched from master only, it creates release/vX.Y.Z with the dev
+# marker stripped, then prints the manual tag commands. The maintainer
+# reviews the branch and pushes the tag themselves — deliberate, because
+# a tag pushed with the default GITHUB_TOKEN would not trigger
+# publish.yml. The release branch never merges back; after tagging, bump
+# master to the next dev version with an ordinary commit.
+#
+# The version input reaches every script through env (never inline
+# ${{ }} interpolation inside run:) — inline expansion happens before
+# bash parses the script, so a crafted input could inject commands.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version X.Y.Z (current __version__ must be X.Y.Zdev)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require dispatch from master
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/master" ]; then
+            echo "::error::release-prep must be dispatched from master, got '$GITHUB_REF'"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Validate input and strip dev marker
+        run: |
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "::error::version '$VERSION' is not X.Y.Z"; exit 1; }
+          grep -q "^__version__ = \"${VERSION}dev\"$" src/qkan/__init__.py || {
+            echo "::error::__version__ is not \"${VERSION}dev\" — wrong version or already released"; exit 1; }
+          sed -i "s/^__version__ = \"${VERSION}dev\"$/__version__ = \"${VERSION}\"/" src/qkan/__init__.py
+
+      - name: Push release branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "release/v${VERSION}"
+          git commit -am "release: v${VERSION}"
+          git push -u origin "release/v${VERSION}"
+
+      - name: Print tagging instructions
+        run: |
+          sha=$(git rev-parse HEAD)
+          {
+            echo "## Release branch pushed: \`release/v${VERSION}\` (\`${sha}\`)"
+            echo
+            echo "Review the branch, then create and push the tag to trigger \`publish.yml\`:"
+            echo
+            echo '```bash'
+            echo "git fetch origin release/v${VERSION}"
+            echo "git tag v${VERSION} ${sha}"
+            echo "git push origin v${VERSION}"
+            echo '```'
+            echo
+            echo "The tag lives on the release branch only — master stays at \`${VERSION}dev\`."
+            echo "After the release, bump master to the next dev version."
+          } >> "$GITHUB_STEP_SUMMARY"
