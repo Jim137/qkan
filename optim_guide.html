@@ -1,0 +1,478 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Optimizer Guide &mdash; QKAN 0.2.3dev documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+    <link rel="canonical" href="https://qkan.jimq.cc/optim_guide.html" />
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=db1dea96"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Inference and Training Guide" href="graph_guide.html" />
+    <link rel="prev" title="Circuit Packing and Calibration-Aware Layouts" href="packing_guide.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Optimizer Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#optimizer-overview">Optimizer Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#adabelief">AdaBelief</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#tritonadabelief">TritonAdaBelief</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#qkanadammini">QKANAdamMini</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#qkanbeliefmini">QKANBeliefMini</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#qkanspectralmini">QKANSpectralMini</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#bf16-state-dtype">bf16 <code class="docutils literal notranslate"><span class="pre">state_dtype</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#l-bfgs-finisher">L-BFGS Finisher</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#cross-p-dim-checkpoint-portability">Cross-<code class="docutils literal notranslate"><span class="pre">p_dim</span></code> Checkpoint Portability</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#when-to-use-which">When to use which</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="graph_guide.html">Inference and Training Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="applications.html">Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Optimizer Guide</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/optim_guide.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="optimizer-guide">
+<h1>Optimizer Guide<a class="headerlink" href="#optimizer-guide" title="Link to this heading"></a></h1>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Pre-release.</strong> The <code class="docutils literal notranslate"><span class="pre">qkan.optim</span></code> module is shipping in v0.2.3 as a
+preview. APIs, defaults, and the choice of which variants are kept may
+change before the next stable release. Pin <code class="docutils literal notranslate"><span class="pre">qkan==0.2.3.*</span></code> if you
+depend on the current surface.</p>
+</div>
+<p>QKAN ships a small family of optimizers tuned for its parameter layout.
+The main parameters (<code class="docutils literal notranslate"><span class="pre">theta</span></code>, <code class="docutils literal notranslate"><span class="pre">preacts_*</span></code>, <code class="docutils literal notranslate"><span class="pre">base_weight</span></code>,
+<code class="docutils literal notranslate"><span class="pre">postact_*</span></code>) are indexed by output / input edges <code class="docutils literal notranslate"><span class="pre">(O,</span> <span class="pre">I)</span></code> plus a
+small trailing fan (reps <code class="docutils literal notranslate"><span class="pre">R</span></code>, <code class="docutils literal notranslate"><span class="pre">K</span></code>). That structure makes
+Adam-mini-style block-shared second moments and single-kernel fused
+updates useful.</p>
+<p>This guide covers <code class="docutils literal notranslate"><span class="pre">qkan.optim</span></code>: a vanilla AdaBelief, a fused
+Triton AdaBelief, three block-aware variants (<code class="docutils literal notranslate"><span class="pre">QKANAdamMini</span></code>,
+<code class="docutils literal notranslate"><span class="pre">QKANSpectralMini</span></code>, <code class="docutils literal notranslate"><span class="pre">QKANBeliefMini</span></code>), an L-BFGS finisher schedule,
+and a checkpoint-portability helper.</p>
+<section id="optimizer-overview">
+<h2>Optimizer Overview<a class="headerlink" href="#optimizer-overview" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 40.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Optimizer</p></th>
+<th class="head"><p>State vs AdamW</p></th>
+<th class="head"><p>Speed (RTX 5090, GPT-2-small stack)</p></th>
+<th class="head"><p>Use case</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AdaBelief</span></code></p></td>
+<td><p>same (2N)</p></td>
+<td><p>4.79 ms/step (eager)</p></td>
+<td><p>Drop-in Adam replacement. Better preconditioner for QKAN’s noisy quantum-circuit gradients.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">TritonAdaBelief</span></code></p></td>
+<td><p>same (2N), or 0.5x with bf16</p></td>
+<td><p>~2.6 ms/step (~2.0 ms bf16)</p></td>
+<td><p>Same algorithm as <code class="docutils literal notranslate"><span class="pre">AdaBelief</span></code>, single fused Triton kernel. ~7x fewer launches per step.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">QKANAdamMini</span></code></p></td>
+<td><p>~0.5x (N + #blocks)</p></td>
+<td><p>n/a</p></td>
+<td><p>Block-shared 2nd moment, per <code class="docutils literal notranslate"><span class="pre">(o,</span> <span class="pre">i,</span> <span class="pre">r)</span></code> for theta. ~30% less optimizer state.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">QKANBeliefMini</span></code></p></td>
+<td><p>~0.5x; ~0.25x with bf16 state</p></td>
+<td><p>n/a</p></td>
+<td><p>AdaBelief + Adam-mini block partitioning. State between Adam and full AdaBelief in convergence.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">QKANSpectralMini</span></code></p></td>
+<td><p>same (2N), state on rank-1 sub-manifold</p></td>
+<td><p>n/a</p></td>
+<td><p>Eigenvalue-aware Adam-mini using a Sherman-Morrison rank-1 GN preconditioner. No eigendecomp.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">LBFGSFinisher</span></code></p></td>
+<td><p>depends on early opt</p></td>
+<td><p>n/a</p></td>
+<td><p>Adam (or any optimizer) for the warmup phase, then L-BFGS line search. Polishes the minimum 2-10x on KAN-style fits.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Benchmark setup for the Triton numbers: a 50257x768 embedding, 96
+weights of shape 768x768, and 48 biases of length 768
+(GPT-2-small-shaped). All optimizers run the same per-parameter
+algorithm; the speedup comes from collapsing ~7 elementwise kernels
+into one Triton launch.</p>
+</section>
+<section id="adabelief">
+<h2>AdaBelief<a class="headerlink" href="#adabelief" title="Link to this heading"></a></h2>
+<p>Drop-in Adam replacement from <a class="reference external" href="https://arxiv.org/abs/2010.07468">arXiv:2010.07468</a>. AdaBelief replaces Adam’s second
+moment <code class="docutils literal notranslate"><span class="pre">v</span> <span class="pre">=</span> <span class="pre">EMA(g^2)</span></code> with <code class="docutils literal notranslate"><span class="pre">s</span> <span class="pre">=</span> <span class="pre">EMA((g</span> <span class="pre">-</span> <span class="pre">m)^2)</span></code> — the variance of
+the gradient around its EMA. The update is otherwise identical to Adam.</p>
+<p>For QKAN this is materially better than vanilla Adam: the
+data-reuploading angle injects stochasticity through the input <code class="docutils literal notranslate"><span class="pre">x</span></code>, so
+raw gradient magnitude is a noisy preconditioner. The variance form
+down-weights noisy directions and amplifies consistent ones.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qkan.optim</span><span class="w"> </span><span class="kn">import</span> <span class="n">AdaBelief</span>
+
+<span class="n">opt</span> <span class="o">=</span> <span class="n">AdaBelief</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">y</span><span class="p">)</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Memory and per-step compute match Adam. For QKAN, the default
+<code class="docutils literal notranslate"><span class="pre">lr=1e-2</span></code> is much larger than Adam’s typical <code class="docutils literal notranslate"><span class="pre">1e-3</span></code> — sweep on your
+task.</p>
+</section>
+<section id="tritonadabelief">
+<h2>TritonAdaBelief<a class="headerlink" href="#tritonadabelief" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">TritonAdaBelief</span></code> uses the same algorithm as
+<code class="xref py py-class docutils literal notranslate"><span class="pre">AdaBelief</span></code>, but collapses the full per-parameter
+step (lerp + sub + mul + addcmul + sqrt + add + addcdiv) into one
+Triton kernel. PyTorch ships <code class="docutils literal notranslate"><span class="pre">AdamW(fused=True)</span></code> but has no equivalent
+<code class="docutils literal notranslate"><span class="pre">_fused_adabelief_</span></code>; this fills the gap.</p>
+<p>Speed on the GPT-2-small-shaped parameter stack (RTX 5090):</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Optimizer</p></th>
+<th class="head"><p>ms / step</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AdamW(fused=True)</span></code></p></td>
+<td><p>2.43</p></td>
+<td><p>PyTorch’s fused Adam</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AdaBelief</span></code> (eager)</p></td>
+<td><p>4.79</p></td>
+<td><p>Reference</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">TritonAdaBelief</span></code></p></td>
+<td><p>~2.6</p></td>
+<td><p>-46% vs eager AdaBelief</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">TritonAdaBelief</span></code> bf16 state</p></td>
+<td><p>~2.0</p></td>
+<td><p>-58% vs eager, -50% optimizer memory</p></td>
+</tr>
+</tbody>
+</table>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">qkan.optim</span><span class="w"> </span><span class="kn">import</span> <span class="n">TritonAdaBelief</span>
+
+<span class="n">opt</span> <span class="o">=</span> <span class="n">TritonAdaBelief</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span>
+    <span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span>
+    <span class="n">state_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">,</span>   <span class="c1"># halve optimizer memory</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>The kernel computes in fp32 via implicit upcasts on load, even when
+state is bf16. CPU tensors and non-Triton builds fall back to eager
+AdaBelief — the same algorithm, just per-op.</p>
+</section>
+<section id="qkanadammini">
+<h2>QKANAdamMini<a class="headerlink" href="#qkanadammini" title="Link to this heading"></a></h2>
+<p>Adam-mini (<a class="reference external" href="https://arxiv.org/abs/2406.16793">arXiv:2406.16793</a>) with
+QKAN-aware block partitioning. The first moment <code class="docutils literal notranslate"><span class="pre">m</span></code> stays
+per-parameter; the second moment <code class="docutils literal notranslate"><span class="pre">v</span></code> collapses to one scalar per
+block.</p>
+<p>Block partition (empirically tuned for QKAN, one level finer than the
+strict Hessian per-output rule):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">theta</span></code> natural <code class="docutils literal notranslate"><span class="pre">(O,</span> <span class="pre">I,</span> <span class="pre">R+1,</span> <span class="pre">K)</span></code> → block per <code class="docutils literal notranslate"><span class="pre">(o,</span> <span class="pre">i,</span> <span class="pre">r)</span></code>,
+collapse only the trailing <code class="docutils literal notranslate"><span class="pre">K</span></code> axis. <code class="docutils literal notranslate"><span class="pre">v</span></code> shape <code class="docutils literal notranslate"><span class="pre">(O,</span> <span class="pre">I,</span> <span class="pre">R+1)</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">preacts_*</span></code> natural <code class="docutils literal notranslate"><span class="pre">(O,</span> <span class="pre">I,</span> <span class="pre">R)</span></code> → block per <code class="docutils literal notranslate"><span class="pre">(o,</span> <span class="pre">i)</span></code>, collapse
+<code class="docutils literal notranslate"><span class="pre">R</span></code>. <code class="docutils literal notranslate"><span class="pre">v</span></code> shape <code class="docutils literal notranslate"><span class="pre">(O,</span> <span class="pre">I)</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">(O,</span> <span class="pre">I)</span></code> params (<code class="docutils literal notranslate"><span class="pre">base_weight</span></code>, <code class="docutils literal notranslate"><span class="pre">postact_*</span></code>) → one block per
+tensor.</p></li>
+<li><p>Non-QKAN parameters: per-row for 2-D weight matrices (matches the
+Adam-mini paper’s MLP rule), per-tensor for 1-D / LayerNorm / bias.</p></li>
+</ul>
+<p>Memory is <code class="docutils literal notranslate"><span class="pre">N</span> <span class="pre">+</span> <span class="pre">#blocks</span></code> floats instead of Adam’s <code class="docutils literal notranslate"><span class="pre">2N</span></code>. The natural
+shape comes from the <code class="docutils literal notranslate"><span class="pre">_qkan_natural_shape</span></code> attribute that <code class="docutils literal notranslate"><span class="pre">QKANLayer</span></code>
+stores on its parameters, so the partition is independent of the
+storage <code class="docutils literal notranslate"><span class="pre">p_dim</span></code>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qkan.optim</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKANAdamMini</span>
+
+<span class="c1"># Pass named_parameters — names enable per-edge blocking for theta / preacts.</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">QKANAdamMini</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Passing bare <code class="docutils literal notranslate"><span class="pre">model.parameters()</span></code> (without names) falls back to
+per-tensor blocking. This is still correct, but it gives no memory
+savings.</p>
+</section>
+<section id="qkanbeliefmini">
+<h2>QKANBeliefMini<a class="headerlink" href="#qkanbeliefmini" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">QKANBeliefMini</span></code> is the AdaBelief variant of <code class="docutils literal notranslate"><span class="pre">QKANAdamMini</span></code>: it
+uses the same block partition rule, but applies it to AdaBelief’s
+variance <code class="docutils literal notranslate"><span class="pre">s</span></code> instead of Adam’s <code class="docutils literal notranslate"><span class="pre">v</span></code>. It sits between Adam and full
+AdaBelief in convergence quality while keeping ~30% smaller optimizer
+state.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">qkan.optim</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKANBeliefMini</span>
+
+<span class="n">opt</span> <span class="o">=</span> <span class="n">QKANBeliefMini</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">(),</span>
+    <span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span>
+    <span class="n">state_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">,</span>   <span class="c1"># half-size m and s</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">state_dtype</span></code> knob is shared with <code class="docutils literal notranslate"><span class="pre">TritonAdaBelief</span></code> — see the
+bf16 caveat below.</p>
+</section>
+<section id="qkanspectralmini">
+<h2>QKANSpectralMini<a class="headerlink" href="#qkanspectralmini" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">QKANSpectralMini</span></code> is a sibling of <code class="docutils literal notranslate"><span class="pre">QKANAdamMini</span></code> that exploits the
+rank-1-plus-diagonal structure of the QKAN per-block Hessian
+(empirically a Gauss-Newton outer product plus a small diagonal — see
+<code class="docutils literal notranslate"><span class="pre">analyze_qkan_hessian.py</span></code>).</p>
+<p>For each block <code class="docutils literal notranslate"><span class="pre">b</span></code>, it stores a single direction vector <code class="docutils literal notranslate"><span class="pre">c_b</span></code> (EMA
+of the gradient inside the block) and preconditions with the
+Sherman-Morrison inverse of <code class="docutils literal notranslate"><span class="pre">c_b</span> <span class="pre">c_b^T</span> <span class="pre">+</span> <span class="pre">lambda</span> <span class="pre">I</span></code>:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>upd_b = (1 / lambda) * (g_b - (&lt;c_b, g_b&gt; / (lambda + |c_b|^2)) * c_b)
+</pre></div>
+</div>
+<p>No eigendecomposition — the rank-1 inverse is closed-form. <code class="docutils literal notranslate"><span class="pre">eps</span></code>
+(default <code class="docutils literal notranslate"><span class="pre">1e-3</span></code>) plays the role of <code class="docutils literal notranslate"><span class="pre">lambda</span></code> and acts as a damping
+floor on the curvature estimate.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qkan.optim</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKANSpectralMini</span>
+
+<span class="n">opt</span> <span class="o">=</span> <span class="n">QKANSpectralMini</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">(),</span>
+    <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span>
+    <span class="n">eps</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span>   <span class="c1"># Sherman-Morrison damping</span>
+<span class="p">)</span>
+
+<span class="c1"># Inspect the block partition before training:</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="n">block_ndim</span><span class="p">,</span> <span class="n">n_blocks</span> <span class="ow">in</span> <span class="n">opt</span><span class="o">.</span><span class="n">describe_layout</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">: shape=</span><span class="si">{</span><span class="n">shape</span><span class="si">}</span><span class="s2">  block_ndim=</span><span class="si">{</span><span class="n">block_ndim</span><span class="si">}</span><span class="s2">  n_blocks=</span><span class="si">{</span><span class="n">n_blocks</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>State cost is <code class="docutils literal notranslate"><span class="pre">m</span></code> (per-parameter, like Adam) plus <code class="docutils literal notranslate"><span class="pre">c</span></code> (also
+per-parameter — <code class="docutils literal notranslate"><span class="pre">c</span></code> lives at parameter resolution and is reshaped into
+blocks at step time). Memory is comparable to Adam, but the
+“second-moment” information lives on a rank-1 sub-manifold per block.</p>
+</section>
+<section id="bf16-state-dtype">
+<h2>bf16 <code class="docutils literal notranslate"><span class="pre">state_dtype</span></code><a class="headerlink" href="#bf16-state-dtype" title="Link to this heading"></a></h2>
+<p>Both <code class="xref py py-class docutils literal notranslate"><span class="pre">TritonAdaBelief</span></code> and
+<code class="xref py py-class docutils literal notranslate"><span class="pre">QKANBeliefMini</span></code> accept a <code class="docutils literal notranslate"><span class="pre">state_dtype</span></code> argument:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">opt</span> <span class="o">=</span> <span class="n">TritonAdaBelief</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span>
+    <span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span>
+    <span class="n">state_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">,</span>   <span class="c1"># -50% optimizer memory</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">None</span></code> (default) inherits the parameter dtype. Passing
+<code class="docutils literal notranslate"><span class="pre">torch.bfloat16</span></code> halves optimizer memory at near-zero quality cost
+for fp32 parameters. The Triton kernel recomputes in fp32 via implicit
+upcasts on load, and torch’s add/mul handle bf16 EMAs correctly enough
+for these small accumulators.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong>bf16 params + ``state_dtype=None``</strong>. If the model parameters
+themselves are bf16 and you leave <code class="docutils literal notranslate"><span class="pre">state_dtype=None</span></code>, the variance
+<code class="docutils literal notranslate"><span class="pre">s</span></code> accumulates squared residuals in bf16 and may underflow on
+long runs. Pass <code class="docutils literal notranslate"><span class="pre">state_dtype=torch.float32</span></code> explicitly when
+training bf16 weights.</p>
+</div>
+</section>
+<section id="l-bfgs-finisher">
+<h2>L-BFGS Finisher<a class="headerlink" href="#l-bfgs-finisher" title="Link to this heading"></a></h2>
+<p>The original KAN paper (<a class="reference external" href="https://arxiv.org/abs/2404.19756">arXiv:2404.19756</a>) and <code class="docutils literal notranslate"><span class="pre">pykan</span></code> use a two-phase
+schedule for symbolic-regression fits: a first-order optimizer for the
+bulk of training to find a good basin, then L-BFGS to polish the
+minimum. The BFGS curvature approximation typically reduces final loss
+by 2-10x on KAN-style tasks.</p>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">LBFGSFinisher</span></code> wraps any early optimizer for the
+first <code class="docutils literal notranslate"><span class="pre">pct_early</span></code> fraction of total steps, then auto-switches to
+<code class="docutils literal notranslate"><span class="pre">torch.optim.LBFGS</span></code> with strong-Wolfe line search. The closure
+interface is uniform across the swap point — L-BFGS <em>requires</em> a
+closure that re-evaluates the loss, and the early phase uses the same
+closure.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qkan.optim</span><span class="w"> </span><span class="kn">import</span> <span class="n">adam_then_lbfgs</span>
+
+<span class="n">opt</span> <span class="o">=</span> <span class="n">adam_then_lbfgs</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">,</span>
+    <span class="n">total_steps</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span>
+    <span class="n">lr_adam</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span>
+    <span class="n">pct_adam</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span>             <span class="c1"># Adam for 1400 steps, L-BFGS for 600</span>
+    <span class="n">use_adam_mini</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>       <span class="c1"># use QKANAdamMini in the early phase</span>
+<span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">closure</span><span class="p">():</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">y</span><span class="p">)</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">loss</span>
+
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2000</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">closure</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">opt</span><span class="o">.</span><span class="n">using_lbfgs</span><span class="p">:</span>
+        <span class="o">...</span>   <span class="c1"># post-switch logging, e.g. early stop on tolerance_grad</span>
+</pre></div>
+</div>
+<p>For manual control, build the wrapper directly:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qkan.optim</span><span class="w"> </span><span class="kn">import</span> <span class="n">LBFGSFinisher</span><span class="p">,</span> <span class="n">QKANAdamMini</span>
+
+<span class="n">early</span> <span class="o">=</span> <span class="n">QKANAdamMini</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">)</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">LBFGSFinisher</span><span class="p">(</span>
+    <span class="n">early</span><span class="o">=</span><span class="n">early</span><span class="p">,</span>
+    <span class="n">params</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span>
+    <span class="n">total_steps</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span>
+    <span class="n">pct_early</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span>
+    <span class="n">lbfgs_kwargs</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">max_iter</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">history_size</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+                      <span class="n">tolerance_grad</span><span class="o">=</span><span class="mf">1e-7</span><span class="p">,</span>
+                      <span class="n">line_search_fn</span><span class="o">=</span><span class="s2">&quot;strong_wolfe&quot;</span><span class="p">),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="cross-p-dim-checkpoint-portability">
+<h2>Cross-<code class="docutils literal notranslate"><span class="pre">p_dim</span></code> Checkpoint Portability<a class="headerlink" href="#cross-p-dim-checkpoint-portability" title="Link to this heading"></a></h2>
+<p>QKAN’s <code class="docutils literal notranslate"><span class="pre">p_dim</span></code> knob changes the storage rank of <code class="docutils literal notranslate"><span class="pre">theta</span></code>,
+<code class="docutils literal notranslate"><span class="pre">preacts_*</span></code>, and <code class="docutils literal notranslate"><span class="pre">(O,</span> <span class="pre">I)</span></code> parameters (for example, 4-D natural vs
+2-D collapsed). Model <code class="docutils literal notranslate"><span class="pre">state_dict</span></code> entries are reshaped on load via
+per-module hooks, but optimizer state (<code class="docutils literal notranslate"><span class="pre">exp_avg</span></code>, <code class="docutils literal notranslate"><span class="pre">exp_avg_sq</span></code>,
+<code class="docutils literal notranslate"><span class="pre">momentum_buffer</span></code>, …) stays in the parameter shape first seen by the
+optimizer.</p>
+<p>Call <code class="xref py py-func docutils literal notranslate"><span class="pre">reshape_optimizer_state()</span></code> immediately after
+<code class="docutils literal notranslate"><span class="pre">optimizer.load_state_dict(...)</span></code> if the loaded model’s <code class="docutils literal notranslate"><span class="pre">p_dim</span></code>
+differs from the checkpoint’s:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qkan.optim</span><span class="w"> </span><span class="kn">import</span> <span class="n">reshape_optimizer_state</span>
+
+<span class="n">opt</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">[</span><span class="s2">&quot;optimizer&quot;</span><span class="p">])</span>
+<span class="n">n_reshaped</span> <span class="o">=</span> <span class="n">reshape_optimizer_state</span><span class="p">(</span><span class="n">opt</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;reshaped </span><span class="si">{</span><span class="n">n_reshaped</span><span class="si">}</span><span class="s2"> optimizer tensors to current p_dim&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>State tensors whose <code class="docutils literal notranslate"><span class="pre">numel</span></code> matches the new parameter are reshaped in
+place. Tensors with different element counts are left untouched, and the
+optimizer will raise on the next step — the right behavior for a genuine
+model/checkpoint mismatch.</p>
+</section>
+<section id="when-to-use-which">
+<h2>When to use which<a class="headerlink" href="#when-to-use-which" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>Default for QKAN GPU training</strong>: <code class="docutils literal notranslate"><span class="pre">TritonAdaBelief</span></code> with
+<code class="docutils literal notranslate"><span class="pre">state_dtype=torch.bfloat16</span></code>. Cheapest per-step on small / medium
+parameter stacks, with a variance-form denominator suited to noisy
+QKAN gradients.</p></li>
+<li><p><strong>CPU or no-Triton build</strong>: <code class="docutils literal notranslate"><span class="pre">AdaBelief</span></code> — same algorithm,
+eager backend.</p></li>
+<li><p><strong>Memory-bound</strong> (large QKAN, optimizer state matters):
+<code class="docutils literal notranslate"><span class="pre">QKANAdamMini</span></code> or <code class="docutils literal notranslate"><span class="pre">QKANBeliefMini</span></code> (with bf16 state for an extra
+halving).</p></li>
+<li><p><strong>Curvature-aware experimentation</strong>: <code class="docutils literal notranslate"><span class="pre">QKANSpectralMini</span></code>. The rank-1
+GN preconditioner is the cheapest second-order signal you can layer
+onto an Adam-mini block partition.</p></li>
+<li><p><strong>Final loss matters more than wall-clock</strong>: <code class="docutils literal notranslate"><span class="pre">adam_then_lbfgs</span></code> —
+the L-BFGS polish at the end is where <code class="docutils literal notranslate"><span class="pre">pykan</span></code>-style fits get their
+symbolic-regression accuracy.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="packing_guide.html" class="btn btn-neutral float-left" title="Circuit Packing and Calibration-Aware Layouts" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="graph_guide.html" class="btn btn-neutral float-right" title="Inference and Training Guide" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

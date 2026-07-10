@@ -45,8 +45,12 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../intro.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../graph_guide.html">Inference and Training Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../applications.html">Applications</a></li>
 </ul>
 
         </div>
@@ -103,6 +107,10 @@
 <span class="sd">Adapted from [KindXiaoming/pykan@GitHub 11984f4](https://github.com/KindXiaoming/pykan/tree/11984f49216fc254c1dd40b5bee0a069ee63114a)</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
+<span class="c1"># mypy: disable-error-code=&quot;name-defined,import-untyped&quot;</span>
+<span class="c1"># This file declares 120 Feynman equations as sympy expressions; the wildcard</span>
+<span class="c1"># `from sympy import *` is intentional to keep the table compact, and mypy</span>
+<span class="c1"># can&#39;t resolve names through wildcard imports without per-symbol stubs.</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Union</span> <span class="k">as</span> <span class="n">TyUnion</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>

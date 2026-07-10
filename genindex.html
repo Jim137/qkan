@@ -45,8 +45,12 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="intro.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="graph_guide.html">Inference and Training Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="applications.html">Applications</a></li>
 </ul>
 
         </div>
@@ -81,6 +85,7 @@
  | <a href="#B"><strong>B</strong></a>
  | <a href="#C"><strong>C</strong></a>
  | <a href="#D"><strong>D</strong></a>
+ | <a href="#E"><strong>E</strong></a>
  | <a href="#F"><strong>F</strong></a>
  | <a href="#G"><strong>G</strong></a>
  | <a href="#H"><strong>H</strong></a>
@@ -95,6 +100,7 @@
  | <a href="#R"><strong>R</strong></a>
  | <a href="#S"><strong>S</strong></a>
  | <a href="#T"><strong>T</strong></a>
+ | <a href="#U"><strong>U</strong></a>
  | <a href="#W"><strong>W</strong></a>
  | <a href="#X"><strong>X</strong></a>
  | <a href="#Z"><strong>Z</strong></a>
@@ -121,8 +127,12 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.TorchGates.acrx_gate">acrx_gate() (qkan.TorchGates static method)</a>
 </li>
+      <li><a href="api.html#qkan.AdaBelief">AdaBelief (class in qkan)</a>
+</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.adam_then_lbfgs">adam_then_lbfgs() (in module qkan)</a>
+</li>
       <li><a href="api.html#qkan.QKANLayer.ansatz">ansatz (qkan.QKANLayer attribute)</a>
 </li>
       <li><a href="api.html#qkan.QKAN.attribute">attribute() (qkan.QKAN method)</a>
@@ -137,12 +147,32 @@
 </li>
       <li><a href="api.html#qkan.QKAN.base_activation">base_activation (qkan.QKAN attribute)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKANLayer.base_weight">base_weight (qkan.QKANLayer attribute)</a>
 </li>
+      <li><a href="api.html#qkan.PackedCircuit.basis_kernel">basis_kernel() (qkan.PackedCircuit method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.basis_kernel">(qkan.solver.PackedCircuit method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.solver.best_qubits">best_qubits() (in module qkan.solver)</a>
 </li>
+      <li><a href="api.html#qkan.solver.best_subgraph">best_subgraph() (in module qkan.solver)</a>
+</li>
+      <li><a href="api.html#qkan.PackedCircuit.block">block (qkan.PackedCircuit attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.block">(qkan.solver.PackedCircuit attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api.html#qkan.PackedCircuit.block_qubits">block_qubits (qkan.PackedCircuit property)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.block_qubits">(qkan.solver.PackedCircuit property)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -151,6 +181,12 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKANLayer.c_dtype">c_dtype (qkan.QKANLayer attribute)</a>
 </li>
+      <li><a href="api.html#qkan.PackedCircuit.circuit">circuit (qkan.PackedCircuit attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.circuit">(qkan.solver.PackedCircuit attribute)</a>
+</li>
+      </ul></li>
       <li><a href="api.html#qkan.CompiledInference.clear_cache">clear_cache() (qkan.CompiledInference method)</a>
 </li>
       <li><a href="api.html#qkan.QKAN.clear_ckpts">clear_ckpts() (qkan.QKAN static method)</a>
@@ -159,15 +195,23 @@
 </li>
       <li><a href="api.html#qkan.CompiledInference">CompiledInference (class in qkan)</a>
 </li>
+      <li><a href="api.html#qkan.PackedCircuit.copies">copies (qkan.PackedCircuit property)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.copies">(qkan.solver.PackedCircuit property)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.create_dataset">create_dataset() (in module qkan)</a>
 
       <ul>
         <li><a href="api.html#qkan.utils.create_dataset">(in module qkan.utils)</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.solver.cudaq_solver">cudaq_solver() (in module qkan.solver)</a>
+</li>
+      <li><a href="api.html#qkan.LBFGSFinisher.current">current (qkan.LBFGSFinisher property)</a>
 </li>
       <li><a href="api.html#qkan.solver.cute_exact_solver">cute_exact_solver() (in module qkan.solver)</a>
 </li>
@@ -187,12 +231,44 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.DARUAN">DARUAN (class in qkan)</a>
 </li>
+      <li><a href="api.html#qkan.QKANMuon.describe_layout">describe_layout() (qkan.QKANMuon method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.QKANSpectralMini.describe_layout">(qkan.QKANSpectralMini method)</a>
+</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.device">device (qkan.QKAN attribute)</a>
 
       <ul>
         <li><a href="api.html#qkan.QKANLayer.device">(qkan.QKANLayer attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api.html#qkan.DeviceProfile">DeviceProfile (class in qkan)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.DeviceProfile">(class in qkan.solver)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="E">E</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.DeviceProfile.edges">edges (qkan.DeviceProfile attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.DeviceProfile.edges">(qkan.solver.DeviceProfile attribute)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.PackedCircuit.expectation">expectation() (qkan.PackedCircuit method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.expectation">(qkan.solver.PackedCircuit method)</a>
 </li>
       </ul></li>
   </ul></td>
@@ -225,12 +301,12 @@
 </li>
       <li><a href="api.html#qkan.utils.f_power1d5">f_power1d5() (in module qkan.utils)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.utils.f_sqrt">f_sqrt() (in module qkan.utils)</a>
 </li>
       <li><a href="api.html#qkan.utils.f_tan">f_tan() (in module qkan.utils)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.fast_measure">fast_measure (qkan.QKAN attribute)</a>
 
       <ul>
@@ -257,20 +333,54 @@
 </li>
       <li><a href="api.html#qkan.FourierKAN">FourierKAN (class in qkan)</a>
 </li>
+      <li><a href="api.html#qkan.DeviceProfile.from_braket">from_braket() (qkan.DeviceProfile class method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.DeviceProfile.from_braket">(qkan.solver.DeviceProfile class method)</a>
+</li>
+      </ul></li>
+      <li><a href="api.html#qkan.DeviceProfile.from_qiskit">from_qiskit() (qkan.DeviceProfile class method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.DeviceProfile.from_qiskit">(qkan.solver.DeviceProfile class method)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
 <h2 id="G">G</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.DeviceProfile.gate_error_1q">gate_error_1q (qkan.DeviceProfile attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.DeviceProfile.gate_error_1q">(qkan.solver.DeviceProfile attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api.html#qkan.DeviceProfile.gate_error_2q">gate_error_2q (qkan.DeviceProfile attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.DeviceProfile.gate_error_2q">(qkan.solver.DeviceProfile attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api.html#qkan.PackedCircuit.gates">gates (qkan.PackedCircuit attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.gates">(qkan.solver.PackedCircuit attribute)</a>
+</li>
+      </ul></li>
       <li><a href="api.html#qkan.get_feynman_dataset">get_feynman_dataset() (in module qkan)</a>
-</li>
-      <li><a href="api.html#qkan.QKAN.get_reg">get_reg() (qkan.QKAN method)</a>
-</li>
-      <li><a href="api.html#qkan.QKANLayer.get_subset">get_subset() (qkan.QKANLayer method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.QKAN.get_reg">get_reg() (qkan.QKAN method)</a>
+</li>
+      <li><a href="api.html#qkan.solver.get_registry">get_registry() (in module qkan.solver)</a>
+</li>
+      <li><a href="api.html#qkan.solver.get_solver">get_solver() (in module qkan.solver)</a>
+</li>
+      <li><a href="api.html#qkan.QKANLayer.get_subset">get_subset() (qkan.QKANLayer method)</a>
+</li>
       <li><a href="api.html#qkan.graph_submodules">graph_submodules() (in module qkan)</a>
 </li>
       <li><a href="api.html#qkan.QKAN.group">group (qkan.QKAN attribute)</a>
@@ -287,10 +397,16 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.StateVector.h">h() (qkan.StateVector method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.TorchGates.h_gate">h_gate() (qkan.TorchGates static method)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.DeviceProfile.has_calibration">has_calibration() (qkan.DeviceProfile method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.DeviceProfile.has_calibration">(qkan.solver.DeviceProfile method)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -307,15 +423,17 @@
 </li>
       <li><a href="api.html#qkan.QKAN.initialize_from_another_model">initialize_from_another_model() (qkan.QKAN method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.FourierKAN.initialize_from_qkan">initialize_from_qkan() (qkan.FourierKAN method)</a>
 
       <ul>
         <li><a href="api.html#qkan.KAN.initialize_from_qkan">(qkan.KAN method)</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.initialize_parameters">initialize_parameters() (qkan.QKAN method)</a>
+</li>
+      <li><a href="api.html#qkan.solver.interaction_of">interaction_of() (in module qkan.solver)</a>
 </li>
       <li><a href="api.html#qkan.QKAN.is_batchnorm">is_batchnorm (qkan.QKAN attribute)</a>
 
@@ -325,6 +443,14 @@
       </ul></li>
       <li><a href="api.html#qkan.QKAN.is_map">is_map (qkan.QKAN attribute)</a>
 </li>
+      <li><a href="api.html#qkan.QKANMuon.is_muon_param">is_muon_param() (qkan.QKANMuon static method)</a>
+</li>
+      <li><a href="api.html#qkan.PackedCircuit.isa">isa (qkan.PackedCircuit attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.isa">(qkan.solver.PackedCircuit attribute)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -332,6 +458,16 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.KAN">KAN (class in qkan)</a>
+</li>
+      <li><a href="api.html#qkan.PackedCircuit.kernel">kernel (qkan.PackedCircuit attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.kernel">(qkan.solver.PackedCircuit attribute)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.solver.kernel_interaction_of">kernel_interaction_of() (in module qkan.solver)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -341,11 +477,21 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.layer_extension">layer_extension() (qkan.QKAN method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.layers">layers (qkan.QKAN attribute)</a>
 </li>
+      <li><a href="api.html#qkan.PackedCircuit.layout">layout (qkan.PackedCircuit property)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.layout">(qkan.solver.PackedCircuit property)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.LBFGSFinisher">LBFGSFinisher (class in qkan)</a>
+</li>
       <li><a href="api.html#qkan.QKAN.load_ckpt">load_ckpt() (qkan.QKAN method)</a>
+</li>
+      <li><a href="api.html#qkan.LBFGSFinisher.load_state_dict">load_state_dict() (qkan.LBFGSFinisher method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -353,7 +499,11 @@
 <h2 id="M">M</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.solver.make_base_activation">make_base_activation() (in module qkan.solver)</a>
+</li>
       <li><a href="api.html#qkan.make_graphed_inference">make_graphed_inference() (in module qkan)</a>
+</li>
+      <li><a href="api.html#qkan.make_graphed_train_step">make_graphed_train_step() (in module qkan)</a>
 </li>
       <li><a href="api.html#qkan.QKANLayer.mask">mask (qkan.QKANLayer attribute)</a>
 </li>
@@ -361,10 +511,10 @@
 </li>
       <li><a href="api.html#qkan.StateVector.measure_y">measure_y() (qkan.StateVector method)</a>
 </li>
-      <li><a href="api.html#qkan.StateVector.measure_z">measure_z() (qkan.StateVector method)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.StateVector.measure_z">measure_z() (qkan.StateVector method)</a>
+</li>
       <li>
     module
 
@@ -384,18 +534,46 @@
 <h2 id="N">N</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.solver.QKANSolver.name">name (qkan.solver.QKANSolver attribute)</a>
+</li>
       <li><a href="api.html#qkan.QKAN.node_attribute">node_attribute() (qkan.QKAN method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.norm_out">norm_out (qkan.QKAN attribute)</a>
 </li>
+      <li><a href="api.html#qkan.DeviceProfile.num_qubits">num_qubits (qkan.DeviceProfile attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.DeviceProfile.num_qubits">(qkan.solver.DeviceProfile attribute)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
 <h2 id="O">O</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.PackedCircuit.observable">observable() (qkan.PackedCircuit method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.observable">(qkan.solver.PackedCircuit method)</a>
+</li>
+      </ul></li>
+      <li><a href="api.html#qkan.PackedCircuit.observe_kernel">observe_kernel() (qkan.PackedCircuit method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.observe_kernel">(qkan.solver.PackedCircuit method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.DeviceProfile.operational">operational (qkan.DeviceProfile attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.DeviceProfile.operational">(qkan.solver.DeviceProfile attribute)</a>
+</li>
+      </ul></li>
       <li><a href="api.html#qkan.QKANLayer.out_dim">out_dim (qkan.QKANLayer attribute)</a>
 </li>
   </ul></td>
@@ -406,16 +584,48 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKANLayer.p_dtype">p_dtype (qkan.QKANLayer attribute)</a>
 </li>
+      <li><a href="api.html#qkan.pack_circuit">pack_circuit() (in module qkan)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.pack_circuit">(in module qkan.solver)</a>
+</li>
+      </ul></li>
+      <li><a href="api.html#qkan.PackedCircuit">PackedCircuit (class in qkan)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit">(class in qkan.solver)</a>
+</li>
+      </ul></li>
       <li><a href="api.html#qkan.QKAN.param_size">param_size (qkan.QKAN property)</a>
 
       <ul>
         <li><a href="api.html#qkan.QKANLayer.param_size">(qkan.QKANLayer property)</a>
 </li>
       </ul></li>
+      <li><a href="api.html#qkan.PackedCircuit.parameter_values">parameter_values() (qkan.PackedCircuit method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.parameter_values">(qkan.solver.PackedCircuit method)</a>
+</li>
+      </ul></li>
+      <li><a href="api.html#qkan.PackedCircuit.parameters">parameters (qkan.PackedCircuit attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.parameters">(qkan.solver.PackedCircuit attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api.html#qkan.PackedCircuit.physical_qubits">physical_qubits() (qkan.PackedCircuit method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.physical_qubits">(qkan.solver.PackedCircuit method)</a>
+</li>
+      </ul></li>
       <li><a href="api.html#qkan.QKAN.plot">plot() (qkan.QKAN method)</a>
 </li>
       <li><a href="api.html#qkan.QKANLayer.postact_bias">postact_bias (qkan.QKANLayer attribute)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.postact_bias_trainable">postact_bias_trainable (qkan.QKAN attribute)</a>
 
       <ul>
@@ -430,8 +640,6 @@
       </ul></li>
       <li><a href="api.html#qkan.QKANLayer.postact_weights">postact_weights (qkan.QKANLayer attribute)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.preact_trainable">preact_trainable (qkan.QKAN attribute)</a>
 
       <ul>
@@ -487,8 +695,6 @@
         <li><a href="api.html#module-qkan.solver._mitigation">module</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     qkan.utils
 
@@ -496,7 +702,19 @@
         <li><a href="api.html#module-qkan.utils">module</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.QKANAdamMini">QKANAdamMini (class in qkan)</a>
+</li>
+      <li><a href="api.html#qkan.QKANBeliefMini">QKANBeliefMini (class in qkan)</a>
+</li>
       <li><a href="api.html#qkan.QKANLayer">QKANLayer (class in qkan)</a>
+</li>
+      <li><a href="api.html#qkan.QKANMuon">QKANMuon (class in qkan)</a>
+</li>
+      <li><a href="api.html#qkan.solver.QKANSolver">QKANSolver (class in qkan.solver)</a>
+</li>
+      <li><a href="api.html#qkan.QKANSpectralMini">QKANSpectralMini (class in qkan)</a>
 </li>
       <li><a href="api.html#qkan.QKAN.qml_device">qml_device (qkan.QKAN attribute)</a>
 
@@ -512,7 +730,23 @@
 <h2 id="R">R</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.solver.rank_qubits">rank_qubits() (in module qkan.solver)</a>
+</li>
+      <li><a href="api.html#qkan.DeviceProfile.readout_error">readout_error (qkan.DeviceProfile attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.DeviceProfile.readout_error">(qkan.solver.DeviceProfile attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api.html#qkan.PackedCircuit.rebind">rebind() (qkan.PackedCircuit method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.rebind">(qkan.solver.PackedCircuit method)</a>
+</li>
+      </ul></li>
       <li><a href="api.html#qkan.QKAN.refine">refine() (qkan.QKAN method)</a>
+</li>
+      <li><a href="api.html#qkan.solver.register">register() (in module qkan.solver)</a>
 </li>
       <li><a href="api.html#qkan.FourierKAN.regularization_loss">regularization_loss() (qkan.FourierKAN method)</a>
 
@@ -522,6 +756,8 @@
       </ul></li>
       <li><a href="api.html#qkan.QKAN.remove_edge">remove_edge() (qkan.QKAN method)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.remove_node">remove_node() (qkan.QKAN method)</a>
 </li>
       <li><a href="api.html#id0">reps (qkan.QKAN attribute)</a>, <a href="api.html#qkan.QKAN.reps">[1]</a>
@@ -530,9 +766,9 @@
         <li><a href="api.html#qkan.QKANLayer.reps">(qkan.QKANLayer attribute)</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKANLayer.reset_parameters">reset_parameters() (qkan.QKANLayer method)</a>
+</li>
+      <li><a href="api.html#qkan.reshape_optimizer_state">reshape_optimizer_state() (in module qkan)</a>
 </li>
       <li><a href="api.html#qkan.StateVector.rx">rx() (qkan.StateVector method)</a>
 </li>
@@ -560,9 +796,11 @@
 </li>
       <li><a href="api.html#qkan.QKAN.save_ckpt">save_ckpt() (qkan.QKAN method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.solver.score_layout">score_layout() (in module qkan.solver)</a>
+</li>
       <li><a href="api.html#qkan.QKAN.seed">seed (qkan.QKAN attribute)</a>
+</li>
+      <li><a href="api.html#qkan.QKANLayer.set_fused_epilogue">set_fused_epilogue() (qkan.QKANLayer method)</a>
 </li>
       <li><a href="api.html#qkan.QKAN.solver">solver (qkan.QKAN attribute)</a>
 
@@ -570,28 +808,66 @@
         <li><a href="api.html#qkan.QKANLayer.solver">(qkan.QKANLayer attribute)</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.StateVector.state">state (qkan.StateVector attribute)</a>
+</li>
+      <li><a href="api.html#qkan.LBFGSFinisher.state_dict">state_dict() (qkan.LBFGSFinisher method)</a>
 </li>
       <li><a href="api.html#qkan.StateVector">StateVector (class in qkan)</a>
 </li>
+      <li><a href="api.html#qkan.AdaBelief.step">step() (qkan.AdaBelief method)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.LBFGSFinisher.step">(qkan.LBFGSFinisher method)</a>
+</li>
+        <li><a href="api.html#qkan.QKANAdamMini.step">(qkan.QKANAdamMini method)</a>
+</li>
+        <li><a href="api.html#qkan.QKANBeliefMini.step">(qkan.QKANBeliefMini method)</a>
+</li>
+        <li><a href="api.html#qkan.QKANMuon.step">(qkan.QKANMuon method)</a>
+</li>
+        <li><a href="api.html#qkan.QKANSpectralMini.step">(qkan.QKANSpectralMini method)</a>
+</li>
+        <li><a href="api.html#qkan.TritonAdaBelief.step">(qkan.TritonAdaBelief method)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
 <h2 id="T">T</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.DeviceProfile.t2_us">t2_us (qkan.DeviceProfile attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.DeviceProfile.t2_us">(qkan.solver.DeviceProfile attribute)</a>
+</li>
+      </ul></li>
       <li><a href="api.html#qkan.TorchGates.tensor_product">tensor_product() (qkan.TorchGates static method)</a>
 </li>
       <li><a href="api.html#qkan.QKANLayer.theta">theta (qkan.QKANLayer attribute)</a>
 </li>
+      <li><a href="api.html#qkan.tile_disjoint">tile_disjoint() (in module qkan)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.tile_disjoint">(in module qkan.solver)</a>
+</li>
+      </ul></li>
+      <li><a href="api.html#qkan.PackedCircuit.tiles">tiles (qkan.PackedCircuit attribute)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.solver.PackedCircuit.tiles">(qkan.solver.PackedCircuit attribute)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.QKAN.to">to() (qkan.QKAN method)</a>
 
       <ul>
         <li><a href="api.html#qkan.QKANLayer.to">(qkan.QKANLayer method)</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.solver.torch_exact_solver">torch_exact_solver() (in module qkan.solver)</a>
 </li>
       <li><a href="api.html#qkan.TorchGates">TorchGates (class in qkan)</a>
@@ -604,14 +880,30 @@
       </ul></li>
       <li><a href="api.html#qkan.QKAN.train_">train_() (qkan.QKAN method)</a>
 </li>
+      <li><a href="api.html#qkan.TritonAdaBelief">TritonAdaBelief (class in qkan)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="U">U</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.LBFGSFinisher.using_lbfgs">using_lbfgs (qkan.LBFGSFinisher property)</a>
+</li>
   </ul></td>
 </tr></table>
 
 <h2 id="W">W</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#qkan.QKAN.width">width (qkan.QKAN attribute)</a>
+      <li><a href="api.html#qkan.PackedCircuit.width">width (qkan.PackedCircuit property)</a>
+
+      <ul>
+        <li><a href="api.html#qkan.QKAN.width">(qkan.QKAN attribute)</a>
 </li>
+        <li><a href="api.html#qkan.solver.PackedCircuit.width">(qkan.solver.PackedCircuit property)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -637,6 +929,10 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api.html#qkan.StateVector.z">z() (qkan.StateVector method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#qkan.LBFGSFinisher.zero_grad">zero_grad() (qkan.LBFGSFinisher method)</a>
 </li>
   </ul></td>
 </tr></table>

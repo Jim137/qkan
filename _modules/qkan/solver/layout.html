@@ -1,0 +1,1023 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qkan.solver.layout &mdash; QKAN 0.2.3dev documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/layout.html" />
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../graph_guide.html">Inference and Training Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../applications.html">Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">qkan.solver.layout</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for qkan.solver.layout</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Device-independent, calibration-aware qubit selection and layout.</span>
+
+<span class="sd">This module is torch-free and provider-neutral: calibration data enters</span>
+<span class="sd">through :class:`DeviceProfile` (with adapters for qiskit backends and AWS</span>
+<span class="sd">Braket devices) and layouts come out as plain physical-qubit index lists,</span>
+<span class="sd">so the same selection logic serves the qiskit solver, the CUDA-Q solver,</span>
+<span class="sd">and standalone users.</span>
+
+<span class="sd">Public API:</span>
+
+<span class="sd">- :class:`DeviceProfile` — frozen snapshot of per-qubit / per-edge calibration.</span>
+<span class="sd">- :func:`rank_qubits` — top-``n`` independent qubit ranking (the</span>
+<span class="sd">  device-independent generalization of ``best_qubits``).</span>
+<span class="sd">- :func:`score_layout` — score a candidate layout for an interaction graph.</span>
+<span class="sd">- :func:`best_subgraph` — best-calibrated connected subgraph for one</span>
+<span class="sd">  multi-qubit circuit (thin complement to qiskit&#39;s own VF2 passes).</span>
+<span class="sd">- :func:`tile_disjoint` — tile a chip with disjoint calibration-aware</span>
+<span class="sd">  subgraphs to run several independent circuits in parallel.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">rustworkx</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rx</span>  <span class="c1"># type: ignore</span>
+
+    <span class="n">_RUSTWORKX_AVAILABLE</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">_RUSTWORKX_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;DeviceProfile&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;best_subgraph&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;rank_qubits&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;score_layout&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;tile_disjoint&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="c1"># Pessimistic fallbacks for missing calibration data (a qubit or edge with</span>
+<span class="c1"># no data must never outrank a measured one). The qubit-level constants</span>
+<span class="c1"># match best_qubits in the qiskit solver.</span>
+<span class="n">_RO_FALLBACK</span> <span class="o">=</span> <span class="mf">0.5</span>
+<span class="n">_G1_FALLBACK</span> <span class="o">=</span> <span class="mf">1e-2</span>
+<span class="n">_G2_FALLBACK</span> <span class="o">=</span> <span class="mf">0.5</span>
+<span class="n">_T2_FALLBACK_US</span> <span class="o">=</span> <span class="mf">50.0</span>
+<span class="c1"># Finite stand-in for -log(0) when an error rate is reported as &gt;= 1.</span>
+<span class="n">_BIG</span> <span class="o">=</span> <span class="mf">1e6</span>
+
+<span class="n">Interaction</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]]</span>
+
+
+<div class="viewcode-block" id="DeviceProfile">
+<a class="viewcode-back" href="../../../api.html#qkan.DeviceProfile">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DeviceProfile</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Provider-neutral snapshot of device calibration.</span>
+
+<span class="sd">    Physical qubit labels run ``0..num_qubits-1``; devices with</span>
+<span class="sd">    non-contiguous or 1-indexed labels simply have holes in the maps, and</span>
+<span class="sd">    unreported labels are marked non-operational by the adapters. Coupling</span>
+<span class="sd">    ``edges`` and the ``gate_error_2q`` map are keyed by sorted</span>
+<span class="sd">    ``(low, high)`` pairs; ``t2_us`` is in microseconds. All error values</span>
+<span class="sd">    are probabilities in [0, 1]; NaN entries are kept and treated as</span>
+<span class="sd">    missing data at scoring time, and missing dict keys mean the device</span>
+<span class="sd">    reported nothing for that qubit or edge (common for faulty qubits).</span>
+<span class="sd">    Qubits mapped to False in ``operational`` are never selected.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">num_qubits</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">edges</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="n">readout_error</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">gate_error_1q</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">gate_error_2q</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">t2_us</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Mapping</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">operational</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Mapping</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="DeviceProfile.has_calibration">
+<a class="viewcode-back" href="../../../api.html#qkan.DeviceProfile.has_calibration">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">has_calibration</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;True when the profile carries any per-qubit calibration data.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">readout_error</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">gate_error_1q</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">gate_error_2q</span><span class="p">)</span></div>
+
+
+    <span class="nd">@functools</span><span class="o">.</span><span class="n">cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_edge_set</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">frozenset</span><span class="p">:</span>
+        <span class="c1"># Cached for the layout searches, which test coupling membership</span>
+        <span class="c1"># once per interaction edge per VF2 candidate.</span>
+        <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">edges</span><span class="p">)</span>
+
+<div class="viewcode-block" id="DeviceProfile.from_qiskit">
+<a class="viewcode-back" href="../../../api.html#qkan.DeviceProfile.from_qiskit">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_qiskit</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;DeviceProfile&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build a profile from a qiskit backend.</span>
+
+<span class="sd">        Prefers the BackendV2 ``Target`` (structured per-instruction errors);</span>
+<span class="sd">        falls back to the legacy ``properties()`` API. With ``refresh=True``</span>
+<span class="sd">        the backend is asked to re-fetch calibration first — via</span>
+<span class="sd">        ``backend.refresh()`` on BackendV2 (qiskit-ibm-runtime) or</span>
+<span class="sd">        ``properties(refresh=True)`` on the legacy path — since both APIs</span>
+<span class="sd">        cache their first snapshot.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;target&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">target</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">refresh</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">backend</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+                    <span class="n">target</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;target&quot;</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+            <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_from_qiskit_target</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;properties&quot;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_from_qiskit_properties</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">refresh</span><span class="o">=</span><span class="n">refresh</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;DeviceProfile.from_qiskit: backend exposes neither a Target nor &quot;</span>
+            <span class="s2">&quot;the legacy properties() calibration API&quot;</span>
+        <span class="p">)</span></div>
+
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_from_qiskit_target</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;DeviceProfile&quot;</span><span class="p">:</span>
+        <span class="n">num_qubits</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">target</span><span class="o">.</span><span class="n">num_qubits</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;num_qubits&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+        <span class="n">readout</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">g1</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">g2</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">edges</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">t2_us</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_op_errors</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">target</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">qargs</span><span class="p">,</span> <span class="n">iprops</span> <span class="ow">in</span> <span class="n">_op_errors</span><span class="p">(</span><span class="s2">&quot;measure&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">qargs</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">qargs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">iprops</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">err</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">iprops</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">err</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">readout</span><span class="p">[</span><span class="n">qargs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;sx&quot;</span><span class="p">,</span> <span class="s2">&quot;x&quot;</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">qargs</span><span class="p">,</span> <span class="n">iprops</span> <span class="ow">in</span> <span class="n">_op_errors</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">qargs</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">qargs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">qargs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">g1</span><span class="p">:</span>
+                    <span class="n">err</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">iprops</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">iprops</span> <span class="k">else</span> <span class="kc">None</span>
+                    <span class="k">if</span> <span class="n">err</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">g1</span><span class="p">[</span><span class="n">qargs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">g1</span><span class="p">:</span>
+                <span class="k">break</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="s2">&quot;operation_names&quot;</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="k">for</span> <span class="n">qargs</span><span class="p">,</span> <span class="n">iprops</span> <span class="ow">in</span> <span class="n">_op_errors</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">qargs</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">qargs</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">edge</span> <span class="o">=</span> <span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">qargs</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="n">qargs</span><span class="p">))</span>
+                <span class="n">edges</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">edge</span><span class="p">)</span>
+                <span class="n">err</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">iprops</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">iprops</span> <span class="k">else</span> <span class="kc">None</span>
+                <span class="k">if</span> <span class="n">err</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="c1"># A pair may carry several 2q gates/directions; keep the</span>
+                    <span class="c1"># best one — the transpiler uses the calibrated direction.</span>
+                    <span class="n">prev</span> <span class="o">=</span> <span class="n">g2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">edge</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">prev</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">float</span><span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">prev</span><span class="p">:</span>
+                        <span class="n">g2</span><span class="p">[</span><span class="n">edge</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+        <span class="n">qprops</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="s2">&quot;qubit_properties&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">qprops</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">q</span><span class="p">,</span> <span class="n">qp</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">qprops</span><span class="p">):</span>
+                <span class="n">t2</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">qp</span><span class="p">,</span> <span class="s2">&quot;t2&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">qp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+                <span class="k">if</span> <span class="n">t2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">t2_us</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">t2</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1e6</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">num_qubits</span><span class="o">=</span><span class="n">num_qubits</span><span class="p">,</span>
+            <span class="n">edges</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">edges</span><span class="p">)),</span>
+            <span class="n">readout_error</span><span class="o">=</span><span class="n">readout</span><span class="p">,</span>
+            <span class="n">gate_error_1q</span><span class="o">=</span><span class="n">g1</span><span class="p">,</span>
+            <span class="n">gate_error_2q</span><span class="o">=</span><span class="n">g2</span><span class="p">,</span>
+            <span class="n">t2_us</span><span class="o">=</span><span class="n">t2_us</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_from_qiskit_properties</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">refresh</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;DeviceProfile&quot;</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">props</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">backend</span><span class="o">.</span><span class="n">properties</span><span class="p">(</span><span class="n">refresh</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="n">refresh</span> <span class="k">else</span> <span class="n">backend</span><span class="o">.</span><span class="n">properties</span><span class="p">()</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+            <span class="n">props</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">properties</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">props</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;DeviceProfile.from_qiskit: backend.properties() returned None &quot;</span>
+                <span class="s2">&quot;(no calibration available)&quot;</span>
+            <span class="p">)</span>
+        <span class="n">num_qubits</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="s2">&quot;num_qubits&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">qubits</span><span class="p">))</span>
+        <span class="n">readout</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">g1</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">t2_us</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">operational</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_qubits</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">readout</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">readout_error</span><span class="p">(</span><span class="n">q</span><span class="p">))</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">g1</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">gate_error</span><span class="p">(</span><span class="s2">&quot;sx&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">q</span><span class="p">]))</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">t2_us</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">t2</span><span class="p">(</span><span class="n">q</span><span class="p">))</span> <span class="o">*</span> <span class="mf">1e6</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">operational</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">is_qubit_operational</span><span class="p">(</span><span class="n">q</span><span class="p">))</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="n">g2</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">edges</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">config</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">configuration</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="n">coupling</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="s2">&quot;coupling_map&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">config</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">pair</span> <span class="ow">in</span> <span class="n">coupling</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pair</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">pair</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">edge</span> <span class="o">=</span> <span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>
+            <span class="n">edges</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">edge</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">gate</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;ecr&quot;</span><span class="p">,</span> <span class="s2">&quot;cz&quot;</span><span class="p">,</span> <span class="s2">&quot;cx&quot;</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">err</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">gate_error</span><span class="p">(</span><span class="n">gate</span><span class="p">,</span> <span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">]))</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">prev</span> <span class="o">=</span> <span class="n">g2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">edge</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">prev</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">err</span> <span class="o">&lt;</span> <span class="n">prev</span><span class="p">:</span>
+                    <span class="n">g2</span><span class="p">[</span><span class="n">edge</span><span class="p">]</span> <span class="o">=</span> <span class="n">err</span>
+                <span class="k">break</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">num_qubits</span><span class="o">=</span><span class="n">num_qubits</span><span class="p">,</span>
+            <span class="n">edges</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">edges</span><span class="p">)),</span>
+            <span class="n">readout_error</span><span class="o">=</span><span class="n">readout</span><span class="p">,</span>
+            <span class="n">gate_error_1q</span><span class="o">=</span><span class="n">g1</span><span class="p">,</span>
+            <span class="n">gate_error_2q</span><span class="o">=</span><span class="n">g2</span><span class="p">,</span>
+            <span class="n">t2_us</span><span class="o">=</span><span class="n">t2_us</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">operational</span><span class="o">=</span><span class="n">operational</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="DeviceProfile.from_braket">
+<a class="viewcode-back" href="../../../api.html#qkan.DeviceProfile.from_braket">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_braket</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;DeviceProfile&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build a profile from an AWS Braket device (experimental).</span>
+
+<span class="sd">        ``device`` is a ``braket.aws.AwsDevice`` (or any object exposing the</span>
+<span class="sd">        same ``properties`` model). Reads the standardized gate-model QPU</span>
+<span class="sd">        calibration schema: per-qubit T1/T2, readout fidelity (or IQM&#39;s</span>
+<span class="sd">        readout-error entries), and 1Q (simultaneous) randomized-benchmarking</span>
+<span class="sd">        fidelity, plus per-pair 2Q gate fidelities. Fidelities are converted</span>
+<span class="sd">        to errors as ``1 - fidelity``; entries whose type name starts with</span>
+<span class="sd">        ``READOUT_ERROR`` are already errors and are averaged as-is.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">props</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="s2">&quot;properties&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">std</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">props</span><span class="p">,</span> <span class="s2">&quot;standardized&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">std</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;DeviceProfile.from_braket: device exposes no standardized &quot;</span>
+                <span class="s2">&quot;calibration properties (IonQ and simulators do not publish &quot;</span>
+                <span class="s2">&quot;per-qubit calibration)&quot;</span>
+            <span class="p">)</span>
+        <span class="n">paradigm</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">props</span><span class="p">,</span> <span class="s2">&quot;paradigm&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">one_q</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">std</span><span class="p">,</span> <span class="s2">&quot;oneQubitProperties&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">two_q</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">std</span><span class="p">,</span> <span class="s2">&quot;twoQubitProperties&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+
+        <span class="n">readout</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">g1</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">t2_us</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">labels</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">qprops</span> <span class="ow">in</span> <span class="n">one_q</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">label</span><span class="p">)</span>
+            <span class="n">labels</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+            <span class="n">t2</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">qprops</span><span class="p">,</span> <span class="s2">&quot;T2&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">t2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">t2</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">scale</span> <span class="o">=</span> <span class="mf">1e6</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">t2</span><span class="p">,</span> <span class="s2">&quot;unit&quot;</span><span class="p">,</span> <span class="s2">&quot;S&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;S&quot;</span> <span class="k">else</span> <span class="mf">1.0</span>
+                <span class="n">t2_us</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">t2</span><span class="o">.</span><span class="n">value</span><span class="p">)</span> <span class="o">*</span> <span class="n">scale</span>
+            <span class="n">ro_err</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">rb</span><span class="p">,</span> <span class="n">srb</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+            <span class="k">for</span> <span class="n">fid</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">qprops</span><span class="p">,</span> <span class="s2">&quot;oneQubitFidelity&quot;</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]:</span>
+                <span class="n">ftype</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">&quot;fidelityType&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">&quot;fidelity&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="n">ftype</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;READOUT_ERROR&quot;</span><span class="p">):</span>
+                    <span class="n">ro_err</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+                <span class="k">elif</span> <span class="n">ftype</span> <span class="o">==</span> <span class="s2">&quot;READOUT&quot;</span><span class="p">:</span>
+                    <span class="n">readout</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">ftype</span> <span class="o">==</span> <span class="s2">&quot;SIMULTANEOUS_RANDOMIZED_BENCHMARKING&quot;</span><span class="p">:</span>
+                    <span class="n">srb</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">ftype</span> <span class="o">==</span> <span class="s2">&quot;RANDOMIZED_BENCHMARKING&quot;</span><span class="p">:</span>
+                    <span class="n">rb</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">q</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">readout</span> <span class="ow">and</span> <span class="n">ro_err</span><span class="p">:</span>
+                <span class="n">readout</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">ro_err</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">ro_err</span><span class="p">)</span>
+            <span class="c1"># Packed jobs drive all qubits at once: prefer simultaneous RB.</span>
+            <span class="k">if</span> <span class="n">srb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">g1</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="n">srb</span>
+            <span class="k">elif</span> <span class="n">rb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">g1</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="n">rb</span>
+
+        <span class="n">g2</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">edges</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">pair_label</span><span class="p">,</span> <span class="n">pprops</span> <span class="ow">in</span> <span class="n">two_q</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">a_s</span><span class="p">,</span> <span class="n">b_s</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">pair_label</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">)</span>
+                <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">a_s</span><span class="p">),</span> <span class="nb">int</span><span class="p">(</span><span class="n">b_s</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">edge</span> <span class="o">=</span> <span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>
+            <span class="n">edges</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">edge</span><span class="p">)</span>
+            <span class="n">labels</span><span class="o">.</span><span class="n">update</span><span class="p">((</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">fid</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">pprops</span><span class="p">,</span> <span class="s2">&quot;twoQubitGateFidelity&quot;</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">&quot;fidelity&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">err</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+                <span class="n">prev</span> <span class="o">=</span> <span class="n">g2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">edge</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">prev</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">err</span> <span class="o">&lt;</span> <span class="n">prev</span><span class="p">:</span>
+                    <span class="n">g2</span><span class="p">[</span><span class="n">edge</span><span class="p">]</span> <span class="o">=</span> <span class="n">err</span>
+
+        <span class="n">num_qubits</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">paradigm</span><span class="p">,</span> <span class="s2">&quot;qubitCount&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">labels</span><span class="p">:</span>
+            <span class="n">num_qubits</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">num_qubits</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="c1"># Devices with 1-indexed or holey label spaces (IQM, faulty Rigetti</span>
+        <span class="c1"># qubits) leave phantom indices with no data; never select those.</span>
+        <span class="n">reported</span> <span class="o">=</span> <span class="p">{</span><span class="nb">int</span><span class="p">(</span><span class="n">label</span><span class="p">)</span> <span class="k">for</span> <span class="n">label</span> <span class="ow">in</span> <span class="n">one_q</span><span class="p">}</span>
+        <span class="n">operational</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">{</span><span class="n">q</span><span class="p">:</span> <span class="p">(</span><span class="n">q</span> <span class="ow">in</span> <span class="n">reported</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_qubits</span><span class="p">)}</span> <span class="k">if</span> <span class="n">reported</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">num_qubits</span><span class="o">=</span><span class="n">num_qubits</span><span class="p">,</span>
+            <span class="n">edges</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">edges</span><span class="p">)),</span>
+            <span class="n">readout_error</span><span class="o">=</span><span class="n">readout</span><span class="p">,</span>
+            <span class="n">gate_error_1q</span><span class="o">=</span><span class="n">g1</span><span class="p">,</span>
+            <span class="n">gate_error_2q</span><span class="o">=</span><span class="n">g2</span><span class="p">,</span>
+            <span class="n">t2_us</span><span class="o">=</span><span class="n">t2_us</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">operational</span><span class="o">=</span><span class="n">operational</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_neg_log</span><span class="p">(</span><span class="n">err</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;-ln(1 - err), clamped to finite values (fidelity-product cost).&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">err</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="k">if</span> <span class="n">err</span> <span class="o">&gt;=</span> <span class="mf">1.0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_BIG</span>
+    <span class="k">return</span> <span class="o">-</span><span class="n">math</span><span class="o">.</span><span class="n">log1p</span><span class="p">(</span><span class="o">-</span><span class="n">err</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_qubit_cost</span><span class="p">(</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">DeviceProfile</span><span class="p">,</span>
+    <span class="n">q</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">max_readout_error</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">qubit_error_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">filtering</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Additive cost of physical qubit ``q``.</span>
+
+<span class="sd">    With ``filtering=True``, returns None for qubits failing a threshold or</span>
+<span class="sd">    flagged non-operational (NaN fails an active threshold). Without</span>
+<span class="sd">    filtering, missing/NaN data falls back to pessimistic constants and</span>
+<span class="sd">    non-operational qubits cost ``_BIG``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">operational</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">profile</span><span class="o">.</span><span class="n">operational</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">operational</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">operational</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="kc">True</span><span class="p">))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">operational</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">filtering</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">_BIG</span>
+    <span class="n">ro</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">readout_error</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)))</span>
+    <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">ro</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">filtering</span> <span class="ow">and</span> <span class="n">max_readout_error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">ro</span> <span class="o">=</span> <span class="n">_RO_FALLBACK</span>
+    <span class="k">if</span> <span class="n">filtering</span> <span class="ow">and</span> <span class="n">max_readout_error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ro</span> <span class="o">&gt;</span> <span class="n">max_readout_error</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">g1</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">gate_error_1q</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)))</span>
+    <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">g1</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">filtering</span> <span class="ow">and</span> <span class="n">qubit_error_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">g1</span> <span class="o">=</span> <span class="n">_G1_FALLBACK</span>
+    <span class="k">if</span> <span class="n">filtering</span> <span class="ow">and</span> <span class="n">qubit_error_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">g1</span> <span class="o">&gt;</span> <span class="n">qubit_error_threshold</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">t2</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">profile</span><span class="o">.</span><span class="n">t2_us</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">t2</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">t2_us</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)))</span>
+    <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">t2</span><span class="p">):</span>
+        <span class="n">t2</span> <span class="o">=</span> <span class="n">_T2_FALLBACK_US</span>
+    <span class="k">return</span> <span class="n">_neg_log</span><span class="p">(</span><span class="n">ro</span><span class="p">)</span> <span class="o">+</span> <span class="n">_neg_log</span><span class="p">(</span><span class="n">g1</span><span class="p">)</span> <span class="o">+</span> <span class="mf">1e-4</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="n">t2</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_edge_error</span><span class="p">(</span><span class="n">profile</span><span class="p">:</span> <span class="n">DeviceProfile</span><span class="p">,</span> <span class="n">a</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Calibrated 2q error for the physical pair, or None if not coupled.&quot;&quot;&quot;</span>
+    <span class="n">edge</span> <span class="o">=</span> <span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">edge</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">profile</span><span class="o">.</span><span class="n">_edge_set</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">gate_error_2q</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">edge</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)))</span>
+    <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">err</span><span class="p">):</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">_G2_FALLBACK</span>
+    <span class="k">return</span> <span class="n">err</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_interaction_edges</span><span class="p">(</span>
+    <span class="n">interaction</span><span class="p">:</span> <span class="n">Interaction</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Normalize an interaction spec to (unique edges, n_logical, multiplicity).</span>
+
+<span class="sd">    Repeated pairs and both orientations of a pair (multi-layer ansaetze,</span>
+<span class="sd">    direction flips) collapse to one undirected edge whose multiplicity is</span>
+<span class="sd">    used as the default 2q gate count in scoring.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">interaction</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">interaction</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;interaction qubit count must be &gt;= 1, got </span><span class="si">{</span><span class="n">interaction</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[],</span> <span class="n">interaction</span><span class="p">,</span> <span class="p">{}</span>
+    <span class="n">multiplicity</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">interaction</span><span class="p">:</span>
+        <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="nb">int</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">a</span> <span class="o">==</span> <span class="n">b</span> <span class="ow">or</span> <span class="n">a</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">b</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;invalid interaction edge (</span><span class="si">{</span><span class="n">a</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">b</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+        <span class="n">edge</span> <span class="o">=</span> <span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>
+        <span class="n">multiplicity</span><span class="p">[</span><span class="n">edge</span><span class="p">]</span> <span class="o">=</span> <span class="n">multiplicity</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">edge</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">multiplicity</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;interaction edge list is empty; pass an int instead&quot;</span><span class="p">)</span>
+    <span class="n">edges</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">multiplicity</span><span class="p">)</span>
+    <span class="n">n_logical</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">edges</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">edges</span><span class="p">,</span> <span class="n">n_logical</span><span class="p">,</span> <span class="n">multiplicity</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_usable_costs</span><span class="p">(</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">DeviceProfile</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">exclude</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">max_readout_error</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">qubit_error_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Sorted ``(cost, qubit)`` over qubits passing the threshold filters.&quot;&quot;&quot;</span>
+    <span class="n">scored</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">num_qubits</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">exclude</span> <span class="ow">and</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">exclude</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">cost</span> <span class="o">=</span> <span class="n">_qubit_cost</span><span class="p">(</span>
+            <span class="n">profile</span><span class="p">,</span>
+            <span class="n">q</span><span class="p">,</span>
+            <span class="n">max_readout_error</span><span class="o">=</span><span class="n">max_readout_error</span><span class="p">,</span>
+            <span class="n">qubit_error_threshold</span><span class="o">=</span><span class="n">qubit_error_threshold</span><span class="p">,</span>
+            <span class="n">filtering</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">cost</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">scored</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">cost</span><span class="p">,</span> <span class="n">q</span><span class="p">))</span>
+    <span class="n">scored</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">scored</span>
+
+
+<div class="viewcode-block" id="rank_qubits">
+<a class="viewcode-back" href="../../../api.html#qkan.rank_qubits">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">rank_qubits</span><span class="p">(</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">DeviceProfile</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">max_readout_error</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">qubit_error_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">strict</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the ``n`` best-calibrated qubit indices, best first.</span>
+
+<span class="sd">    Device-independent counterpart of the qiskit solver&#39;s ``best_qubits``:</span>
+<span class="sd">    ranks by readout error + 1q gate error (as fidelity-product costs) with</span>
+<span class="sd">    a small short-T2 penalty. NaN calibration fails an active threshold and</span>
+<span class="sd">    otherwise falls back to pessimistic constants; non-operational qubits</span>
+<span class="sd">    are skipped. Returns ``[]`` when the profile carries no calibration and</span>
+<span class="sd">    no threshold was requested; raises ``ValueError`` when a threshold</span>
+<span class="sd">    cannot be satisfied (unless ``strict=False``, which returns all usable</span>
+<span class="sd">    qubits).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">n</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;rank_qubits: n must be a positive integer, got </span><span class="si">{</span><span class="n">n</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">has_threshold</span> <span class="o">=</span> <span class="n">max_readout_error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">qubit_error_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">profile</span><span class="o">.</span><span class="n">has_calibration</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">has_threshold</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;rank_qubits: profile carries no calibration data; cannot &quot;</span>
+                <span class="s2">&quot;enforce qubit calibration thresholds&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">n</span> <span class="o">&gt;</span> <span class="n">profile</span><span class="o">.</span><span class="n">num_qubits</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;rank_qubits: requested n=</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2"> exceeds num_qubits=</span><span class="si">{</span><span class="n">profile</span><span class="o">.</span><span class="n">num_qubits</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">scored</span> <span class="o">=</span> <span class="n">_usable_costs</span><span class="p">(</span>
+        <span class="n">profile</span><span class="p">,</span>
+        <span class="n">max_readout_error</span><span class="o">=</span><span class="n">max_readout_error</span><span class="p">,</span>
+        <span class="n">qubit_error_threshold</span><span class="o">=</span><span class="n">qubit_error_threshold</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">scored</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">strict</span> <span class="ow">and</span> <span class="n">scored</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">q</span> <span class="k">for</span> <span class="n">_cost</span><span class="p">,</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">scored</span><span class="p">]</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;rank_qubits: only </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">scored</span><span class="p">)</span><span class="si">}</span><span class="s2"> qubits satisfy the requested &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;thresholds; need </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">q</span> <span class="k">for</span> <span class="n">_cost</span><span class="p">,</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">scored</span><span class="p">[:</span><span class="n">n</span><span class="p">]]</span></div>
+
+
+
+<div class="viewcode-block" id="score_layout">
+<a class="viewcode-back" href="../../../api.html#qkan.score_layout">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">score_layout</span><span class="p">(</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">DeviceProfile</span><span class="p">,</span>
+    <span class="n">interaction</span><span class="p">:</span> <span class="n">Interaction</span><span class="p">,</span>
+    <span class="n">layout</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">gate_counts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Mapping</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Score a candidate layout (lower is better).</span>
+
+<span class="sd">    ``layout`` is positional: ``layout[i]`` is the physical qubit hosting</span>
+<span class="sd">    logical qubit ``i``. The score is a fidelity-product cost: the sum of</span>
+<span class="sd">    ``count * -ln(1 - error)`` over every mapped 2q edge plus each logical</span>
+<span class="sd">    qubit&#39;s readout/1q-gate cost and a small short-T2 penalty. Logical</span>
+<span class="sd">    edges whose physical pair is not coupled cost a large finite penalty</span>
+<span class="sd">    (they would require routing). Repeated interaction edges count as</span>
+<span class="sd">    their multiplicity. ``gate_counts`` optionally overrides weights: int</span>
+<span class="sd">    keys are per-logical-qubit 1q+readout multiplicity, sorted-tuple keys</span>
+<span class="sd">    are per-logical-edge 2q gate counts.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">edges</span><span class="p">,</span> <span class="n">n_logical</span><span class="p">,</span> <span class="n">multiplicity</span> <span class="o">=</span> <span class="n">_interaction_edges</span><span class="p">(</span><span class="n">interaction</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n_logical</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;layout has </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span><span class="si">}</span><span class="s2"> entries but the interaction uses &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">n_logical</span><span class="si">}</span><span class="s2"> logical qubits&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">layout</span><span class="p">[:</span><span class="n">n_logical</span><span class="p">]))</span> <span class="o">!=</span> <span class="n">n_logical</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;layout assigns the same physical qubit twice&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_logical</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="nb">int</span><span class="p">(</span><span class="n">layout</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="o">&lt;</span> <span class="n">profile</span><span class="o">.</span><span class="n">num_qubits</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;layout entry </span><span class="si">{</span><span class="n">layout</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="si">}</span><span class="s2"> is outside the device&#39;s &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">profile</span><span class="o">.</span><span class="n">num_qubits</span><span class="si">}</span><span class="s2">-qubit index space&quot;</span>
+            <span class="p">)</span>
+    <span class="k">return</span> <span class="n">_score_normalized</span><span class="p">(</span>
+        <span class="n">profile</span><span class="p">,</span> <span class="n">edges</span><span class="p">,</span> <span class="n">multiplicity</span><span class="p">,</span> <span class="n">n_logical</span><span class="p">,</span> <span class="n">layout</span><span class="p">,</span> <span class="n">gate_counts</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_score_normalized</span><span class="p">(</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">DeviceProfile</span><span class="p">,</span>
+    <span class="n">edges</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span>
+    <span class="n">multiplicity</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="n">n_logical</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">layout</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+    <span class="n">counts</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="n">qubit_costs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Mapping</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;:func:`score_layout` core over a pre-normalized, pre-validated</span>
+<span class="sd">    interaction — the per-VF2-candidate hot path, so no re-normalization</span>
+<span class="sd">    and per-qubit costs can be supplied from a cache.&quot;&quot;&quot;</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_logical</span><span class="p">):</span>
+        <span class="n">phys</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">layout</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+        <span class="n">cost</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">qubit_costs</span><span class="p">[</span><span class="n">phys</span><span class="p">]</span> <span class="k">if</span> <span class="n">qubit_costs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_qubit_cost</span><span class="p">(</span><span class="n">profile</span><span class="p">,</span> <span class="n">phys</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">assert</span> <span class="n">cost</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">total</span> <span class="o">+=</span> <span class="nb">float</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="n">cost</span>
+    <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">edges</span><span class="p">:</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">_edge_error</span><span class="p">(</span><span class="n">profile</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">layout</span><span class="p">[</span><span class="n">a</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">layout</span><span class="p">[</span><span class="n">b</span><span class="p">]))</span>
+        <span class="n">edge_cost</span> <span class="o">=</span> <span class="n">_BIG</span> <span class="k">if</span> <span class="n">err</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_neg_log</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="k">if</span> <span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="ow">in</span> <span class="n">counts</span> <span class="k">else</span> <span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span>
+        <span class="n">total</span> <span class="o">+=</span> <span class="nb">float</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">multiplicity</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="mi">1</span><span class="p">)))</span> <span class="o">*</span> <span class="n">edge_cost</span>
+    <span class="k">return</span> <span class="n">total</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_pruned_coupling_graph</span><span class="p">(</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">DeviceProfile</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">exclude</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">max_readout_error</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">qubit_error_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">edge_error_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Coupling graph with thresholded/excluded qubits and edges removed.&quot;&quot;&quot;</span>
+    <span class="n">exclude</span> <span class="o">=</span> <span class="n">exclude</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">graph</span> <span class="o">=</span> <span class="n">rx</span><span class="o">.</span><span class="n">PyGraph</span><span class="p">()</span>
+    <span class="n">node_of</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">num_qubits</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">exclude</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">cost</span> <span class="o">=</span> <span class="n">_qubit_cost</span><span class="p">(</span>
+            <span class="n">profile</span><span class="p">,</span>
+            <span class="n">q</span><span class="p">,</span>
+            <span class="n">max_readout_error</span><span class="o">=</span><span class="n">max_readout_error</span><span class="p">,</span>
+            <span class="n">qubit_error_threshold</span><span class="o">=</span><span class="n">qubit_error_threshold</span><span class="p">,</span>
+            <span class="n">filtering</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">cost</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">node_of</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="n">graph</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">profile</span><span class="o">.</span><span class="n">edges</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">a</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">node_of</span> <span class="ow">or</span> <span class="n">b</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">node_of</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">gate_error_2q</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)))</span>
+        <span class="c1"># Dead edges (error at the physical bound) can never belong to a good</span>
+        <span class="c1"># layout, and VF2&#39;s enumeration order is not score-aware — scoring</span>
+        <span class="c1"># alone cannot keep them out of the sampled candidates, so prune them</span>
+        <span class="c1"># from the search graph unconditionally.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="ow">and</span> <span class="n">err</span> <span class="o">&gt;=</span> <span class="mf">0.999</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">edge_error_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="ow">or</span> <span class="n">err</span> <span class="o">&gt;</span> <span class="n">edge_error_threshold</span><span class="p">:</span>
+                <span class="k">continue</span>
+        <span class="n">graph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">node_of</span><span class="p">[</span><span class="n">a</span><span class="p">],</span> <span class="n">node_of</span><span class="p">[</span><span class="n">b</span><span class="p">],</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">graph</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_best_subgraph_on</span><span class="p">(</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">DeviceProfile</span><span class="p">,</span>
+    <span class="n">graph</span><span class="p">,</span>
+    <span class="n">edges</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span>
+    <span class="n">n_logical</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">multiplicity</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">call_limit</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+    <span class="n">max_trials</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Best layout of the interaction onto the pruned graph, or None.&quot;&quot;&quot;</span>
+    <span class="c1"># Isolated logical qubits (no interaction edges) are assigned greedily</span>
+    <span class="c1"># to the best remaining qubits after the edged part is placed.</span>
+    <span class="n">edged_logicals</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({</span><span class="n">q</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">edges</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">e</span><span class="p">})</span>
+    <span class="n">needle</span> <span class="o">=</span> <span class="n">rx</span><span class="o">.</span><span class="n">PyGraph</span><span class="p">()</span>
+    <span class="n">needle_node</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">lq</span> <span class="ow">in</span> <span class="n">edged_logicals</span><span class="p">:</span>
+        <span class="n">needle_node</span><span class="p">[</span><span class="n">lq</span><span class="p">]</span> <span class="o">=</span> <span class="n">needle</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">lq</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">edges</span><span class="p">:</span>
+        <span class="n">needle</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">needle_node</span><span class="p">[</span><span class="n">a</span><span class="p">],</span> <span class="n">needle_node</span><span class="p">[</span><span class="n">b</span><span class="p">],</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">edges</span> <span class="ow">and</span> <span class="n">rx</span><span class="o">.</span><span class="n">number_connected_components</span><span class="p">(</span><span class="n">needle</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;interaction graph has multiple connected components with edges; &quot;</span>
+            <span class="s2">&quot;place each component separately (see tile_disjoint)&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Per-qubit costs are reused for the availability ordering and for</span>
+    <span class="c1"># every candidate&#39;s score (they do not vary across VF2 trials).</span>
+    <span class="n">qubit_costs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">graph</span><span class="o">.</span><span class="n">node_indices</span><span class="p">():</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="n">graph</span><span class="p">[</span><span class="n">node</span><span class="p">]</span>
+        <span class="n">cost</span> <span class="o">=</span> <span class="n">_qubit_cost</span><span class="p">(</span><span class="n">profile</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">cost</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>  <span class="c1"># non-filtering mode always yields a cost</span>
+        <span class="n">qubit_costs</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="n">cost</span>
+    <span class="n">available</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">qubit_costs</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">qubit_costs</span><span class="o">.</span><span class="fm">__getitem__</span><span class="p">)</span>
+
+    <span class="n">best</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">edges</span><span class="p">:</span>
+        <span class="n">mappings</span> <span class="o">=</span> <span class="n">rx</span><span class="o">.</span><span class="n">vf2_mapping</span><span class="p">(</span>
+            <span class="n">graph</span><span class="p">,</span>
+            <span class="n">needle</span><span class="p">,</span>
+            <span class="n">subgraph</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">induced</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">id_order</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">call_limit</span><span class="o">=</span><span class="n">call_limit</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">trials</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">mapping</span> <span class="ow">in</span> <span class="n">mappings</span><span class="p">:</span>
+            <span class="c1"># rustworkx yields {haystack node -&gt; needle node}.</span>
+            <span class="n">phys_of_logical</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">g_node</span><span class="p">,</span> <span class="n">n_node</span> <span class="ow">in</span> <span class="n">mapping</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">phys_of_logical</span><span class="p">[</span><span class="n">needle</span><span class="p">[</span><span class="n">n_node</span><span class="p">]]</span> <span class="o">=</span> <span class="n">graph</span><span class="p">[</span><span class="n">g_node</span><span class="p">]</span>
+            <span class="n">used</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">phys_of_logical</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+            <span class="n">layout</span> <span class="o">=</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_logical</span>
+            <span class="k">for</span> <span class="n">lq</span><span class="p">,</span> <span class="n">phys</span> <span class="ow">in</span> <span class="n">phys_of_logical</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">layout</span><span class="p">[</span><span class="n">lq</span><span class="p">]</span> <span class="o">=</span> <span class="n">phys</span>
+            <span class="n">free</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">q</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">available</span> <span class="k">if</span> <span class="n">q</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">used</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">lq</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_logical</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">layout</span><span class="p">[</span><span class="n">lq</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="n">layout</span><span class="p">[</span><span class="n">lq</span><span class="p">]</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">free</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">score</span> <span class="o">=</span> <span class="n">_score_normalized</span><span class="p">(</span>
+                <span class="n">profile</span><span class="p">,</span> <span class="n">edges</span><span class="p">,</span> <span class="n">multiplicity</span><span class="p">,</span> <span class="n">n_logical</span><span class="p">,</span> <span class="n">layout</span><span class="p">,</span> <span class="p">{},</span> <span class="n">qubit_costs</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">best</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">score</span> <span class="o">&lt;</span> <span class="n">best</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+                <span class="n">best</span> <span class="o">=</span> <span class="p">(</span><span class="n">layout</span><span class="p">,</span> <span class="n">score</span><span class="p">)</span>
+            <span class="n">trials</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">trials</span> <span class="o">&gt;=</span> <span class="n">max_trials</span><span class="p">:</span>
+                <span class="k">break</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">available</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">n_logical</span><span class="p">:</span>
+            <span class="n">layout</span> <span class="o">=</span> <span class="n">available</span><span class="p">[:</span><span class="n">n_logical</span><span class="p">]</span>
+            <span class="n">score</span> <span class="o">=</span> <span class="n">_score_normalized</span><span class="p">(</span>
+                <span class="n">profile</span><span class="p">,</span> <span class="p">[],</span> <span class="p">{},</span> <span class="n">n_logical</span><span class="p">,</span> <span class="n">layout</span><span class="p">,</span> <span class="p">{},</span> <span class="n">qubit_costs</span>
+            <span class="p">)</span>
+            <span class="n">best</span> <span class="o">=</span> <span class="p">(</span><span class="n">layout</span><span class="p">,</span> <span class="n">score</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">best</span>
+
+
+<div class="viewcode-block" id="best_subgraph">
+<a class="viewcode-back" href="../../../api.html#qkan.best_subgraph">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">best_subgraph</span><span class="p">(</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">DeviceProfile</span><span class="p">,</span>
+    <span class="n">interaction</span><span class="p">:</span> <span class="n">Interaction</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">max_readout_error</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">qubit_error_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">edge_error_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">strict</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">call_limit</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="mi">5_000_000</span><span class="p">,</span>
+    <span class="n">max_trials</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2_500</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Best-calibrated placement of one circuit&#39;s interaction graph.</span>
+
+<span class="sd">    ``interaction`` is either an edge list over logical qubits (2q-gate</span>
+<span class="sd">    pairs) or a bare int for an edge-free register (which reduces to</span>
+<span class="sd">    :func:`rank_qubits`). Returns a positional layout (``result[i]`` hosts</span>
+<span class="sd">    logical qubit ``i``), directly usable as a qiskit ``initial_layout``.</span>
+
+<span class="sd">    Note qiskit&#39;s own transpiler already performs noise-aware VF2 placement</span>
+<span class="sd">    at ``optimization_level`` 2-3; this function exists for explicit</span>
+<span class="sd">    thresholds, custom scoring, level-1 pipelines, and non-qiskit stacks.</span>
+
+<span class="sd">    Raises ``ValueError`` when no placement satisfies the thresholds</span>
+<span class="sd">    (``strict=True``) or returns ``[]`` (``strict=False``). The interaction</span>
+<span class="sd">    graph must be connected (tile disconnected pieces via</span>
+<span class="sd">    :func:`tile_disjoint`) and must embed in the coupling map without</span>
+<span class="sd">    routing.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">edges</span><span class="p">,</span> <span class="n">n_logical</span><span class="p">,</span> <span class="n">multiplicity</span> <span class="o">=</span> <span class="n">_interaction_edges</span><span class="p">(</span><span class="n">interaction</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">edges</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">rank_qubits</span><span class="p">(</span>
+            <span class="n">profile</span><span class="p">,</span>
+            <span class="n">n_logical</span><span class="p">,</span>
+            <span class="n">max_readout_error</span><span class="o">=</span><span class="n">max_readout_error</span><span class="p">,</span>
+            <span class="n">qubit_error_threshold</span><span class="o">=</span><span class="n">qubit_error_threshold</span><span class="p">,</span>
+            <span class="n">strict</span><span class="o">=</span><span class="n">strict</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_RUSTWORKX_AVAILABLE</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+            <span class="s2">&quot;best_subgraph requires rustworkx (installed with qiskit): &quot;</span>
+            <span class="s2">&quot;pip install rustworkx&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">profile</span><span class="o">.</span><span class="n">has_calibration</span><span class="p">()</span> <span class="ow">and</span> <span class="p">(</span>
+        <span class="n">max_readout_error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">qubit_error_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;best_subgraph: profile carries no calibration data; cannot &quot;</span>
+            <span class="s2">&quot;enforce calibration thresholds&quot;</span>
+        <span class="p">)</span>
+    <span class="n">graph</span> <span class="o">=</span> <span class="n">_pruned_coupling_graph</span><span class="p">(</span>
+        <span class="n">profile</span><span class="p">,</span>
+        <span class="n">max_readout_error</span><span class="o">=</span><span class="n">max_readout_error</span><span class="p">,</span>
+        <span class="n">qubit_error_threshold</span><span class="o">=</span><span class="n">qubit_error_threshold</span><span class="p">,</span>
+        <span class="n">edge_error_threshold</span><span class="o">=</span><span class="n">edge_error_threshold</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">best</span> <span class="o">=</span> <span class="n">_best_subgraph_on</span><span class="p">(</span>
+        <span class="n">profile</span><span class="p">,</span>
+        <span class="n">graph</span><span class="p">,</span>
+        <span class="n">edges</span><span class="p">,</span>
+        <span class="n">n_logical</span><span class="p">,</span>
+        <span class="n">multiplicity</span><span class="p">,</span>
+        <span class="n">call_limit</span><span class="o">=</span><span class="n">call_limit</span><span class="p">,</span>
+        <span class="n">max_trials</span><span class="o">=</span><span class="n">max_trials</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">best</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">strict</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;best_subgraph: no placement of the interaction graph &quot;</span>
+                <span class="s2">&quot;satisfies the coupling map and thresholds&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="k">return</span> <span class="n">best</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="tile_disjoint">
+<a class="viewcode-back" href="../../../api.html#qkan.tile_disjoint">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">tile_disjoint</span><span class="p">(</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">DeviceProfile</span><span class="p">,</span>
+    <span class="n">interaction</span><span class="p">:</span> <span class="n">Interaction</span><span class="p">,</span>
+    <span class="n">k</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;max&quot;</span><span class="p">]]</span> <span class="o">=</span> <span class="s2">&quot;max&quot;</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">buffer_hops</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">max_readout_error</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">qubit_error_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">edge_error_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">tile_score_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">strict</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">call_limit</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="mi">50_000</span><span class="p">,</span>
+    <span class="n">max_trials</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">500</span><span class="p">,</span>
+    <span class="n">n_logical</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tile the chip with disjoint calibration-aware copies of one circuit.</span>
+
+<span class="sd">    Greedy peel: repeatedly place the interaction graph on the best</span>
+<span class="sd">    remaining subgraph (:func:`best_subgraph` semantics), then remove the</span>
+<span class="sd">    used qubits plus a ``buffer_hops``-neighborhood shell before placing</span>
+<span class="sd">    the next copy. Stops at ``k`` tiles, when nothing placeable remains, or</span>
+<span class="sd">    when the next tile&#39;s score exceeds ``tile_score_threshold``.</span>
+
+<span class="sd">    Returns tiles ordered best-first; each tile is a positional layout for</span>
+<span class="sd">    one circuit copy. For a merged qiskit job, concatenate them tile-major:</span>
+<span class="sd">    ``flat = [q for tile in tiles for q in tile]``.</span>
+
+<span class="sd">    ``n_logical`` widens each tile beyond the interaction&#39;s edge span:</span>
+<span class="sd">    logical qubits without interaction edges (single-qubit-gate-only or</span>
+<span class="sd">    idle wires) are assigned best-effort to the best remaining qubits.</span>
+
+<span class="sd">    With integer ``k`` and ``strict=True``, raises ``ValueError`` when</span>
+<span class="sd">    fewer than ``k`` tiles fit; ``strict=False`` returns what fits.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">k</span> <span class="o">!=</span> <span class="s2">&quot;max&quot;</span> <span class="ow">and</span> <span class="p">(</span><span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">k</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;tile_disjoint: k must be &#39;max&#39; or a positive int, got </span><span class="si">{</span><span class="n">k</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">buffer_hops</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;tile_disjoint: buffer_hops must be &gt;= 0, got </span><span class="si">{</span><span class="n">buffer_hops</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">edges</span><span class="p">,</span> <span class="n">n_logical_span</span><span class="p">,</span> <span class="n">multiplicity</span> <span class="o">=</span> <span class="n">_interaction_edges</span><span class="p">(</span><span class="n">interaction</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">n_logical</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">n_logical</span> <span class="o">=</span> <span class="n">n_logical_span</span>
+    <span class="k">elif</span> <span class="n">n_logical</span> <span class="o">&lt;</span> <span class="n">n_logical_span</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;tile_disjoint: n_logical=</span><span class="si">{</span><span class="n">n_logical</span><span class="si">}</span><span class="s2"> is smaller than the &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;interaction&#39;s span of </span><span class="si">{</span><span class="n">n_logical_span</span><span class="si">}</span><span class="s2"> logical qubits&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">edges</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_RUSTWORKX_AVAILABLE</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+            <span class="s2">&quot;tile_disjoint requires rustworkx (installed with qiskit): &quot;</span>
+            <span class="s2">&quot;pip install rustworkx&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Adjacency over the full (unpruned) coupling map for buffer removal.</span>
+    <span class="n">neighbors</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">profile</span><span class="o">.</span><span class="n">edges</span><span class="p">:</span>
+        <span class="n">neighbors</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+        <span class="n">neighbors</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+
+    <span class="n">limit</span> <span class="o">=</span> <span class="n">profile</span><span class="o">.</span><span class="n">num_qubits</span> <span class="k">if</span> <span class="n">k</span> <span class="o">==</span> <span class="s2">&quot;max&quot;</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+    <span class="n">removed</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">tiles</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">tiles</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">limit</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">edges</span><span class="p">:</span>
+            <span class="n">graph</span> <span class="o">=</span> <span class="n">_pruned_coupling_graph</span><span class="p">(</span>
+                <span class="n">profile</span><span class="p">,</span>
+                <span class="n">exclude</span><span class="o">=</span><span class="n">removed</span><span class="p">,</span>
+                <span class="n">max_readout_error</span><span class="o">=</span><span class="n">max_readout_error</span><span class="p">,</span>
+                <span class="n">qubit_error_threshold</span><span class="o">=</span><span class="n">qubit_error_threshold</span><span class="p">,</span>
+                <span class="n">edge_error_threshold</span><span class="o">=</span><span class="n">edge_error_threshold</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">best</span> <span class="o">=</span> <span class="n">_best_subgraph_on</span><span class="p">(</span>
+                <span class="n">profile</span><span class="p">,</span>
+                <span class="n">graph</span><span class="p">,</span>
+                <span class="n">edges</span><span class="p">,</span>
+                <span class="n">n_logical</span><span class="p">,</span>
+                <span class="n">multiplicity</span><span class="p">,</span>
+                <span class="n">call_limit</span><span class="o">=</span><span class="n">call_limit</span><span class="p">,</span>
+                <span class="n">max_trials</span><span class="o">=</span><span class="n">max_trials</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">usable</span> <span class="o">=</span> <span class="n">_usable_costs</span><span class="p">(</span>
+                <span class="n">profile</span><span class="p">,</span>
+                <span class="n">exclude</span><span class="o">=</span><span class="n">removed</span><span class="p">,</span>
+                <span class="n">max_readout_error</span><span class="o">=</span><span class="n">max_readout_error</span><span class="p">,</span>
+                <span class="n">qubit_error_threshold</span><span class="o">=</span><span class="n">qubit_error_threshold</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">usable</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n_logical</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">profile</span><span class="o">.</span><span class="n">has_calibration</span><span class="p">():</span>
+                <span class="n">best</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">layout</span> <span class="o">=</span> <span class="p">[</span><span class="n">q</span> <span class="k">for</span> <span class="n">_c</span><span class="p">,</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">usable</span><span class="p">[:</span><span class="n">n_logical</span><span class="p">]]</span>
+                <span class="n">best</span> <span class="o">=</span> <span class="p">(</span><span class="n">layout</span><span class="p">,</span> <span class="n">score_layout</span><span class="p">(</span><span class="n">profile</span><span class="p">,</span> <span class="n">n_logical</span><span class="p">,</span> <span class="n">layout</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">best</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">break</span>
+        <span class="n">layout</span><span class="p">,</span> <span class="n">score</span> <span class="o">=</span> <span class="n">best</span>
+        <span class="k">if</span> <span class="n">tile_score_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">score</span> <span class="o">&gt;</span> <span class="n">tile_score_threshold</span><span class="p">:</span>
+            <span class="k">break</span>
+        <span class="n">tiles</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">layout</span><span class="p">,</span> <span class="n">score</span><span class="p">))</span>
+        <span class="n">shell</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span>
+        <span class="n">frontier</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_hop</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">buffer_hops</span><span class="p">):</span>
+            <span class="n">frontier</span> <span class="o">=</span> <span class="p">{</span><span class="n">nb</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">frontier</span> <span class="k">for</span> <span class="n">nb</span> <span class="ow">in</span> <span class="n">neighbors</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="p">())}</span> <span class="o">-</span> <span class="n">shell</span>
+            <span class="n">shell</span> <span class="o">|=</span> <span class="n">frontier</span>
+        <span class="n">removed</span> <span class="o">|=</span> <span class="n">shell</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">tiles</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">k</span> <span class="ow">and</span> <span class="n">strict</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;tile_disjoint: only </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">tiles</span><span class="p">)</span><span class="si">}</span><span class="s2"> disjoint tiles satisfy the &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;thresholds; need </span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">tiles</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">t</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">layout</span> <span class="k">for</span> <span class="n">layout</span><span class="p">,</span> <span class="n">_score</span> <span class="ow">in</span> <span class="n">tiles</span><span class="p">]</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -45,8 +45,12 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../intro.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../graph_guide.html">Inference and Training Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../applications.html">Applications</a></li>
 </ul>
 
         </div>
@@ -94,7 +98,8 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">..torch_qc</span><span class="w"> </span><span class="kn">import</span> <span class="n">TorchGates</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.torch_exact</span><span class="w"> </span><span class="kn">import</span> <span class="n">torch_exact_solver</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._base</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKANSolver</span><span class="p">,</span> <span class="n">register</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.exact</span><span class="w"> </span><span class="kn">import</span> <span class="n">torch_exact_solver</span>
 
 <span class="c1"># cuQuantum / opt_einsum availability</span>
 <span class="k">try</span><span class="p">:</span>
@@ -504,6 +509,30 @@
 <span class="c1"># ---------------------------------------------------------------------------</span>
 
 <span class="n">_SUPPORTED_FLASH_ANSATZES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">,</span> <span class="s2">&quot;real&quot;</span><span class="p">}</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">CuTNSolver</span><span class="p">(</span><span class="n">QKANSolver</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;cuQuantum tensor-network solver (registered as ``&quot;cutn&quot;`` and ``&quot;tn&quot;``).&quot;&quot;&quot;</span>
+
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;cutn&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">preacts_weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">preacts_bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">cutn_solver</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">preacts_bias</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+
+<span class="n">_cutn_solver_instance</span> <span class="o">=</span> <span class="n">CuTNSolver</span><span class="p">()</span>
+<span class="n">register</span><span class="p">(</span><span class="n">_cutn_solver_instance</span><span class="p">)</span>
+<span class="c1"># &quot;tn&quot; is an alias for &quot;cutn&quot; — keep the legacy short key working</span>
+<span class="n">_TN_ALIAS</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="s2">&quot;CuTNSolverTn&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">CuTNSolver</span><span class="p">,),</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;tn&quot;</span><span class="p">})()</span>
+<span class="n">register</span><span class="p">(</span><span class="n">_TN_ALIAS</span><span class="p">)</span>
 </pre></div>
 
            </div>

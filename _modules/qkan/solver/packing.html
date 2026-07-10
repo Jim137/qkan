@@ -1,0 +1,955 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qkan.solver.packing &mdash; QKAN 0.2.3dev documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/packing.html" />
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../graph_guide.html">Inference and Training Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../applications.html">Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">qkan.solver.packing</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for qkan.solver.packing</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Multi-qubit circuit packing.</span>
+
+<span class="sd">Run ``k`` independent copies of a small circuit in parallel on one QPU,</span>
+<span class="sd">placed on disjoint calibration-aware tiles selected by</span>
+<span class="sd">:func:`~qkan.solver.layout.tile_disjoint`.</span>
+
+<span class="sd">:func:`pack_circuit` is the single entry point for both stacks and every</span>
+<span class="sd">result is one :class:`PackedCircuit`: a qiskit ``QuantumCircuit`` becomes</span>
+<span class="sd">a swap-free ISA circuit pinned to the tiles with per-tile observable</span>
+<span class="sd">mapping, and a plain CUDA-Q kernel is rebuilt (gates extracted from the</span>
+<span class="sd">compiled Quake IR) into one kernel applying each copy at its tile&#39;s</span>
+<span class="sd">physical indices, with per-tile readout from sampled counts.</span>
+
+<span class="sd">Everything builds on :class:`~qkan.solver.layout.DeviceProfile` and is</span>
+<span class="sd">torch-free.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">operator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.layout</span><span class="w"> </span><span class="kn">import</span> <span class="n">DeviceProfile</span><span class="p">,</span> <span class="n">tile_disjoint</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;PackedCircuit&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;interaction_of&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;kernel_interaction_of&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;pack_circuit&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+
+
+<div class="viewcode-block" id="interaction_of">
+<a class="viewcode-back" href="../../../api.html#qkan.interaction_of">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">interaction_of</span><span class="p">(</span><span class="n">circuit</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Extract a qiskit circuit&#39;s 2-qubit interaction edge list.</span>
+
+<span class="sd">    Returns one entry per 2-qubit gate (duplicates preserved — they weight</span>
+<span class="sd">    the tile scoring). Directives (barriers, measurements) are ignored;</span>
+<span class="sd">    gates on three or more qubits raise ``ValueError``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">edges</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">instruction</span> <span class="ow">in</span> <span class="n">circuit</span><span class="o">.</span><span class="n">data</span><span class="p">:</span>
+        <span class="n">op</span> <span class="o">=</span> <span class="n">instruction</span><span class="o">.</span><span class="n">operation</span>
+        <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="s2">&quot;_directive&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span> <span class="ow">or</span> <span class="n">op</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;measure&quot;</span><span class="p">,</span> <span class="s2">&quot;reset&quot;</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">qubits</span> <span class="o">=</span> <span class="p">[</span><span class="n">circuit</span><span class="o">.</span><span class="n">find_bit</span><span class="p">(</span><span class="n">q</span><span class="p">)</span><span class="o">.</span><span class="n">index</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">instruction</span><span class="o">.</span><span class="n">qubits</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">qubits</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">edges</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">qubits</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">qubits</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;interaction_of: gate &#39;</span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; acts on </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">qubits</span><span class="p">)</span><span class="si">}</span><span class="s2"> &quot;</span>
+                <span class="s2">&quot;qubits; decompose to 1- and 2-qubit gates first&quot;</span>
+            <span class="p">)</span>
+    <span class="k">return</span> <span class="n">edges</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_edges_of_ops</span><span class="p">(</span><span class="n">ops</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;2-qubit edge list of an extracted ``(name, params, qubits)`` gate list.&quot;&quot;&quot;</span>
+    <span class="n">edges</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">qubits</span> <span class="ow">in</span> <span class="n">ops</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">qubits</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">edges</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">qubits</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">qubits</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">qubits</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;gate &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; acts on </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">qubits</span><span class="p">)</span><span class="si">}</span><span class="s2"> qubits; decompose &quot;</span>
+                <span class="s2">&quot;to 1- and 2-qubit gates first&quot;</span>
+            <span class="p">)</span>
+    <span class="k">return</span> <span class="n">edges</span>
+
+
+<div class="viewcode-block" id="kernel_interaction_of">
+<a class="viewcode-back" href="../../../api.html#qkan.kernel_interaction_of">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">kernel_interaction_of</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Extract a plain CUDA-Q kernel&#39;s 2-qubit interaction edge list.</span>
+
+<span class="sd">    The CUDA-Q analogue of :func:`interaction_of`: one entry per 2-qubit</span>
+<span class="sd">    gate, duplicates preserved, measurements ignored, gates on three or</span>
+<span class="sd">    more qubits raise ``ValueError``. ``args`` bind the kernel&#39;s runtime</span>
+<span class="sd">    arguments; closure captures, loops, and ``list`` indexing resolve to</span>
+<span class="sd">    literal qubit indices (see :mod:`~qkan.solver._quake`).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">._quake</span><span class="w"> </span><span class="kn">import</span> <span class="n">kernel_ops</span>
+
+    <span class="n">ops</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">kernel_ops</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_edges_of_ops</span><span class="p">(</span><span class="n">ops</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_validate_tile</span><span class="p">(</span><span class="n">tile</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">copies</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Range-check a tile index against the number of packed copies.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">tile</span> <span class="o">&lt;</span> <span class="n">copies</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">IndexError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;tile </span><span class="si">{</span><span class="n">tile</span><span class="si">}</span><span class="s2"> out of range for </span><span class="si">{</span><span class="n">copies</span><span class="si">}</span><span class="s2"> copies&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="PackedCircuit">
+<a class="viewcode-back" href="../../../api.html#qkan.PackedCircuit">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PackedCircuit</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A packed job: ``copies`` circuit copies pinned to disjoint tiles.</span>
+
+<span class="sd">    One class serves both stacks — :func:`pack_circuit` fills the half</span>
+<span class="sd">    that applies, and the placement accessors are shared.</span>
+
+<span class="sd">    qiskit (estimator-driven): ``circuit`` is the merged logical circuit</span>
+<span class="sd">    (copy ``t`` on logical qubits ``t*block_qubits ..``) and ``isa`` its</span>
+<span class="sd">    transpilation pinned to ``layout``; map observables per tile with</span>
+<span class="sd">    :meth:`observable` and bind parameter batches with</span>
+<span class="sd">    :meth:`parameter_values` (each copy carries its own renamed</span>
+<span class="sd">    parameters, ``parameters[t]`` in the source ``circuit.parameters``</span>
+<span class="sd">    order) or :meth:`rebind`.</span>
+
+<span class="sd">    CUDA-Q (counts-driven): ``kernel`` applies the block at each tile&#39;s</span>
+<span class="sd">    physical indices and (in automatic mode) measures the full register;</span>
+<span class="sd">    sample it and read per-tile results with :meth:`expectation`,</span>
+<span class="sd">    X/Y observables through :meth:`basis_kernel` (hardware-safe) or</span>
+<span class="sd">    :meth:`observable` (simulator ``observe``), and bind argument</span>
+<span class="sd">    batches with :meth:`rebind`. ``gates`` holds one extracted gate</span>
+<span class="sd">    list per tile and ``block`` the source kernel.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">tiles</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span>
+    <span class="c1"># qiskit half</span>
+    <span class="n">circuit</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">isa</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">parameters</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="c1"># CUDA-Q half</span>
+    <span class="n">kernel</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">gates</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">block</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">layout</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Tile-major flattening of ``tiles`` (the pinned initial layout).&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">q</span> <span class="k">for</span> <span class="n">tile</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">tiles</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">tile</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">width</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register width of the packed CUDA-Q kernel (max index + 1).&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">layout</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">block_qubits</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Qubits per circuit copy.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tiles</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">copies</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Number of packed circuit copies.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tiles</span><span class="p">)</span>
+
+<div class="viewcode-block" id="PackedCircuit.physical_qubits">
+<a class="viewcode-back" href="../../../api.html#qkan.PackedCircuit.physical_qubits">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">physical_qubits</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tile</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Physical qubit indices hosting circuit copy ``tile``.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tiles</span><span class="p">[</span><span class="n">tile</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="PackedCircuit.parameter_values">
+<a class="viewcode-back" href="../../../api.html#qkan.PackedCircuit.parameter_values">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameter_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">batch</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bind one batch of block parameters — copy ``t`` gets ``batch[t]``.</span>
+
+<span class="sd">        ``batch[t][j]`` binds the ``j``-th parameter (in the source</span>
+<span class="sd">        circuit&#39;s ``circuit.parameters`` order) of copy ``t``. Returns the</span>
+<span class="sd">        name-to-value mapping for an ``EstimatorV2`` PUB alongside ``isa``,</span>
+<span class="sd">        so a variational loop packs once and re-binds every step.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="s2">&quot;parameter_values applies to qiskit packs; CUDA-Q packs &quot;</span>
+                <span class="s2">&quot;bind argument batches with rebind(batch)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;the packed circuit has no parameters&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">copies</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;batch has </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span><span class="si">}</span><span class="s2"> entries but the pack has </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">copies</span><span class="si">}</span><span class="s2"> copies&quot;</span>
+            <span class="p">)</span>
+        <span class="n">values</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">names</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">,</span> <span class="n">batch</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">names</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;parameter row has </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span><span class="si">}</span><span class="s2"> values but each copy &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;takes </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">names</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">names</span><span class="p">,</span> <span class="n">row</span><span class="p">):</span>
+                <span class="n">values</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">values</span></div>
+
+
+<div class="viewcode-block" id="PackedCircuit.observable">
+<a class="viewcode-back" href="../../../api.html#qkan.PackedCircuit.observable">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">observable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obs</span><span class="p">,</span> <span class="n">tile</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Map a block-level observable onto the packed placement.</span>
+
+<span class="sd">        Returns the mapped operator for one ``tile``, the list over all</span>
+<span class="sd">        copies (``None``), or their average (``&quot;mean&quot;``) — when every</span>
+<span class="sd">        tile runs the same circuit, the mean pools the tiles into one</span>
+<span class="sd">        estimate at ``copies``-fold shots.</span>
+
+<span class="sd">        qiskit packs take a Pauli string (little-endian) or</span>
+<span class="sd">        ``SparsePauliOp`` over the block&#39;s ``block_qubits`` qubits and</span>
+<span class="sd">        return the ISA-mapped operator, ready for an ``EstimatorV2`` PUB</span>
+<span class="sd">        alongside ``isa``. CUDA-Q packs take a Pauli string in index</span>
+<span class="sd">        order (``pauli[i]`` acts on block qubit ``i``) and return a</span>
+<span class="sd">        ``cudaq.spin`` operator at the tile&#39;s physical indices, for</span>
+<span class="sd">        ``cudaq.observe(packed.observe_kernel(), ...)``. That is the</span>
+<span class="sd">        simulator route — hardware targets that compact idle qubits</span>
+<span class="sd">        reject sparse-index observables; use :meth:`basis_kernel` plus</span>
+<span class="sd">        :meth:`expectation` there.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">tile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">observable</span><span class="p">(</span><span class="n">obs</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">copies</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tile</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">tile</span> <span class="o">!=</span> <span class="s2">&quot;mean&quot;</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;tile must be an index, None, or &#39;mean&#39;; got </span><span class="si">{</span><span class="n">tile</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="n">ops</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">observable</span><span class="p">(</span><span class="n">obs</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">copies</span><span class="p">)]</span>
+            <span class="n">pooled</span> <span class="o">=</span> <span class="n">ops</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">ops</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+                <span class="n">pooled</span> <span class="o">=</span> <span class="n">pooled</span> <span class="o">+</span> <span class="n">op</span>
+            <span class="k">return</span> <span class="n">pooled</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">copies</span><span class="p">)</span>
+        <span class="n">_validate_tile</span><span class="p">(</span><span class="n">tile</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">copies</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">isa</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_isa_observable</span><span class="p">(</span><span class="n">obs</span><span class="p">,</span> <span class="n">tile</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spin_observable</span><span class="p">(</span><span class="n">obs</span><span class="p">,</span> <span class="n">tile</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_isa_observable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obs</span><span class="p">,</span> <span class="n">tile</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;qiskit leaf of :meth:`observable`: embed and pin to the ISA layout.&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit.quantum_info</span><span class="w"> </span><span class="kn">import</span> <span class="n">SparsePauliOp</span>  <span class="c1"># type: ignore</span>
+
+        <span class="n">op</span> <span class="o">=</span> <span class="n">obs</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obs</span><span class="p">,</span> <span class="n">SparsePauliOp</span><span class="p">)</span> <span class="k">else</span> <span class="n">SparsePauliOp</span><span class="p">(</span><span class="n">obs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">op</span><span class="o">.</span><span class="n">num_qubits</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_qubits</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;observable acts on </span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">num_qubits</span><span class="si">}</span><span class="s2"> qubits but the packed &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;block has </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">block_qubits</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">base</span> <span class="o">=</span> <span class="n">tile</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_qubits</span>
+        <span class="n">embedded</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">apply_layout</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">base</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_qubits</span><span class="p">)),</span>
+            <span class="n">num_qubits</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">block_qubits</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">copies</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">embedded</span><span class="o">.</span><span class="n">apply_layout</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">isa</span><span class="o">.</span><span class="n">layout</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_spin_observable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obs</span><span class="p">,</span> <span class="n">tile</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;CUDA-Q leaf of :meth:`observable`: spin operator at physical indices.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">cudaq</span>  <span class="c1"># type: ignore</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obs</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;CUDA-Q packs map Pauli strings; got &#39;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">obs</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+            <span class="p">)</span>
+        <span class="n">pauli</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validated_pauli</span><span class="p">(</span><span class="n">obs</span><span class="p">)</span>
+        <span class="n">factors</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;X&quot;</span><span class="p">:</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">spin</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;Y&quot;</span><span class="p">:</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">spin</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="s2">&quot;Z&quot;</span><span class="p">:</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">spin</span><span class="o">.</span><span class="n">z</span><span class="p">}</span>
+        <span class="n">op</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">letter</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">pauli</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">letter</span> <span class="o">==</span> <span class="s2">&quot;I&quot;</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">term</span> <span class="o">=</span> <span class="n">factors</span><span class="p">[</span><span class="n">letter</span><span class="p">](</span><span class="bp">self</span><span class="o">.</span><span class="n">tiles</span><span class="p">[</span><span class="n">tile</span><span class="p">][</span><span class="n">i</span><span class="p">])</span>
+            <span class="n">op</span> <span class="o">=</span> <span class="n">term</span> <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">op</span> <span class="o">*</span> <span class="n">term</span>
+        <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">op</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">spin</span><span class="o">.</span><span class="n">i</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tiles</span><span class="p">[</span><span class="n">tile</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">op</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validated_pauli</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pauli</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">pauli</span> <span class="o">=</span> <span class="n">pauli</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">pauli</span><span class="p">)</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_qubits</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">pauli</span><span class="si">}</span><span class="s2">&#39; has </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">pauli</span><span class="p">)</span><span class="si">}</span><span class="s2"> entries but the packed block &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;has </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">block_qubits</span><span class="si">}</span><span class="s2"> qubits&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">letter</span> <span class="ow">not</span> <span class="ow">in</span> <span class="s2">&quot;IXYZ&quot;</span> <span class="k">for</span> <span class="n">letter</span> <span class="ow">in</span> <span class="n">pauli</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Pauli strings may only contain I, X, Y, or Z&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">pauli</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_require_kernel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2"> applies to CUDA-Q packs; qiskit packs read &quot;</span>
+                <span class="s2">&quot;results through observable/parameter_values&quot;</span>
+            <span class="p">)</span>
+
+<div class="viewcode-block" id="PackedCircuit.rebind">
+<a class="viewcode-back" href="../../../api.html#qkan.PackedCircuit.rebind">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rebind</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">batch</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PackedCircuit&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Re-pack the same tiles with a new batch of values.</span>
+
+<span class="sd">        The per-step call of a variational loop — tile selection is</span>
+<span class="sd">        reused. CUDA-Q packs re-extract the block per tile (``batch``</span>
+<span class="sd">        holds one runtime-argument set per tile, as ``block_args_batch``</span>
+<span class="sd">        in :func:`pack_circuit`; milliseconds per step). qiskit packs</span>
+<span class="sd">        return a copy with the parameters bound (``batch`` rows as in</span>
+<span class="sd">        :meth:`parameter_values`; prefer ``parameter_values`` in</span>
+<span class="sd">        estimator PUBs, which keeps the circuit parametric).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">block</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;rebind requires automatic packing (a plain block kernel)&quot;</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="n">_pack_cudaq</span><span class="p">(</span>
+                <span class="kc">None</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">block</span><span class="p">,</span> <span class="n">tiles</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">tiles</span><span class="p">,</span> <span class="n">block_args_batch</span><span class="o">=</span><span class="n">batch</span>
+            <span class="p">)</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameter_values</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">PackedCircuit</span><span class="p">(</span>
+            <span class="n">tiles</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">tiles</span><span class="p">,</span>
+            <span class="n">circuit</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit</span><span class="o">.</span><span class="n">assign_parameters</span><span class="p">(</span>
+                <span class="p">{</span><span class="n">p</span><span class="p">:</span> <span class="n">values</span><span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">circuit</span><span class="o">.</span><span class="n">parameters</span><span class="p">}</span>
+            <span class="p">),</span>
+            <span class="n">isa</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">isa</span><span class="o">.</span><span class="n">assign_parameters</span><span class="p">(</span>
+                <span class="p">{</span><span class="n">p</span><span class="p">:</span> <span class="n">values</span><span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">isa</span><span class="o">.</span><span class="n">parameters</span><span class="p">}</span>
+            <span class="p">),</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PackedCircuit.basis_kernel">
+<a class="viewcode-back" href="../../../api.html#qkan.PackedCircuit.basis_kernel">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">basis_kernel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bases</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Packed kernel with per-qubit basis rotations before measurement.</span>
+
+<span class="sd">        ``bases`` has one letter per block qubit, position ``i`` acting on</span>
+<span class="sd">        block qubit ``i``: ``X`` and ``Y`` append that basis change (``H``,</span>
+<span class="sd">        or ``RZ(-pi/2)`` then ``H``) on the corresponding physical qubit of</span>
+<span class="sd">        every tile; ``Z`` and ``I`` leave it untouched. Sample the returned</span>
+<span class="sd">        kernel and read Pauli expectations with :meth:`expectation` — the</span>
+<span class="sd">        hardware-safe observable path (sparse-index ``observe`` fails on</span>
+<span class="sd">        targets that compact idle qubits).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_kernel</span><span class="p">(</span><span class="s2">&quot;basis_kernel&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">gates</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;basis_kernel requires automatic packing (a plain block &quot;</span>
+                <span class="s2">&quot;kernel); legacy convention blocks apply basis changes &quot;</span>
+                <span class="s2">&quot;inside the block&quot;</span>
+            <span class="p">)</span>
+        <span class="n">bases</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validated_pauli</span><span class="p">(</span><span class="n">bases</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_recompose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gates</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tiles</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">,</span> <span class="n">bases</span><span class="o">=</span><span class="n">bases</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PackedCircuit.expectation">
+<a class="viewcode-back" href="../../../api.html#qkan.PackedCircuit.expectation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">expectation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">pauli</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">tile</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Pauli expectation values from a sample of the matching basis.</span>
+
+<span class="sd">        ``pauli[i]`` acts on block qubit ``i``; ``result`` must come from</span>
+<span class="sd">        sampling :meth:`basis_kernel` for that string (the plain</span>
+<span class="sd">        :attr:`kernel` suffices when it only contains ``Z`` and ``I``).</span>
+<span class="sd">        The value is the Z-parity of the non-identity positions — for one</span>
+<span class="sd">        ``tile``, the list over all copies (``None``), or their average</span>
+<span class="sd">        (``&quot;mean&quot;``): when every tile runs the same circuit, the mean</span>
+<span class="sd">        pools the tiles into one estimate at ``copies``-fold shots.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_kernel</span><span class="p">(</span><span class="s2">&quot;expectation&quot;</span><span class="p">)</span>
+        <span class="n">pauli</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validated_pauli</span><span class="p">(</span><span class="n">pauli</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tile</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">tile</span> <span class="o">!=</span> <span class="s2">&quot;mean&quot;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;tile must be an index, None, or &#39;mean&#39;; got </span><span class="si">{</span><span class="n">tile</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">positions</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">letter</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">pauli</span><span class="p">)</span> <span class="k">if</span> <span class="n">letter</span> <span class="o">!=</span> <span class="s2">&quot;I&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">positions</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">tile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">copies</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tile</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">_validate_tile</span><span class="p">(</span><span class="n">tile</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">copies</span><span class="p">)</span>
+            <span class="k">return</span> <span class="mf">1.0</span>
+        <span class="k">if</span> <span class="n">tile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_tile_parity</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">copies</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tile</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_tile_parity</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">copies</span><span class="p">)</span>
+            <span class="p">]</span>
+            <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tile_parity</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">tile</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_tile_parity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">tile</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Z-parity of a tile&#39;s block positions from full-register counts.&quot;&quot;&quot;</span>
+        <span class="n">_validate_tile</span><span class="p">(</span><span class="n">tile</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">copies</span><span class="p">)</span>
+        <span class="n">physical</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">tiles</span><span class="p">[</span><span class="n">tile</span><span class="p">][</span><span class="n">p</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">positions</span><span class="p">]</span>
+        <span class="n">acc</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">total</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">bits</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">bits</span><span class="p">)</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;bitstrings span </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">bits</span><span class="p">)</span><span class="si">}</span><span class="s2"> bits but the packed &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;register has </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="si">}</span><span class="s2"> qubits — the block kernel &quot;</span>
+                    <span class="s2">&quot;must not measure (explicit mz compacts the sampled &quot;</span>
+                    <span class="s2">&quot;register; sampling the packed kernel measures the &quot;</span>
+                    <span class="s2">&quot;full register implicitly)&quot;</span>
+                <span class="p">)</span>
+            <span class="n">total</span> <span class="o">+=</span> <span class="n">count</span>
+            <span class="n">parity</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">bits</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;1&quot;</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">physical</span><span class="p">)</span> <span class="o">%</span> <span class="mi">2</span>
+            <span class="n">acc</span> <span class="o">+=</span> <span class="n">count</span> <span class="k">if</span> <span class="n">parity</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="o">-</span><span class="n">count</span>
+        <span class="k">return</span> <span class="n">acc</span> <span class="o">/</span> <span class="n">total</span> <span class="k">if</span> <span class="n">total</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+<div class="viewcode-block" id="PackedCircuit.observe_kernel">
+<a class="viewcode-back" href="../../../api.html#qkan.PackedCircuit.observe_kernel">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">observe_kernel</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Measurement-free packed kernel for ``cudaq.observe``.</span>
+
+<span class="sd">        ``observe`` rejects kernels with measurements, so the sampled</span>
+<span class="sd">        :attr:`kernel` (which measures the full register) cannot be used</span>
+<span class="sd">        with :meth:`observable`; this rebuild omits the measurement.</span>
+<span class="sd">        Simulator route only — without the full-register measurement,</span>
+<span class="sd">        hardware pipelines may compact idle qubits.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_require_kernel</span><span class="p">(</span><span class="s2">&quot;observe_kernel&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">gates</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;observe_kernel requires automatic packing (a plain block kernel)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">_recompose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gates</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tiles</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">,</span> <span class="n">measure</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_select_tiles</span><span class="p">(</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">DeviceProfile</span><span class="p">,</span>
+    <span class="n">edges</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span>
+    <span class="n">m</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">k</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;max&quot;</span><span class="p">]],</span>
+    <span class="n">caller</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">thresholds</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Shared tile selection: interaction -&gt; tile_disjoint -&gt; validation.&quot;&quot;&quot;</span>
+    <span class="n">interaction</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">edges</span><span class="p">)</span> <span class="k">if</span> <span class="n">edges</span> <span class="k">else</span> <span class="n">m</span>
+    <span class="c1"># n_logical widens tiles to the full block: qubits without interaction</span>
+    <span class="c1"># edges (1q-gate-only or idle wires) get best-effort physical qubits.</span>
+    <span class="n">tiles</span> <span class="o">=</span> <span class="n">tile_disjoint</span><span class="p">(</span><span class="n">profile</span><span class="p">,</span> <span class="n">interaction</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k</span><span class="p">,</span> <span class="n">n_logical</span><span class="o">=</span><span class="n">m</span><span class="p">,</span> <span class="o">**</span><span class="n">thresholds</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">tiles</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">caller</span><span class="si">}</span><span class="s2">: no tiles satisfy the coupling map and thresholds&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tiles</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="pack_circuit">
+<a class="viewcode-back" href="../../../api.html#qkan.pack_circuit">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pack_circuit</span><span class="p">(</span>
+    <span class="n">backend</span><span class="p">,</span>
+    <span class="n">circuit</span><span class="p">,</span>
+    <span class="n">k</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;max&quot;</span><span class="p">]]</span> <span class="o">=</span> <span class="s2">&quot;max&quot;</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">tiles</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">DeviceProfile</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">block_args</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
+    <span class="n">block_args_batch</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">max_readout_error</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">qubit_error_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">edge_error_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">tile_score_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">buffer_hops</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">strict</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">optimization_level</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PackedCircuit&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pack ``k`` copies of a circuit onto disjoint calibrated tiles.</span>
+
+<span class="sd">    Overloaded over both supported stacks, with the same selection logic</span>
+<span class="sd">    (interaction graph -&gt; :func:`~qkan.solver.layout.tile_disjoint` -&gt;</span>
+<span class="sd">    copies composed at the tiles&#39; physical qubits):</span>
+
+<span class="sd">    - qiskit: ``pack_circuit(backend, circuit, k)`` with a</span>
+<span class="sd">      ``QuantumCircuit`` returns a :class:`PackedCircuit` — the copies are</span>
+<span class="sd">      transpiled pinned to the tiles. ``profile`` overrides the</span>
+<span class="sd">      calibration snapshot (default ``DeviceProfile.from_qiskit(backend)``)</span>
+<span class="sd">      and ``optimization_level`` steers the transpilation. Tiles are</span>
+<span class="sd">      coupled subgraphs, so the result routes without SWAPs; a routed</span>
+<span class="sd">      result (e.g. from a profile whose coupling disagrees with</span>
+<span class="sd">      ``backend``) raises ``RuntimeError``.</span>
+<span class="sd">    - CUDA-Q: ``pack_circuit(profile, kernel, k)`` with a plain</span>
+<span class="sd">      ``@cudaq.kernel`` and a :class:`~qkan.solver.layout.DeviceProfile`</span>
+<span class="sd">      — the kernel&#39;s gates are extracted from the compiled Quake IR</span>
+<span class="sd">      (``block_args`` bind runtime arguments) and rebuilt at the tiles&#39;</span>
+<span class="sd">      physical indices with a full-register measurement. A block written</span>
+<span class="sd">      over the legacy ``(q: cudaq.qview, layout: list[int], offset:</span>
+<span class="sd">      int)`` convention is composed by sub-kernel calls exactly as</span>
+<span class="sd">      written instead (explicit ``tiles`` required); to thread runtime</span>
+<span class="sd">      arguments through to sample time, write the whole packed kernel</span>
+<span class="sd">      by hand (see the packing guide).</span>
+
+<span class="sd">    Both stacks require measurement-free inputs: readout belongs to the</span>
+<span class="sd">    primitive (qiskit) or is appended automatically (CUDA-Q). Selection</span>
+<span class="sd">    thresholds, ``buffer_hops``, ``k=&quot;max&quot;``, and ``strict`` semantics are</span>
+<span class="sd">    those of :func:`~qkan.solver.layout.tile_disjoint`.</span>
+
+<span class="sd">    Batched evaluation packs one job per batch: a parameterized qiskit</span>
+<span class="sd">    circuit gets per-copy parameters (bind with</span>
+<span class="sd">    :meth:`PackedCircuit.parameter_values`), and a CUDA-Q kernel takes one</span>
+<span class="sd">    runtime-argument set per tile via ``block_args_batch`` (re-bind the</span>
+<span class="sd">    same tiles with :meth:`PackedCircuit.rebind`). Explicit ``tiles``</span>
+<span class="sd">    (hand-picked or from :func:`~qkan.solver.layout.tile_disjoint`) skip</span>
+<span class="sd">    the calibration-driven selection on either stack.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">is_qiskit</span> <span class="o">=</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">circuit</span><span class="p">,</span> <span class="s2">&quot;find_bit&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">circuit</span><span class="p">,</span> <span class="s2">&quot;num_qubits&quot;</span><span class="p">)</span>
+    <span class="c1"># prepare_call filters callables that merely carry a `signature`</span>
+    <span class="c1"># attribute (e.g. numpy.vectorize) as well as builder PyKernels.</span>
+    <span class="n">is_kernel</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="nb">callable</span><span class="p">(</span><span class="n">circuit</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">circuit</span><span class="p">,</span> <span class="s2">&quot;signature&quot;</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">circuit</span><span class="p">,</span> <span class="s2">&quot;prepare_call&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">is_qiskit</span> <span class="ow">or</span> <span class="n">is_kernel</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;pack_circuit: unsupported circuit type &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">circuit</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&#39; — expected a qiskit QuantumCircuit &quot;</span>
+            <span class="s2">&quot;or a @cudaq.kernel (kernel-builder PyKernels cannot be &quot;</span>
+            <span class="s2">&quot;introspected; pass the decorated kernel)&quot;</span>
+        <span class="p">)</span>
+    <span class="n">thresholds</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+        <span class="n">max_readout_error</span><span class="o">=</span><span class="n">max_readout_error</span><span class="p">,</span>
+        <span class="n">qubit_error_threshold</span><span class="o">=</span><span class="n">qubit_error_threshold</span><span class="p">,</span>
+        <span class="n">edge_error_threshold</span><span class="o">=</span><span class="n">edge_error_threshold</span><span class="p">,</span>
+        <span class="n">tile_score_threshold</span><span class="o">=</span><span class="n">tile_score_threshold</span><span class="p">,</span>
+        <span class="n">buffer_hops</span><span class="o">=</span><span class="n">buffer_hops</span><span class="p">,</span>
+        <span class="n">strict</span><span class="o">=</span><span class="n">strict</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">is_qiskit</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">DeviceProfile</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="s2">&quot;pack_circuit: qiskit circuits transpile against a backend, &quot;</span>
+                <span class="s2">&quot;not a DeviceProfile — pass the backend (profile=... &quot;</span>
+                <span class="s2">&quot;overrides its calibration)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">block_args</span> <span class="ow">or</span> <span class="n">block_args_batch</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;pack_circuit: block_args apply to CUDA-Q kernels only — &quot;</span>
+                <span class="s2">&quot;parameterized qiskit circuits bind through &quot;</span>
+                <span class="s2">&quot;PackedCircuit.parameter_values&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">_pack_qiskit</span><span class="p">(</span>
+            <span class="n">backend</span><span class="p">,</span>
+            <span class="n">circuit</span><span class="p">,</span>
+            <span class="n">k</span><span class="p">,</span>
+            <span class="n">tiles</span><span class="o">=</span><span class="n">tiles</span><span class="p">,</span>
+            <span class="n">profile</span><span class="o">=</span><span class="n">profile</span><span class="p">,</span>
+            <span class="n">optimization_level</span><span class="o">=</span><span class="n">optimization_level</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">thresholds</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="n">calibration</span> <span class="o">=</span> <span class="n">backend</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">DeviceProfile</span><span class="p">)</span> <span class="k">else</span> <span class="n">profile</span>
+    <span class="k">if</span> <span class="n">calibration</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">tiles</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+            <span class="s2">&quot;pack_circuit: CUDA-Q kernels pack against calibration — &quot;</span>
+            <span class="s2">&quot;pass a DeviceProfile as the first argument (or explicit tiles)&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">_pack_cudaq</span><span class="p">(</span>
+        <span class="n">calibration</span><span class="p">,</span>
+        <span class="n">circuit</span><span class="p">,</span>
+        <span class="n">k</span><span class="p">,</span>
+        <span class="n">tiles</span><span class="o">=</span><span class="n">tiles</span><span class="p">,</span>
+        <span class="n">block_args</span><span class="o">=</span><span class="n">block_args</span><span class="p">,</span>
+        <span class="n">block_args_batch</span><span class="o">=</span><span class="n">block_args_batch</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">thresholds</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_pack_qiskit</span><span class="p">(</span>
+    <span class="n">backend</span><span class="p">,</span>
+    <span class="n">circuit</span><span class="p">,</span>
+    <span class="n">k</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;max&quot;</span><span class="p">]],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">tiles</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]]],</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">DeviceProfile</span><span class="p">],</span>
+    <span class="n">optimization_level</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">thresholds</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PackedCircuit</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;qiskit half of :func:`pack_circuit`: compose + transpile pinned.&quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit</span><span class="w"> </span><span class="kn">import</span> <span class="n">QuantumCircuit</span>  <span class="c1"># type: ignore</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit.circuit</span><span class="w"> </span><span class="kn">import</span> <span class="n">Parameter</span>  <span class="c1"># type: ignore</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit.transpiler.preset_passmanagers</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>  <span class="c1"># type: ignore</span>
+        <span class="n">generate_preset_pass_manager</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">circuit</span><span class="o">.</span><span class="n">num_clbits</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;pack_circuit: the circuit has classical bits — packing a &quot;</span>
+            <span class="s2">&quot;measured circuit would map every copy onto the same clbits &quot;</span>
+            <span class="s2">&quot;(and in-circuit measurements corrupt estimator results); &quot;</span>
+            <span class="s2">&quot;remove measurements and read results via observable() or the &quot;</span>
+            <span class="s2">&quot;sampler that runs the packed circuit&quot;</span>
+        <span class="p">)</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">circuit</span><span class="o">.</span><span class="n">num_qubits</span>
+    <span class="k">if</span> <span class="n">tiles</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">interaction_of</span><span class="p">(</span><span class="n">circuit</span><span class="p">)</span>  <span class="c1"># &gt;2-qubit gates fail identically in both modes</span>
+        <span class="n">tiles</span><span class="p">,</span> <span class="n">m_tiles</span><span class="p">,</span> <span class="n">_flat</span><span class="p">,</span> <span class="n">_width</span><span class="p">,</span> <span class="n">_copies</span> <span class="o">=</span> <span class="n">_validated_tiles</span><span class="p">(</span><span class="n">tiles</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">m_tiles</span> <span class="o">!=</span> <span class="n">m</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;pack_circuit: tiles have </span><span class="si">{</span><span class="n">m_tiles</span><span class="si">}</span><span class="s2"> qubits but the block has </span><span class="si">{</span><span class="n">m</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">profile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">profile</span> <span class="o">=</span> <span class="n">DeviceProfile</span><span class="o">.</span><span class="n">from_qiskit</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
+        <span class="n">tiles</span> <span class="o">=</span> <span class="n">_select_tiles</span><span class="p">(</span>
+            <span class="n">profile</span><span class="p">,</span> <span class="n">interaction_of</span><span class="p">(</span><span class="n">circuit</span><span class="p">),</span> <span class="n">m</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="s2">&quot;pack_circuit&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">thresholds</span>
+        <span class="p">)</span>
+    <span class="n">copies</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">tiles</span><span class="p">)</span>
+    <span class="n">merged</span> <span class="o">=</span> <span class="n">QuantumCircuit</span><span class="p">(</span><span class="n">m</span> <span class="o">*</span> <span class="n">copies</span><span class="p">)</span>
+    <span class="c1"># Each copy gets its own renamed parameters so one packed job can</span>
+    <span class="c1"># evaluate a batch of parameter values (compose would otherwise share</span>
+    <span class="c1"># the Parameter objects and bind every copy identically).</span>
+    <span class="n">source_params</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">circuit</span><span class="o">.</span><span class="n">parameters</span><span class="p">)</span>
+    <span class="n">parameter_names</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">copies</span><span class="p">):</span>
+        <span class="n">block</span> <span class="o">=</span> <span class="n">circuit</span>
+        <span class="k">if</span> <span class="n">source_params</span><span class="p">:</span>
+            <span class="n">renamed</span> <span class="o">=</span> <span class="p">{</span><span class="n">p</span><span class="p">:</span> <span class="n">Parameter</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;t</span><span class="si">{</span><span class="n">t</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">source_params</span><span class="p">}</span>
+            <span class="n">block</span> <span class="o">=</span> <span class="n">circuit</span><span class="o">.</span><span class="n">assign_parameters</span><span class="p">(</span><span class="n">renamed</span><span class="p">)</span>
+            <span class="n">parameter_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">renamed</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">source_params</span><span class="p">))</span>
+        <span class="n">merged</span><span class="o">.</span><span class="n">compose</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="n">qubits</span><span class="o">=</span><span class="nb">range</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span> <span class="n">m</span><span class="p">,</span> <span class="p">(</span><span class="n">t</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">m</span><span class="p">),</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">flat</span> <span class="o">=</span> <span class="p">[</span><span class="n">q</span> <span class="k">for</span> <span class="n">tile</span> <span class="ow">in</span> <span class="n">tiles</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">tile</span><span class="p">]</span>
+    <span class="n">isa</span> <span class="o">=</span> <span class="n">generate_preset_pass_manager</span><span class="p">(</span>
+        <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span>
+        <span class="n">optimization_level</span><span class="o">=</span><span class="n">optimization_level</span><span class="p">,</span>
+        <span class="n">initial_layout</span><span class="o">=</span><span class="n">flat</span><span class="p">,</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">merged</span><span class="p">)</span>
+    <span class="c1"># Routing SWAPs are lowered to basis gates before this point, so detect</span>
+    <span class="c1"># routing through the layout permutation rather than a literal swap op.</span>
+    <span class="n">permutation</span> <span class="o">=</span> <span class="n">isa</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">routing_permutation</span><span class="p">()</span> <span class="k">if</span> <span class="n">isa</span><span class="o">.</span><span class="n">layout</span> <span class="k">else</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">permutation</span> <span class="o">!=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">permutation</span><span class="p">))):</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="s2">&quot;pack_circuit: transpilation routed the packed circuit — the &quot;</span>
+            <span class="s2">&quot;tiles do not embed the block&#39;s interaction graph in the &quot;</span>
+            <span class="s2">&quot;backend&#39;s coupling map; the calibration profile likely &quot;</span>
+            <span class="s2">&quot;disagrees with the transpilation backend (stale snapshot or &quot;</span>
+            <span class="s2">&quot;hand-built edges) — rebuild it with DeviceProfile.from_qiskit&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">PackedCircuit</span><span class="p">(</span>
+        <span class="n">circuit</span><span class="o">=</span><span class="n">merged</span><span class="p">,</span>
+        <span class="n">isa</span><span class="o">=</span><span class="n">isa</span><span class="p">,</span>
+        <span class="n">tiles</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">tiles</span><span class="p">),</span>
+        <span class="n">parameters</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">parameter_names</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_recompose</span><span class="p">(</span>
+    <span class="n">gates_per_tile</span><span class="p">,</span>
+    <span class="n">tiles</span><span class="p">,</span>
+    <span class="n">width</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">bases</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">measure</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build one kernel applying each tile&#39;s gate list at its physical qubits.&quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">cudaq</span>  <span class="c1"># type: ignore</span>
+
+    <span class="n">kernel</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">make_kernel</span><span class="p">()</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">kernel</span><span class="o">.</span><span class="n">qalloc</span><span class="p">(</span><span class="n">width</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">tile</span><span class="p">,</span> <span class="n">gates</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">tiles</span><span class="p">,</span> <span class="n">gates_per_tile</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span> <span class="n">qubits</span> <span class="ow">in</span> <span class="n">gates</span><span class="p">:</span>
+            <span class="n">method</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">method</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;pack_circuit: gate &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; has no cudaq kernel-builder equivalent&quot;</span>
+                <span class="p">)</span>
+            <span class="n">method</span><span class="p">(</span><span class="o">*</span><span class="n">params</span><span class="p">,</span> <span class="o">*</span><span class="p">(</span><span class="n">q</span><span class="p">[</span><span class="n">tile</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">qubits</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">bases</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">basis</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">bases</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">basis</span> <span class="o">==</span> <span class="s2">&quot;X&quot;</span><span class="p">:</span>
+                    <span class="n">kernel</span><span class="o">.</span><span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">[</span><span class="n">tile</span><span class="p">[</span><span class="n">i</span><span class="p">]])</span>
+                <span class="k">elif</span> <span class="n">basis</span> <span class="o">==</span> <span class="s2">&quot;Y&quot;</span><span class="p">:</span>
+                    <span class="n">kernel</span><span class="o">.</span><span class="n">rz</span><span class="p">(</span><span class="o">-</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">q</span><span class="p">[</span><span class="n">tile</span><span class="p">[</span><span class="n">i</span><span class="p">]])</span>
+                    <span class="n">kernel</span><span class="o">.</span><span class="n">h</span><span class="p">(</span><span class="n">q</span><span class="p">[</span><span class="n">tile</span><span class="p">[</span><span class="n">i</span><span class="p">]])</span>
+    <span class="k">if</span> <span class="n">measure</span><span class="p">:</span>
+        <span class="c1"># The full-register measurement keeps idle qubits alive through</span>
+        <span class="c1"># hardware pipelines that compact untouched qubits (dqe) and pins</span>
+        <span class="c1"># the sampled bitstring width to the register width.</span>
+        <span class="n">kernel</span><span class="o">.</span><span class="n">mz</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">kernel</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_validated_tiles</span><span class="p">(</span>
+    <span class="n">tiles</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="o">...</span><span class="p">],</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Normalize and validate tiles; return (tiles, size, flat, width, copies).&quot;&quot;&quot;</span>
+    <span class="n">norm</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">operator</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">q</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">tile</span><span class="p">)</span> <span class="k">for</span> <span class="n">tile</span> <span class="ow">in</span> <span class="n">tiles</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">norm</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;packing: tiles must be non-empty&quot;</span><span class="p">)</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">norm</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">!=</span> <span class="n">m</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">norm</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;packing: all tiles must have the same size&quot;</span><span class="p">)</span>
+    <span class="n">flat</span> <span class="o">=</span> <span class="p">[</span><span class="n">q</span> <span class="k">for</span> <span class="n">tile</span> <span class="ow">in</span> <span class="n">norm</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">tile</span><span class="p">]</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">q</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">flat</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;packing: tile indices must be non-negative&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">flat</span><span class="p">))</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">flat</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;packing: tiles overlap&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">norm</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">flat</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">flat</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">norm</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_pack_cudaq</span><span class="p">(</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">DeviceProfile</span><span class="p">],</span>
+    <span class="n">block</span><span class="p">,</span>
+    <span class="n">k</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;max&quot;</span><span class="p">]]</span> <span class="o">=</span> <span class="s2">&quot;max&quot;</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">tiles</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">block_args</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
+    <span class="n">block_args_batch</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">thresholds</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PackedCircuit</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;CUDA-Q half of :func:`pack_circuit`: extract + recompose pinned.</span>
+
+<span class="sd">    Automatic mode (the default): ``block`` is a plain ``@cudaq.kernel``</span>
+<span class="sd">    that allocates its own qubits — no signature convention. Its gate</span>
+<span class="sd">    list is extracted from the compiled Quake IR (loops, closure</span>
+<span class="sd">    captures, and ``list`` indexing resolve to literal gates), tiles are</span>
+<span class="sd">    selected from ``profile`` calibration via</span>
+<span class="sd">    :func:`~qkan.solver.layout.tile_disjoint` (or taken from ``tiles``</span>
+<span class="sd">    when given), and the copies are rebuilt into one kernel that applies</span>
+<span class="sd">    each copy&#39;s gates at its tile&#39;s physical indices and measures the</span>
+<span class="sd">    full register — which also keeps idle qubits alive on hardware</span>
+<span class="sd">    pipelines that compact untouched qubits. The block must not measure</span>
+<span class="sd">    (readout is added automatically) or branch on measurement results,</span>
+<span class="sd">    and must not call sub-kernels.</span>
+
+<span class="sd">    Legacy mode: with explicit ``tiles`` and a block written over</span>
+<span class="sd">    ``(q: cudaq.qview, layout: list[int], offset: int)``, the copies are</span>
+<span class="sd">    composed by sub-kernel calls exactly as written; runtime-parameterized</span>
+<span class="sd">    packed kernels can be hand-written this way (see the packing guide).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">cudaq</span>  <span class="c1"># type: ignore</span>
+
+    <span class="n">signature</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="s2">&quot;signature&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">arg_types</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">signature</span><span class="p">,</span> <span class="s2">&quot;arg_types&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]]</span>
+    <span class="k">if</span> <span class="n">arg_types</span> <span class="ow">and</span> <span class="n">arg_types</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;!quake.veq&quot;</span><span class="p">):</span>
+        <span class="c1"># Legacy (qview, layout, offset) convention block.</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">arg_types</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span> <span class="ow">or</span> <span class="ow">not</span> <span class="p">(</span>
+            <span class="n">arg_types</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;!cc.stdvec&lt;i&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">arg_types</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;i&quot;</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;pack_circuit: blocks taking a qview must use the legacy &quot;</span>
+                <span class="s2">&quot;convention (q: cudaq.qview, layout: list[int], offset: &quot;</span>
+                <span class="s2">&quot;int); for runtime-parameterized packing write the packed &quot;</span>
+                <span class="s2">&quot;kernel by hand (see the packing guide)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">tiles</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;pack_circuit: automatic tiling requires a plain kernel; &quot;</span>
+                <span class="s2">&quot;blocks over (qview, layout, offset) need explicit tiles&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">block_args</span> <span class="ow">or</span> <span class="n">block_args_batch</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;pack_circuit: block_args only apply to plain kernels&quot;</span><span class="p">)</span>
+        <span class="n">tiles</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">flat</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="n">copies</span> <span class="o">=</span> <span class="n">_validated_tiles</span><span class="p">(</span><span class="n">tiles</span><span class="p">)</span>
+
+        <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">packed</span><span class="p">():</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">qvector</span><span class="p">(</span><span class="n">width</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">copies</span><span class="p">):</span>
+                <span class="n">block</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">flat</span><span class="p">,</span> <span class="n">t</span> <span class="o">*</span> <span class="n">m</span><span class="p">)</span>
+            <span class="c1"># Full-register measurement: keeps idle qubits alive through</span>
+            <span class="c1"># hardware pipelines that compact untouched qubits (dqe).</span>
+            <span class="n">mz</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>  <span class="c1"># noqa: F821</span>
+
+        <span class="k">return</span> <span class="n">PackedCircuit</span><span class="p">(</span><span class="n">kernel</span><span class="o">=</span><span class="n">packed</span><span class="p">,</span> <span class="n">tiles</span><span class="o">=</span><span class="n">tiles</span><span class="p">)</span>
+
+    <span class="kn">from</span><span class="w"> </span><span class="nn">._quake</span><span class="w"> </span><span class="kn">import</span> <span class="n">kernel_ops</span>
+
+    <span class="k">if</span> <span class="n">block_args_batch</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">block_args</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;pack_circuit: pass block_args (one set for every copy) or &quot;</span>
+                <span class="s2">&quot;block_args_batch (one set per tile), not both&quot;</span>
+            <span class="p">)</span>
+        <span class="n">arg_sets</span> <span class="o">=</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="k">for</span> <span class="n">args</span> <span class="ow">in</span> <span class="n">block_args_batch</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">arg_sets</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;pack_circuit: block_args_batch must be non-empty&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">arg_sets</span> <span class="o">=</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">block_args</span><span class="p">)]</span>
+
+    <span class="n">extracted</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">args</span> <span class="ow">in</span> <span class="n">arg_sets</span><span class="p">:</span>
+        <span class="n">ops</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">flags</span> <span class="o">=</span> <span class="n">kernel_ops</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;measurements&quot;</span> <span class="ow">in</span> <span class="n">flags</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;pack_circuit: the block measures — packing measures the full &quot;</span>
+                <span class="s2">&quot;register automatically; remove mz/reset from the block&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;conditionals&quot;</span> <span class="ow">in</span> <span class="n">flags</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;pack_circuit: mid-circuit conditionals are not supported by &quot;</span>
+                <span class="s2">&quot;automatic packing&quot;</span>
+            <span class="p">)</span>
+        <span class="n">extracted</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">ops</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">_edges_of_ops</span><span class="p">(</span><span class="n">ops</span><span class="p">)))</span>
+    <span class="n">ops0</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">edges0</span> <span class="o">=</span> <span class="n">extracted</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">coupling</span> <span class="o">=</span> <span class="p">{</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">edge</span><span class="p">))</span> <span class="k">for</span> <span class="n">edge</span> <span class="ow">in</span> <span class="n">edges0</span><span class="p">}</span>
+    <span class="k">for</span> <span class="n">ops_t</span><span class="p">,</span> <span class="n">m_t</span><span class="p">,</span> <span class="n">edges_t</span> <span class="ow">in</span> <span class="n">extracted</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+        <span class="k">if</span> <span class="n">m_t</span> <span class="o">!=</span> <span class="n">m</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;pack_circuit: block_args_batch entries change the block&#39;s &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;qubit count (</span><span class="si">{</span><span class="n">m_t</span><span class="si">}</span><span class="s2"> vs </span><span class="si">{</span><span class="n">m</span><span class="si">}</span><span class="s2">)&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="p">{</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">edge</span><span class="p">))</span> <span class="k">for</span> <span class="n">edge</span> <span class="ow">in</span> <span class="n">edges_t</span><span class="p">}</span> <span class="o">!=</span> <span class="n">coupling</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;pack_circuit: block_args_batch entries change the block&#39;s &quot;</span>
+                <span class="s2">&quot;interaction graph — every tile must host the same coupling&quot;</span>
+            <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">block_args_batch</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">k</span> <span class="o">==</span> <span class="s2">&quot;max&quot;</span><span class="p">:</span>
+            <span class="n">k</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">arg_sets</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">k</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">arg_sets</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;pack_circuit: k=</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2"> but block_args_batch has </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">arg_sets</span><span class="p">)</span><span class="si">}</span><span class="s2"> entries&quot;</span>
+            <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">tiles</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="n">profile</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>  <span class="c1"># pack_circuit guarantees calibration or tiles</span>
+        <span class="n">tiles</span> <span class="o">=</span> <span class="n">_select_tiles</span><span class="p">(</span><span class="n">profile</span><span class="p">,</span> <span class="n">edges0</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="s2">&quot;pack_circuit&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">thresholds</span><span class="p">)</span>
+    <span class="n">tiles</span><span class="p">,</span> <span class="n">m_tiles</span><span class="p">,</span> <span class="n">flat</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="n">copies</span> <span class="o">=</span> <span class="n">_validated_tiles</span><span class="p">(</span><span class="n">tiles</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">m_tiles</span> <span class="o">!=</span> <span class="n">m</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;pack_circuit: tiles have </span><span class="si">{</span><span class="n">m_tiles</span><span class="si">}</span><span class="s2"> qubits but the block has </span><span class="si">{</span><span class="n">m</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="n">normalized</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="nb">tuple</span><span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">params</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">qubits</span><span class="p">))</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span> <span class="n">qubits</span> <span class="ow">in</span> <span class="n">ops</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">ops</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">extracted</span>
+    <span class="p">]</span>
+    <span class="k">if</span> <span class="n">block_args_batch</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">copies</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">normalized</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;pack_circuit: </span><span class="si">{</span><span class="n">copies</span><span class="si">}</span><span class="s2"> tiles but block_args_batch has &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">normalized</span><span class="p">)</span><span class="si">}</span><span class="s2"> entries&quot;</span>
+            <span class="p">)</span>
+        <span class="n">gates</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">normalized</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">gates</span> <span class="o">=</span> <span class="p">(</span><span class="n">normalized</span><span class="p">[</span><span class="mi">0</span><span class="p">],)</span> <span class="o">*</span> <span class="n">copies</span>
+    <span class="k">return</span> <span class="n">PackedCircuit</span><span class="p">(</span>
+        <span class="n">kernel</span><span class="o">=</span><span class="n">_recompose</span><span class="p">(</span><span class="n">gates</span><span class="p">,</span> <span class="n">tiles</span><span class="p">,</span> <span class="n">width</span><span class="p">),</span>
+        <span class="n">tiles</span><span class="o">=</span><span class="n">tiles</span><span class="p">,</span>
+        <span class="n">gates</span><span class="o">=</span><span class="n">gates</span><span class="p">,</span>
+        <span class="n">block</span><span class="o">=</span><span class="n">block</span><span class="p">,</span>
+    <span class="p">)</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

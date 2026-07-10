@@ -5,12 +5,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.solver.qiskit_solver &mdash; QKAN 0.2.3dev documentation</title>
+  <title>qkan.solver.qiskit &mdash; QKAN 0.2.3dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
 
   
-    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/qiskit_solver.html" />
+    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/qiskit.html" />
       <script src="../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
       <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
@@ -45,8 +45,12 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../intro.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../graph_guide.html">Inference and Training Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../applications.html">Applications</a></li>
 </ul>
 
         </div>
@@ -64,7 +68,7 @@
   <ul class="wy-breadcrumbs">
       <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
-      <li class="breadcrumb-item active">qkan.solver.qiskit_solver</li>
+      <li class="breadcrumb-item active">qkan.solver.qiskit</li>
       <li class="wy-breadcrumbs-aside">
       </li>
   </ul>
@@ -73,7 +77,7 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <h1>Source code for qkan.solver.qiskit_solver</h1><div class="highlight"><pre>
+  <h1>Source code for qkan.solver.qiskit</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
 <span class="c1">#</span>
 <span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
@@ -95,9 +99,11 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">._base</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKANSolver</span><span class="p">,</span> <span class="n">register</span>
 
 <span class="k">try</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit</span><span class="w"> </span><span class="kn">import</span> <span class="n">QuantumCircuit</span>  <span class="c1"># type: ignore</span>
@@ -134,8 +140,22 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">._mitigation</span><span class="w"> </span><span class="kn">import</span> <span class="n">_apply_mitigation</span>
 
+<span class="n">JobEventCallback</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="kc">None</span><span class="p">]</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_configure_estimator</span><span class="p">(</span><span class="n">rt_estimator</span><span class="p">,</span> <span class="n">shots</span><span class="p">,</span> <span class="n">resilience_level</span><span class="p">,</span> <span class="n">twirling</span><span class="p">):</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_JobEventCallbackError</span><span class="p">(</span><span class="ne">RuntimeError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Raised when a job event cannot be persisted by its callback.&quot;&quot;&quot;</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_configure_estimator</span><span class="p">(</span>
+    <span class="n">rt_estimator</span><span class="p">,</span>
+    <span class="n">shots</span><span class="p">,</span>
+    <span class="n">resilience_level</span><span class="p">,</span>
+    <span class="n">twirling</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">max_execution_time</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">job_tags</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Apply shots, resilience, and twirling options to an EstimatorV2.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">shots</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">default_shots</span> <span class="o">=</span> <span class="n">shots</span>
@@ -150,6 +170,98 @@
             <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">twirling</span><span class="o">.</span><span class="n">num_randomizations</span> <span class="o">=</span> <span class="n">twirling</span><span class="p">[</span>
                 <span class="s2">&quot;num_randomizations&quot;</span>
             <span class="p">]</span>
+    <span class="k">if</span> <span class="n">max_execution_time</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">max_execution_time</span> <span class="o">=</span> <span class="n">max_execution_time</span>
+    <span class="k">if</span> <span class="n">job_tags</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">rt_estimator</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">environment</span><span class="o">.</span><span class="n">job_tags</span> <span class="o">=</span> <span class="n">job_tags</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_job_event_context</span><span class="p">(</span><span class="n">base_context</span><span class="p">,</span> <span class="o">**</span><span class="n">updates</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a fresh context dict for one Runtime job event.&quot;&quot;&quot;</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">base_context</span> <span class="ow">or</span> <span class="p">{})</span>
+    <span class="n">context</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">updates</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">context</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_emit_job_event</span><span class="p">(</span>
+    <span class="n">job_event_callback</span><span class="p">:</span> <span class="n">JobEventCallback</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">job</span><span class="p">,</span>
+    <span class="n">event</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">context</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">error</span><span class="p">:</span> <span class="ne">Exception</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Emit a serializable submission/finalization event for a primitive job.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">job_event_callback</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+
+    <span class="n">record</span> <span class="o">=</span> <span class="n">_job_event_context</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="n">event</span><span class="o">=</span><span class="n">event</span><span class="p">,</span> <span class="n">job_id</span><span class="o">=</span><span class="n">job</span><span class="o">.</span><span class="n">job_id</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">record</span><span class="p">[</span><span class="s2">&quot;error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">error</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+            <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">error</span><span class="p">),</span>
+        <span class="p">}</span>
+
+    <span class="k">if</span> <span class="n">event</span> <span class="o">!=</span> <span class="s2">&quot;submitted&quot;</span><span class="p">:</span>
+        <span class="n">metrics</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">metrics</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">metrics</span><span class="p">()</span>
+            <span class="n">record</span><span class="p">[</span><span class="s2">&quot;metrics&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">metrics</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">metadata_error</span><span class="p">:</span>
+            <span class="n">record</span><span class="p">[</span><span class="s2">&quot;metrics_error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">metadata_error</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">metadata_error</span><span class="p">),</span>
+            <span class="p">}</span>
+
+        <span class="n">usage_seconds</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metrics</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">usage</span> <span class="o">=</span> <span class="n">metrics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;usage&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">usage</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="n">usage_seconds</span> <span class="o">=</span> <span class="n">usage</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;quantum_seconds&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">metrics</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># job.usage() re-fetches the same metrics payload, so only fall</span>
+            <span class="c1"># back to it when the metrics fetch itself failed.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">usage_seconds</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">usage</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">usage_error</span><span class="p">:</span>
+                <span class="n">record</span><span class="p">[</span><span class="s2">&quot;usage_error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">usage_error</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                    <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">usage_error</span><span class="p">),</span>
+                <span class="p">}</span>
+        <span class="n">record</span><span class="p">[</span><span class="s2">&quot;usage_seconds&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">usage_seconds</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">job_event_callback</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">callback_error</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">_JobEventCallbackError</span><span class="p">(</span><span class="s2">&quot;job event callback failed&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">callback_error</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_submit_job</span><span class="p">(</span>
+    <span class="n">est</span><span class="p">,</span>
+    <span class="n">pubs</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">job_event_callback</span><span class="p">:</span> <span class="n">JobEventCallback</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">context</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Submit one primitive job and expose its ID before waiting for results.&quot;&quot;&quot;</span>
+    <span class="n">job</span> <span class="o">=</span> <span class="n">est</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">pubs</span><span class="p">)</span>
+    <span class="n">_emit_job_event</span><span class="p">(</span><span class="n">job_event_callback</span><span class="p">,</span> <span class="n">job</span><span class="p">,</span> <span class="s2">&quot;submitted&quot;</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">job</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_collect_job</span><span class="p">(</span>
+    <span class="n">job</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">job_event_callback</span><span class="p">:</span> <span class="n">JobEventCallback</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">context</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Collect one primitive job and expose its final metrics and usage.&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="n">_emit_job_event</span><span class="p">(</span><span class="n">job_event_callback</span><span class="p">,</span> <span class="n">job</span><span class="p">,</span> <span class="s2">&quot;failed&quot;</span><span class="p">,</span> <span class="n">context</span><span class="p">,</span> <span class="n">error</span><span class="p">)</span>
+        <span class="k">raise</span>
+    <span class="n">_emit_job_event</span><span class="p">(</span><span class="n">job_event_callback</span><span class="p">,</span> <span class="n">job</span><span class="p">,</span> <span class="s2">&quot;completed&quot;</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span>
 
 
 <span class="c1"># ---------------------------------------------------------------------------</span>
@@ -372,7 +484,14 @@
         <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_probe_max_pubs</span><span class="p">(</span><span class="n">est</span><span class="p">,</span> <span class="n">probe_pubs</span><span class="p">,</span> <span class="n">max_pubs</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_probe_max_pubs</span><span class="p">(</span>
+    <span class="n">est</span><span class="p">,</span>
+    <span class="n">probe_pubs</span><span class="p">,</span>
+    <span class="n">max_pubs</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">job_event_callback</span><span class="p">:</span> <span class="n">JobEventCallback</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">job_context</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Binary-search for the largest PUB batch the QPU accepts.</span>
 
@@ -380,12 +499,32 @@
 <span class="sd">    halves and retries until a working size is found. Returns (result, max_pubs)</span>
 <span class="sd">    where result is the successful job result for the probe batch.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">attempt</span> <span class="o">=</span> <span class="mi">1</span>
     <span class="k">while</span> <span class="n">max_pubs</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">:</span>
         <span class="n">batch</span> <span class="o">=</span> <span class="n">probe_pubs</span><span class="p">[:</span><span class="n">max_pubs</span><span class="p">]</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="n">_job_event_context</span><span class="p">(</span>
+            <span class="n">job_context</span><span class="p">,</span>
+            <span class="n">phase</span><span class="o">=</span><span class="s2">&quot;probe&quot;</span><span class="p">,</span>
+            <span class="n">attempt</span><span class="o">=</span><span class="n">attempt</span><span class="p">,</span>
+            <span class="n">pub_start</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">pub_end</span><span class="o">=</span><span class="n">max_pubs</span><span class="p">,</span>
+            <span class="n">pub_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">batch</span><span class="p">),</span>
+        <span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">job</span> <span class="o">=</span> <span class="n">est</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
-            <span class="n">result</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+            <span class="n">job</span> <span class="o">=</span> <span class="n">_submit_job</span><span class="p">(</span>
+                <span class="n">est</span><span class="p">,</span>
+                <span class="n">batch</span><span class="p">,</span>
+                <span class="n">job_event_callback</span><span class="o">=</span><span class="n">job_event_callback</span><span class="p">,</span>
+                <span class="n">context</span><span class="o">=</span><span class="n">context</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">_collect_job</span><span class="p">(</span>
+                <span class="n">job</span><span class="p">,</span>
+                <span class="n">job_event_callback</span><span class="o">=</span><span class="n">job_event_callback</span><span class="p">,</span>
+                <span class="n">context</span><span class="o">=</span><span class="n">context</span><span class="p">,</span>
+            <span class="p">)</span>
             <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">max_pubs</span>
+        <span class="k">except</span> <span class="n">_JobEventCallbackError</span><span class="p">:</span>
+            <span class="k">raise</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="n">err_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
             <span class="k">if</span> <span class="s2">&quot;6073&quot;</span> <span class="ow">in</span> <span class="n">err_str</span> <span class="ow">or</span> <span class="s2">&quot;memory&quot;</span> <span class="ow">in</span> <span class="n">err_str</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
@@ -397,12 +536,21 @@
                     <span class="sa">f</span><span class="s2">&quot;  [qsolver] Job memory limit hit at </span><span class="si">{</span><span class="n">old_max</span><span class="si">}</span><span class="s2"> PUBs/job, &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;trying </span><span class="si">{</span><span class="n">max_pubs</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
+                <span class="n">attempt</span> <span class="o">+=</span> <span class="mi">1</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">raise</span>
     <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Could not find a working PUB batch size&quot;</span><span class="p">)</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_submit_and_collect</span><span class="p">(</span><span class="n">est</span><span class="p">,</span> <span class="n">all_pubs</span><span class="p">,</span> <span class="n">all_chunk_sizes</span><span class="p">,</span> <span class="n">max_pubs</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_submit_and_collect</span><span class="p">(</span>
+    <span class="n">est</span><span class="p">,</span>
+    <span class="n">all_pubs</span><span class="p">,</span>
+    <span class="n">all_chunk_sizes</span><span class="p">,</span>
+    <span class="n">max_pubs</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">job_event_callback</span><span class="p">:</span> <span class="n">JobEventCallback</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">job_context</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Submit PUBs with the largest batch size the QPU can handle.</span>
 
@@ -416,12 +564,18 @@
     <span class="n">n_total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_pubs</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">max_pubs</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
         <span class="n">max_pubs</span> <span class="o">=</span> <span class="n">n_total</span>
-    <span class="n">expvals</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_total</span>
+    <span class="n">expvals</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_total</span>
 
     <span class="c1"># Step 1: Probe with first batch to discover working max_pubs</span>
     <span class="n">first_batch_size</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">max_pubs</span><span class="p">,</span> <span class="n">n_total</span><span class="p">)</span>
     <span class="n">first_batch</span> <span class="o">=</span> <span class="n">all_pubs</span><span class="p">[:</span><span class="n">first_batch_size</span><span class="p">]</span>
-    <span class="n">probe_result</span><span class="p">,</span> <span class="n">max_pubs</span> <span class="o">=</span> <span class="n">_probe_max_pubs</span><span class="p">(</span><span class="n">est</span><span class="p">,</span> <span class="n">first_batch</span><span class="p">,</span> <span class="n">first_batch_size</span><span class="p">)</span>
+    <span class="n">probe_result</span><span class="p">,</span> <span class="n">max_pubs</span> <span class="o">=</span> <span class="n">_probe_max_pubs</span><span class="p">(</span>
+        <span class="n">est</span><span class="p">,</span>
+        <span class="n">first_batch</span><span class="p">,</span>
+        <span class="n">first_batch_size</span><span class="p">,</span>
+        <span class="n">job_event_callback</span><span class="o">=</span><span class="n">job_event_callback</span><span class="p">,</span>
+        <span class="n">job_context</span><span class="o">=</span><span class="n">job_context</span><span class="p">,</span>
+    <span class="p">)</span>
 
     <span class="c1"># Collect probe results (first max_pubs PUBs)</span>
     <span class="n">probed_count</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">max_pubs</span><span class="p">,</span> <span class="n">n_total</span><span class="p">)</span>
@@ -432,28 +586,66 @@
     <span class="c1"># Step 2: Submit remaining batches asynchronously</span>
     <span class="n">remaining_start</span> <span class="o">=</span> <span class="n">probed_count</span>
     <span class="k">if</span> <span class="n">remaining_start</span> <span class="o">&lt;</span> <span class="n">n_total</span><span class="p">:</span>
-        <span class="n">jobs</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">job_ranges</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">jobs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">job_ranges</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">job_contexts</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">batch_start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">remaining_start</span><span class="p">,</span> <span class="n">n_total</span><span class="p">,</span> <span class="n">max_pubs</span><span class="p">):</span>
             <span class="n">batch_end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">batch_start</span> <span class="o">+</span> <span class="n">max_pubs</span><span class="p">,</span> <span class="n">n_total</span><span class="p">)</span>
             <span class="n">job_pubs</span> <span class="o">=</span> <span class="n">all_pubs</span><span class="p">[</span><span class="n">batch_start</span><span class="p">:</span><span class="n">batch_end</span><span class="p">]</span>
-            <span class="n">jobs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">est</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">job_pubs</span><span class="p">))</span>
+            <span class="n">context</span> <span class="o">=</span> <span class="n">_job_event_context</span><span class="p">(</span>
+                <span class="n">job_context</span><span class="p">,</span>
+                <span class="n">phase</span><span class="o">=</span><span class="s2">&quot;batch&quot;</span><span class="p">,</span>
+                <span class="n">batch_index</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">jobs</span><span class="p">),</span>
+                <span class="n">pub_start</span><span class="o">=</span><span class="n">batch_start</span><span class="p">,</span>
+                <span class="n">pub_end</span><span class="o">=</span><span class="n">batch_end</span><span class="p">,</span>
+                <span class="n">pub_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">job_pubs</span><span class="p">),</span>
+                <span class="n">logical_circuit_count</span><span class="o">=</span><span class="nb">sum</span><span class="p">(</span><span class="n">all_chunk_sizes</span><span class="p">[</span><span class="n">batch_start</span><span class="p">:</span><span class="n">batch_end</span><span class="p">]),</span>
+            <span class="p">)</span>
+            <span class="n">jobs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">_submit_job</span><span class="p">(</span>
+                    <span class="n">est</span><span class="p">,</span>
+                    <span class="n">job_pubs</span><span class="p">,</span>
+                    <span class="n">job_event_callback</span><span class="o">=</span><span class="n">job_event_callback</span><span class="p">,</span>
+                    <span class="n">context</span><span class="o">=</span><span class="n">context</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
             <span class="n">job_ranges</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">batch_start</span><span class="p">,</span> <span class="n">batch_end</span><span class="p">))</span>
+            <span class="n">job_contexts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
 
         <span class="n">n_jobs</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">jobs</span><span class="p">)</span>
         <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [qsolver] Submitting </span><span class="si">{</span><span class="n">n_jobs</span><span class="si">}</span><span class="s2"> async job(s), </span><span class="si">{</span><span class="n">max_pubs</span><span class="si">}</span><span class="s2"> PUBs/job&quot;</span><span class="p">)</span>
 
-        <span class="c1"># Collect all async results</span>
-        <span class="k">for</span> <span class="n">job</span><span class="p">,</span> <span class="p">(</span><span class="n">batch_start</span><span class="p">,</span> <span class="n">batch_end</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">jobs</span><span class="p">,</span> <span class="n">job_ranges</span><span class="p">):</span>
-            <span class="n">result</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+        <span class="c1"># Collect all async results. When accounting is enabled, finalize every</span>
+        <span class="c1"># already-submitted job before re-raising the first execution failure.</span>
+        <span class="n">first_job_error</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="ne">Exception</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">job</span><span class="p">,</span> <span class="p">(</span><span class="n">batch_start</span><span class="p">,</span> <span class="n">batch_end</span><span class="p">),</span> <span class="n">context</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+            <span class="n">jobs</span><span class="p">,</span> <span class="n">job_ranges</span><span class="p">,</span> <span class="n">job_contexts</span>
+        <span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">_collect_job</span><span class="p">(</span>
+                    <span class="n">job</span><span class="p">,</span>
+                    <span class="n">job_event_callback</span><span class="o">=</span><span class="n">job_event_callback</span><span class="p">,</span>
+                    <span class="n">context</span><span class="o">=</span><span class="n">context</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="n">_JobEventCallbackError</span><span class="p">:</span>
+                <span class="k">raise</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">job_error</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">job_event_callback</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">raise</span>
+                <span class="k">if</span> <span class="n">first_job_error</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">first_job_error</span> <span class="o">=</span> <span class="n">job_error</span>
+                <span class="k">continue</span>
             <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">global_idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">batch_start</span><span class="p">,</span> <span class="n">batch_end</span><span class="p">)):</span>
                 <span class="n">evs</span> <span class="o">=</span> <span class="n">result</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">evs</span>
                 <span class="n">expvals</span><span class="p">[</span><span class="n">global_idx</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">evs</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">first_job_error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">first_job_error</span>
 
     <span class="c1"># Flatten</span>
-    <span class="n">flat</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">flat</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">ev_list</span> <span class="ow">in</span> <span class="n">expvals</span><span class="p">:</span>
-        <span class="n">flat</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">ev_list</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ev_list</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">flat</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">ev_list</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">flat</span><span class="p">,</span> <span class="n">max_pubs</span>
 
 
@@ -463,7 +655,14 @@
 
 <div class="viewcode-block" id="best_qubits">
 <a class="viewcode-back" href="../../../api.html#qkan.solver.best_qubits">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">best_qubits</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">best_qubits</span><span class="p">(</span>
+    <span class="n">backend</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">max_readout_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">qubit_error_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">strict</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the ``n`` best-calibrated qubit indices on ``backend``.</span>
 
 <span class="sd">    When packing ``n`` independent single-qubit QKAN circuits onto ``n``</span>
@@ -499,15 +698,32 @@
 <span class="sd">    ----------</span>
 <span class="sd">    backend : qiskit Backend</span>
 <span class="sd">        Backend with a ``properties()`` method (FakeProvider or real IBM).</span>
-<span class="sd">        Returns an empty list if the backend exposes no calibration.</span>
+<span class="sd">        Returns an empty list if the backend exposes no calibration and</span>
+<span class="sd">        no threshold was requested.</span>
 <span class="sd">    n : int</span>
 <span class="sd">        Number of qubits to select. Must be a positive integer and must</span>
 <span class="sd">        not exceed ``backend.num_qubits``.</span>
+<span class="sd">    max_readout_error : float, optional</span>
+<span class="sd">        Keep only qubits with readout error at or below this value.</span>
+<span class="sd">    qubit_error_threshold : float, optional</span>
+<span class="sd">        Keep only qubits whose single-qubit ``sx`` gate error is at or</span>
+<span class="sd">        below this value; e.g. ``0.001`` means fidelity &gt;= 99.9%.</span>
+<span class="sd">    strict : bool</span>
+<span class="sd">        When a threshold leaves fewer than ``n`` usable qubits, raise</span>
+<span class="sd">        ``ValueError`` if true (default); otherwise return all usable</span>
+<span class="sd">        qubits.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    list[int]</span>
 <span class="sd">        Top-``n`` physical qubit indices, sorted by ascending score.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If ``n`` is out of range, if a requested threshold cannot be</span>
+<span class="sd">        enforced because calibration is unavailable, or (with ``strict``)</span>
+<span class="sd">        if fewer than ``n`` qubits satisfy the thresholds.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -526,11 +742,22 @@
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="n">n</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;best_qubits: n must be a positive integer, got </span><span class="si">{</span><span class="n">n</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">has_threshold</span> <span class="o">=</span> <span class="n">max_readout_error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">qubit_error_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">props</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">properties</span><span class="p">()</span>
-    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">has_threshold</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;best_qubits: backend calibration is unavailable; &quot;</span>
+                <span class="s2">&quot;cannot enforce qubit calibration thresholds&quot;</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
         <span class="k">return</span> <span class="p">[]</span>
     <span class="k">if</span> <span class="n">props</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">has_threshold</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;best_qubits: backend calibration is unavailable; &quot;</span>
+                <span class="s2">&quot;cannot enforce qubit calibration thresholds&quot;</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="p">[]</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">num_qubits</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">num_qubits</span>
@@ -548,20 +775,29 @@
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
             <span class="k">pass</span>
         <span class="c1"># Faulty qubits report NaN calibration values; NaN compares False</span>
-        <span class="c1"># everywhere and corrupts sorting, so treat NaN exactly like</span>
-        <span class="c1"># missing data.</span>
+        <span class="c1"># against any threshold and corrupts sorting, so treat NaN exactly</span>
+        <span class="c1"># like missing data: it fails an active threshold and falls back to</span>
+        <span class="c1"># a pessimistic constant when only ranking.</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">ro</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">readout_error</span><span class="p">(</span><span class="n">q</span><span class="p">))</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
             <span class="n">ro</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">ro</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">max_readout_error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
             <span class="n">ro</span> <span class="o">=</span> <span class="mf">0.5</span>
+        <span class="k">if</span> <span class="n">max_readout_error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ro</span> <span class="o">&gt;</span> <span class="n">max_readout_error</span><span class="p">:</span>
+            <span class="k">continue</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">sx</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">gate_error</span><span class="p">(</span><span class="s2">&quot;sx&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">q</span><span class="p">]))</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
             <span class="n">sx</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">sx</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">qubit_error_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
             <span class="n">sx</span> <span class="o">=</span> <span class="mf">1e-2</span>
+        <span class="k">if</span> <span class="n">qubit_error_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">sx</span> <span class="o">&gt;</span> <span class="n">qubit_error_threshold</span><span class="p">:</span>
+            <span class="k">continue</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">t2_us</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">t2</span><span class="p">(</span><span class="n">q</span><span class="p">))</span> <span class="o">*</span> <span class="mf">1e6</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
@@ -570,6 +806,19 @@
             <span class="n">t2_us</span> <span class="o">=</span> <span class="mf">50.0</span>
         <span class="n">score</span> <span class="o">=</span> <span class="n">ro</span> <span class="o">+</span> <span class="n">sx</span> <span class="o">+</span> <span class="mf">1e-4</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="n">t2_us</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
         <span class="n">scored</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">score</span><span class="p">,</span> <span class="n">q</span><span class="p">))</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">scored</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n</span><span class="p">:</span>
+        <span class="n">thresholds</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">max_readout_error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">thresholds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;max_readout_error&lt;=</span><span class="si">{</span><span class="n">max_readout_error</span><span class="si">:</span><span class="s2">.6g</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">qubit_error_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">thresholds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;single_qubit_sx_error&lt;=</span><span class="si">{</span><span class="n">qubit_error_threshold</span><span class="si">:</span><span class="s2">.6g</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">threshold_text</span> <span class="o">=</span> <span class="s2">&quot; and &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">thresholds</span><span class="p">)</span> <span class="k">if</span> <span class="n">thresholds</span> <span class="k">else</span> <span class="s2">&quot;ranking&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">strict</span> <span class="ow">and</span> <span class="n">scored</span><span class="p">:</span>
+            <span class="n">scored</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">q</span> <span class="k">for</span> <span class="n">_score</span><span class="p">,</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">scored</span><span class="p">]</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;best_qubits: only </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">scored</span><span class="p">)</span><span class="si">}</span><span class="s2"> qubits satisfy </span><span class="si">{</span><span class="n">threshold_text</span><span class="si">}</span><span class="s2">; need </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
     <span class="n">scored</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
     <span class="k">return</span> <span class="p">[</span><span class="n">q</span> <span class="k">for</span> <span class="n">_score</span><span class="p">,</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">scored</span><span class="p">[:</span><span class="n">n</span><span class="p">]]</span></div>
 
@@ -616,6 +865,10 @@
     <span class="n">max_pubs_per_job</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
     <span class="n">resilience_level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">twirling</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">max_execution_time</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">job_tags</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">job_event_callback</span><span class="p">:</span> <span class="n">JobEventCallback</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">job_context</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Pack single-qubit circuits into multi-qubit batches and submit async.</span>
@@ -655,7 +908,12 @@
 
         <span class="n">initial_max</span> <span class="o">=</span> <span class="n">max_pubs_per_job</span> <span class="k">if</span> <span class="n">max_pubs_per_job</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_pubs</span><span class="p">)</span>
         <span class="n">expvals</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_submit_and_collect</span><span class="p">(</span>
-            <span class="n">estimator</span><span class="p">,</span> <span class="n">all_pubs</span><span class="p">,</span> <span class="n">all_chunk_sizes</span><span class="p">,</span> <span class="n">initial_max</span>
+            <span class="n">estimator</span><span class="p">,</span>
+            <span class="n">all_pubs</span><span class="p">,</span>
+            <span class="n">all_chunk_sizes</span><span class="p">,</span>
+            <span class="n">initial_max</span><span class="p">,</span>
+            <span class="n">job_event_callback</span><span class="o">=</span><span class="n">job_event_callback</span><span class="p">,</span>
+            <span class="n">job_context</span><span class="o">=</span><span class="n">job_context</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">expvals</span>
 
@@ -664,7 +922,14 @@
         <span class="c1"># than n_qubits, and qiskit pins the layout length at construction.</span>
         <span class="n">pm_cache</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">rt_estimator</span> <span class="o">=</span> <span class="n">Estimator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="n">backend</span><span class="p">)</span>
-        <span class="n">_configure_estimator</span><span class="p">(</span><span class="n">rt_estimator</span><span class="p">,</span> <span class="n">shots</span><span class="p">,</span> <span class="n">resilience_level</span><span class="p">,</span> <span class="n">twirling</span><span class="p">)</span>
+        <span class="n">_configure_estimator</span><span class="p">(</span>
+            <span class="n">rt_estimator</span><span class="p">,</span>
+            <span class="n">shots</span><span class="p">,</span>
+            <span class="n">resilience_level</span><span class="p">,</span>
+            <span class="n">twirling</span><span class="p">,</span>
+            <span class="n">max_execution_time</span><span class="o">=</span><span class="n">max_execution_time</span><span class="p">,</span>
+            <span class="n">job_tags</span><span class="o">=</span><span class="n">job_tags</span><span class="p">,</span>
+        <span class="p">)</span>
 
         <span class="k">for</span> <span class="n">start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">total</span><span class="p">,</span> <span class="n">n_qubits</span><span class="p">):</span>
             <span class="n">end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">start</span> <span class="o">+</span> <span class="n">n_qubits</span><span class="p">,</span> <span class="n">total</span><span class="p">)</span>
@@ -693,7 +958,12 @@
             <span class="k">else</span> <span class="n">_MAX_PUBS_CACHE</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_pubs</span><span class="p">))</span>
         <span class="p">)</span>
         <span class="n">expvals</span><span class="p">,</span> <span class="n">actual_max</span> <span class="o">=</span> <span class="n">_submit_and_collect</span><span class="p">(</span>
-            <span class="n">rt_estimator</span><span class="p">,</span> <span class="n">all_pubs</span><span class="p">,</span> <span class="n">all_chunk_sizes</span><span class="p">,</span> <span class="n">initial_max</span>
+            <span class="n">rt_estimator</span><span class="p">,</span>
+            <span class="n">all_pubs</span><span class="p">,</span>
+            <span class="n">all_chunk_sizes</span><span class="p">,</span>
+            <span class="n">initial_max</span><span class="p">,</span>
+            <span class="n">job_event_callback</span><span class="o">=</span><span class="n">job_event_callback</span><span class="p">,</span>
+            <span class="n">job_context</span><span class="o">=</span><span class="n">job_context</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">_MAX_PUBS_CACHE</span><span class="p">[</span><span class="n">cache_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">actual_max</span>
         <span class="k">return</span> <span class="n">expvals</span>
@@ -793,6 +1063,9 @@
     <span class="c1"># Pre-build resources that don&#39;t change across ZNE/repeat calls</span>
     <span class="n">_rl</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;resilience_level&quot;</span><span class="p">)</span>
     <span class="n">_tw</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;twirling&quot;</span><span class="p">)</span>
+    <span class="n">_max_execution_time</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_execution_time&quot;</span><span class="p">)</span>
+    <span class="n">_job_tags</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;job_tags&quot;</span><span class="p">)</span>
+    <span class="n">_job_event_callback</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;job_event_callback&quot;</span><span class="p">)</span>
     <span class="n">_pm</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">_rt_est</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="p">(</span>
@@ -808,9 +1081,24 @@
             <span class="n">initial_layout</span><span class="o">=</span><span class="n">_initial_layout_for_circuit</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
         <span class="p">)</span>
         <span class="n">_rt_est</span> <span class="o">=</span> <span class="n">Estimator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="n">backend</span><span class="p">)</span>
-        <span class="n">_configure_estimator</span><span class="p">(</span><span class="n">_rt_est</span><span class="p">,</span> <span class="n">shots</span><span class="p">,</span> <span class="n">_rl</span><span class="p">,</span> <span class="n">_tw</span><span class="p">)</span>
+        <span class="n">_configure_estimator</span><span class="p">(</span>
+            <span class="n">_rt_est</span><span class="p">,</span>
+            <span class="n">shots</span><span class="p">,</span>
+            <span class="n">_rl</span><span class="p">,</span>
+            <span class="n">_tw</span><span class="p">,</span>
+            <span class="n">max_execution_time</span><span class="o">=</span><span class="n">_max_execution_time</span><span class="p">,</span>
+            <span class="n">job_tags</span><span class="o">=</span><span class="n">_job_tags</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="n">execution_index</span> <span class="o">=</span> <span class="mi">0</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_run_qiskit</span><span class="p">(</span><span class="n">scale_factor</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="k">nonlocal</span> <span class="n">execution_index</span>
+        <span class="n">job_context</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;execution_index&quot;</span><span class="p">:</span> <span class="n">execution_index</span><span class="p">,</span>
+            <span class="s2">&quot;scale_factor&quot;</span><span class="p">:</span> <span class="n">scale_factor</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">execution_index</span> <span class="o">+=</span> <span class="mi">1</span>
         <span class="n">run_circuits</span> <span class="o">=</span> <span class="p">(</span>
             <span class="p">[</span><span class="n">_fold_qiskit_circuit</span><span class="p">(</span><span class="n">qc</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">)</span> <span class="k">for</span> <span class="n">qc</span> <span class="ow">in</span> <span class="n">circuits</span><span class="p">]</span>
             <span class="k">if</span> <span class="n">scale_factor</span> <span class="o">&gt;</span> <span class="mi">1</span>
@@ -828,11 +1116,32 @@
                 <span class="n">max_pubs_per_job</span><span class="o">=</span><span class="n">max_pubs</span><span class="p">,</span>
                 <span class="n">resilience_level</span><span class="o">=</span><span class="n">_rl</span><span class="p">,</span>
                 <span class="n">twirling</span><span class="o">=</span><span class="n">_tw</span><span class="p">,</span>
+                <span class="n">max_execution_time</span><span class="o">=</span><span class="n">_max_execution_time</span><span class="p">,</span>
+                <span class="n">job_tags</span><span class="o">=</span><span class="n">_job_tags</span><span class="p">,</span>
+                <span class="n">job_event_callback</span><span class="o">=</span><span class="n">_job_event_callback</span><span class="p">,</span>
+                <span class="n">job_context</span><span class="o">=</span><span class="n">job_context</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">estimator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">pubs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">run_circuits</span><span class="p">,</span> <span class="n">observables</span><span class="p">))</span>
-            <span class="n">job</span> <span class="o">=</span> <span class="n">estimator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">pubs</span><span class="p">)</span>
-            <span class="n">result</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+            <span class="n">context</span> <span class="o">=</span> <span class="n">_job_event_context</span><span class="p">(</span>
+                <span class="n">job_context</span><span class="p">,</span>
+                <span class="n">phase</span><span class="o">=</span><span class="s2">&quot;direct&quot;</span><span class="p">,</span>
+                <span class="n">pub_start</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">pub_end</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">pubs</span><span class="p">),</span>
+                <span class="n">pub_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">pubs</span><span class="p">),</span>
+                <span class="n">logical_circuit_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">run_circuits</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">job</span> <span class="o">=</span> <span class="n">_submit_job</span><span class="p">(</span>
+                <span class="n">estimator</span><span class="p">,</span>
+                <span class="n">pubs</span><span class="p">,</span>
+                <span class="n">job_event_callback</span><span class="o">=</span><span class="n">_job_event_callback</span><span class="p">,</span>
+                <span class="n">context</span><span class="o">=</span><span class="n">context</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">_collect_job</span><span class="p">(</span>
+                <span class="n">job</span><span class="p">,</span>
+                <span class="n">job_event_callback</span><span class="o">=</span><span class="n">_job_event_callback</span><span class="p">,</span>
+                <span class="n">context</span><span class="o">=</span><span class="n">context</span><span class="p">,</span>
+            <span class="p">)</span>
             <span class="k">return</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">evs</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">result</span><span class="p">]</span>
         <span class="k">elif</span> <span class="n">_rt_est</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">isa_circuits</span> <span class="o">=</span> <span class="n">_pm</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">run_circuits</span><span class="p">)</span>
@@ -841,8 +1150,25 @@
                 <span class="k">for</span> <span class="n">obs</span><span class="p">,</span> <span class="n">qc</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">observables</span><span class="p">,</span> <span class="n">isa_circuits</span><span class="p">)</span>
             <span class="p">]</span>
             <span class="n">pubs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">isa_circuits</span><span class="p">,</span> <span class="n">isa_observables</span><span class="p">))</span>
-            <span class="n">job</span> <span class="o">=</span> <span class="n">_rt_est</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">pubs</span><span class="p">)</span>
-            <span class="n">result</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+            <span class="n">context</span> <span class="o">=</span> <span class="n">_job_event_context</span><span class="p">(</span>
+                <span class="n">job_context</span><span class="p">,</span>
+                <span class="n">phase</span><span class="o">=</span><span class="s2">&quot;direct&quot;</span><span class="p">,</span>
+                <span class="n">pub_start</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">pub_end</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">pubs</span><span class="p">),</span>
+                <span class="n">pub_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">pubs</span><span class="p">),</span>
+                <span class="n">logical_circuit_count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">run_circuits</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">job</span> <span class="o">=</span> <span class="n">_submit_job</span><span class="p">(</span>
+                <span class="n">_rt_est</span><span class="p">,</span>
+                <span class="n">pubs</span><span class="p">,</span>
+                <span class="n">job_event_callback</span><span class="o">=</span><span class="n">_job_event_callback</span><span class="p">,</span>
+                <span class="n">context</span><span class="o">=</span><span class="n">context</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">_collect_job</span><span class="p">(</span>
+                <span class="n">job</span><span class="p">,</span>
+                <span class="n">job_event_callback</span><span class="o">=</span><span class="n">_job_event_callback</span><span class="p">,</span>
+                <span class="n">context</span><span class="o">=</span><span class="n">context</span><span class="p">,</span>
+            <span class="p">)</span>
             <span class="k">return</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">evs</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">result</span><span class="p">]</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No estimator or backend provided.&quot;</span><span class="p">)</span>
@@ -931,7 +1257,8 @@
             <span class="p">)</span>
 
     <span class="c1"># Auto-detect QPU size from backend if parallel_qubits=&quot;auto&quot;</span>
-    <span class="k">if</span> <span class="n">parallel_qubits</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span> <span class="ow">and</span> <span class="n">backend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">auto_parallel_qubits</span> <span class="o">=</span> <span class="n">parallel_qubits</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span>
+    <span class="k">if</span> <span class="n">auto_parallel_qubits</span> <span class="ow">and</span> <span class="n">backend</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">num_qubits</span>
 
     <span class="c1"># Resolve initial_layout:</span>
@@ -949,6 +1276,11 @@
         <span class="c1"># best_qubits returns [] when calibration is unavailable; qiskit</span>
         <span class="c1"># treats an empty layout like None, so normalize it here too.</span>
         <span class="n">initial_layout</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">max_readout_error</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_readout_error&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">qubit_error_threshold</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;qubit_error_threshold&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">has_layout_threshold</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">max_readout_error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">qubit_error_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">initial_layout</span> <span class="o">!=</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -961,7 +1293,15 @@
                 <span class="s2">&quot;to score qubit calibration.&quot;</span>
             <span class="p">)</span>
         <span class="n">n_layout</span> <span class="o">=</span> <span class="n">parallel_qubits</span> <span class="k">if</span> <span class="p">(</span><span class="n">parallel_qubits</span> <span class="ow">and</span> <span class="n">parallel_qubits</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span> <span class="k">else</span> <span class="mi">1</span>
-        <span class="n">initial_layout</span> <span class="o">=</span> <span class="n">best_qubits</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">n_layout</span><span class="p">)</span>
+        <span class="n">initial_layout</span> <span class="o">=</span> <span class="n">best_qubits</span><span class="p">(</span>
+            <span class="n">backend</span><span class="p">,</span>
+            <span class="n">n_layout</span><span class="p">,</span>
+            <span class="n">max_readout_error</span><span class="o">=</span><span class="n">max_readout_error</span><span class="p">,</span>
+            <span class="n">qubit_error_threshold</span><span class="o">=</span><span class="n">qubit_error_threshold</span><span class="p">,</span>
+            <span class="c1"># With parallel_qubits=&quot;auto&quot; the packing width follows the</span>
+            <span class="c1"># calibration quality instead of failing the threshold check.</span>
+            <span class="n">strict</span><span class="o">=</span><span class="ow">not</span> <span class="p">(</span><span class="n">auto_parallel_qubits</span> <span class="ow">and</span> <span class="n">has_layout_threshold</span><span class="p">),</span>
+        <span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">initial_layout</span><span class="p">:</span>
             <span class="c1"># No calibration available — fall back to transpiler default.</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
@@ -970,6 +1310,10 @@
                 <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="n">initial_layout</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="n">auto_parallel_qubits</span> <span class="ow">and</span> <span class="n">has_layout_threshold</span><span class="p">:</span>
+            <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">auto_parallel_qubits</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">initial_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">estimator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
             <span class="s2">&quot;initial_layout is ignored when execution goes through an &quot;</span>
@@ -993,6 +1337,9 @@
         <span class="s2">&quot;max_pubs_per_job&quot;</span><span class="p">:</span> <span class="n">max_pubs_per_job</span><span class="p">,</span>
         <span class="s2">&quot;resilience_level&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;resilience_level&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
         <span class="s2">&quot;twirling&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;twirling&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="s2">&quot;max_execution_time&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_execution_time&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="s2">&quot;job_tags&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;job_tags&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="s2">&quot;job_event_callback&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;job_event_callback&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
         <span class="s2">&quot;mitigation&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mitigation&quot;</span><span class="p">,</span> <span class="p">{}),</span>
     <span class="p">}</span>
 
@@ -1009,6 +1356,26 @@
     <span class="k">else</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">_qiskit_evaluate</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">preacts_bias</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span></div>
 
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">QiskitSolver</span><span class="p">(</span><span class="n">QKANSolver</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Qiskit Runtime solver (registered as ``&quot;qiskit&quot;``).&quot;&quot;&quot;</span>
+
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;qiskit&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">preacts_weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">preacts_bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">qiskit_solver</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">preacts_bias</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+
+<span class="n">register</span><span class="p">(</span><span class="n">QiskitSolver</span><span class="p">())</span>
 </pre></div>
 
            </div>

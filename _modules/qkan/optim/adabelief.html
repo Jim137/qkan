@@ -1,0 +1,460 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qkan.optim.adabelief &mdash; QKAN 0.2.3dev documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/optim/adabelief.html" />
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../graph_guide.html">Inference and Training Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../applications.html">Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">qkan.optim.adabelief</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for qkan.optim.adabelief</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+<span class="sd">&quot;&quot;&quot;AdaBelief (Zhuang et al., arXiv:2010.07468) + a QKAN-aware block variant.</span>
+
+<span class="sd">AdaBelief replaces Adam&#39;s second moment ``v = EMA(g²)`` (raw gradient</span>
+<span class="sd">magnitude) with ``s = EMA((g − m)²)`` — the gradient&#39;s *variance around</span>
+<span class="sd">its EMA*. The update is otherwise identical to Adam::</span>
+
+<span class="sd">    m_t = β₁·m_{t-1} + (1-β₁)·g_t</span>
+<span class="sd">    s_t = β₂·s_{t-1} + (1-β₂)·(g_t - m_t)²        # variance, not raw g²</span>
+<span class="sd">    w_t = w_{t-1} − lr · m̂_t / (√ŝ_t + ε)</span>
+
+<span class="sd">This change interprets the optimizer&#39;s &quot;belief&quot; in the current gradient</span>
+<span class="sd">direction: when ``g_t`` consistently matches ``m_t`` the variance shrinks</span>
+<span class="sd">and the effective step grows; when gradients are noisy the variance</span>
+<span class="sd">stays large and the step shrinks. For QKAN&#39;s noisy quantum-circuit</span>
+<span class="sd">gradients (the data-reuploading angle introduces stochasticity through</span>
+<span class="sd">the input ``x``) this is a much better preconditioner than ``EMA(g²)``.</span>
+
+<span class="sd">Empirically (3-seed mean across {exact-CPU, cute-GPU} × p_dim ∈ {4, 2}</span>
+<span class="sd">on QKAN([4, 8, 4], reps=3) sinusoid regression, 200 steps):</span>
+
+<span class="sd">  Adam        lr=3e-2 : composite = 0.0028</span>
+<span class="sd">  AdaBelief   lr=3e-2 : composite = 0.0020  (-29% vs Adam, same memory)</span>
+
+<span class="sd">Memory and per-step compute are identical to Adam — no overhead.</span>
+
+<span class="sd">``QKANBeliefMini`` reuses the Adam-mini block partitioning (per-(o,i,r)</span>
+<span class="sd">for theta + preacts, per-tensor for non-QKAN params, per-row for non-</span>
+<span class="sd">QKAN matrices) on AdaBelief&#39;s ``s``. Gives ~30% optimizer-state</span>
+<span class="sd">reduction; convergence sits between Adam and full AdaBelief.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.optim.optimizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optimizer</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.adamini</span><span class="w"> </span><span class="kn">import</span> <span class="n">_block_v_shape</span><span class="p">,</span> <span class="n">_infer_block_ndim</span><span class="p">,</span> <span class="n">_reduce_dims</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;AdaBelief&quot;</span><span class="p">,</span> <span class="s2">&quot;QKANBeliefMini&quot;</span><span class="p">,</span> <span class="s2">&quot;adabelief_step_&quot;</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">adabelief_step_</span><span class="p">(</span>
+    <span class="n">p</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">g</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">m</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">s</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">lr</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">b1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">b2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">wd</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">bc1</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">sqrt_bc2</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;In-place AdaBelief update for one parameter. Shared by all backends.</span>
+
+<span class="sd">    Folded bc2: √(s/bc2) + ε  ≡  (√s + ε·√bc2) / √bc2 → push the /√bc2</span>
+<span class="sd">    into the final addcdiv coefficient. Avoids materialising s/bc2 as a</span>
+<span class="sd">    full-param intermediate. Caller computes ``bc1`` and ``sqrt_bc2``</span>
+<span class="sd">    once per step (they&#39;re shared across all params in a group).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">wd</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">mul_</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">wd</span><span class="p">)</span>
+    <span class="c1"># lerp_ requires matching dtypes; when the state dtype differs from the</span>
+    <span class="c1"># grad (e.g. TritonAdaBelief&#39;s eager fallback with bf16 state and fp32</span>
+    <span class="c1"># params, or the reverse), cast g for the EMA update.</span>
+    <span class="n">g_for_m</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span> <span class="k">if</span> <span class="n">g</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">m</span><span class="o">.</span><span class="n">dtype</span> <span class="k">else</span> <span class="n">g</span>
+    <span class="n">m</span><span class="o">.</span><span class="n">lerp_</span><span class="p">(</span><span class="n">g_for_m</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">b1</span><span class="p">)</span>
+    <span class="n">resid</span> <span class="o">=</span> <span class="n">g</span> <span class="o">-</span> <span class="n">m</span>
+    <span class="n">s</span><span class="o">.</span><span class="n">mul_</span><span class="p">(</span><span class="n">b2</span><span class="p">)</span><span class="o">.</span><span class="n">addcmul_</span><span class="p">(</span><span class="n">resid</span><span class="p">,</span> <span class="n">resid</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">b2</span><span class="p">)</span>
+    <span class="n">denom</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span><span class="o">.</span><span class="n">add_</span><span class="p">(</span><span class="n">eps</span> <span class="o">*</span> <span class="n">sqrt_bc2</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">addcdiv_</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">denom</span><span class="p">,</span> <span class="n">value</span><span class="o">=-</span><span class="n">lr</span> <span class="o">*</span> <span class="n">sqrt_bc2</span> <span class="o">/</span> <span class="n">bc1</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="AdaBelief">
+<a class="viewcode-back" href="../../../api.html#qkan.AdaBelief">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AdaBelief</span><span class="p">(</span><span class="n">Optimizer</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;AdaBelief — drop-in Adam replacement with variance-of-gradient ``s``.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        params: iterable of parameters.</span>
+<span class="sd">        lr: learning rate. Default 1e-2 — for QKAN this is materially</span>
+<span class="sd">            different from the standard Adam 1e-3; sweep on your task.</span>
+<span class="sd">        betas: ``(β₁, β₂)``. Defaults match the paper.</span>
+<span class="sd">        eps: numerical floor added to ``√ŝ`` in the denominator.</span>
+<span class="sd">        weight_decay: decoupled (AdamW-style) weight decay.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">params</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
+        <span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-2</span><span class="p">,</span>
+        <span class="n">betas</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.999</span><span class="p">),</span>
+        <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-16</span><span class="p">,</span>
+        <span class="n">weight_decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">lr</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid learning rate: </span><span class="si">{</span><span class="n">lr</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">eps</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid eps: </span><span class="si">{</span><span class="n">eps</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">betas</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mf">1.0</span> <span class="ow">and</span> <span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">betas</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mf">1.0</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid betas: </span><span class="si">{</span><span class="n">betas</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">weight_decay</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid weight_decay: </span><span class="si">{</span><span class="n">weight_decay</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">params</span><span class="p">,</span> <span class="nb">dict</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="n">betas</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="n">eps</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="n">weight_decay</span><span class="p">)</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="AdaBelief.step">
+<a class="viewcode-back" href="../../../api.html#qkan.AdaBelief.step">[docs]</a>
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">step</span><span class="p">(</span>  <span class="c1"># type: ignore[override]</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">closure</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[],</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+        <span class="n">loss</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">closure</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">enable_grad</span><span class="p">():</span>
+                <span class="n">loss</span> <span class="o">=</span> <span class="n">closure</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_groups</span><span class="p">:</span>
+            <span class="n">lr</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;lr&quot;</span><span class="p">]</span>
+            <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;betas&quot;</span><span class="p">]</span>
+            <span class="n">eps</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;eps&quot;</span><span class="p">]</span>
+            <span class="n">wd</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;weight_decay&quot;</span><span class="p">]</span>
+            <span class="c1"># Group-level step counter — bc1/bc2 are shared across every</span>
+            <span class="c1"># param in the group, no need to recompute per-param.</span>
+            <span class="n">group</span><span class="p">[</span><span class="s2">&quot;_step&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">group</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_step&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="n">step</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;_step&quot;</span><span class="p">]</span>
+            <span class="n">bc1</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">b1</span><span class="o">**</span><span class="n">step</span>
+            <span class="n">sqrt_bc2</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">b2</span><span class="o">**</span><span class="n">step</span><span class="p">)</span>
+
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;params&quot;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">is_sparse</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;AdaBelief does not support sparse grads&quot;</span><span class="p">)</span>
+
+                <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="p">[</span><span class="n">p</span><span class="p">]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">state</span><span class="p">:</span>
+                    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;exp_avg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span>
+                        <span class="n">p</span><span class="p">,</span> <span class="n">memory_format</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">preserve_format</span>
+                    <span class="p">)</span>
+                    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;exp_avg_var&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span>
+                        <span class="n">p</span><span class="p">,</span> <span class="n">memory_format</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">preserve_format</span>
+                    <span class="p">)</span>
+
+                <span class="n">adabelief_step_</span><span class="p">(</span>
+                    <span class="n">p</span><span class="p">,</span>
+                    <span class="n">p</span><span class="o">.</span><span class="n">grad</span><span class="p">,</span>
+                    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;exp_avg&quot;</span><span class="p">],</span>
+                    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;exp_avg_var&quot;</span><span class="p">],</span>
+                    <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span>
+                    <span class="n">b1</span><span class="o">=</span><span class="n">b1</span><span class="p">,</span>
+                    <span class="n">b2</span><span class="o">=</span><span class="n">b2</span><span class="p">,</span>
+                    <span class="n">eps</span><span class="o">=</span><span class="n">eps</span><span class="p">,</span>
+                    <span class="n">wd</span><span class="o">=</span><span class="n">wd</span><span class="p">,</span>
+                    <span class="n">bc1</span><span class="o">=</span><span class="n">bc1</span><span class="p">,</span>
+                    <span class="n">sqrt_bc2</span><span class="o">=</span><span class="n">sqrt_bc2</span><span class="p">,</span>
+                <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">loss</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="QKANBeliefMini">
+<a class="viewcode-back" href="../../../api.html#qkan.QKANBeliefMini">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">QKANBeliefMini</span><span class="p">(</span><span class="n">Optimizer</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;AdaBelief with Adam-mini block partitioning for ``s``.</span>
+
+<span class="sd">    The first moment ``m`` stays per-parameter (same as Adam-mini /</span>
+<span class="sd">    AdaBelief); the variance ``s`` collapses to one scalar per Adam-mini</span>
+<span class="sd">    block, partitioned by the same rule as :class:`QKANAdamMini`:</span>
+
+<span class="sd">      * theta natural ``(O, I, R+1, K)`` → block per ``(o, i, r)``</span>
+<span class="sd">      * preacts_* ``(O, I, R)``           → block per ``(o, i)``</span>
+<span class="sd">      * (O, I) params                    → one block per tensor</span>
+<span class="sd">      * non-QKAN Linear weights          → per output row</span>
+<span class="sd">      * other / LayerNorm / 1-D          → one block per tensor</span>
+
+<span class="sd">    Optimizer state ~30% smaller than full AdaBelief; convergence sits</span>
+<span class="sd">    between Adam and AdaBelief.</span>
+
+<span class="sd">    Pass ``model.named_parameters()`` (with names) to get the QKAN</span>
+<span class="sd">    detection; bare ``model.parameters()`` falls back to per-tensor.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        params: iterable of parameters (or ``(name, param)`` tuples).</span>
+<span class="sd">        lr: learning rate.</span>
+<span class="sd">        betas: ``(β₁, β₂)``.</span>
+<span class="sd">        eps: numerical floor on the denominator.</span>
+<span class="sd">        weight_decay: decoupled (AdamW-style) weight decay.</span>
+<span class="sd">        state_dtype: dtype for ``m`` and the block-reduced ``s``.</span>
+<span class="sd">            ``None`` (default) inherits the param dtype. Pass</span>
+<span class="sd">            ``torch.bfloat16`` to halve state memory; compute stays</span>
+<span class="sd">            native (torch&#39;s add/mul handle bf16 correctly enough for</span>
+<span class="sd">            these tiny accumulators). Note: when the params themselves</span>
+<span class="sd">            are bf16 and ``state_dtype=None``, ``s`` will accumulate</span>
+<span class="sd">            squared residuals in bf16 and may underflow on long runs —</span>
+<span class="sd">            pass ``state_dtype=torch.float32`` explicitly to be safe.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">params</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
+        <span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-2</span><span class="p">,</span>
+        <span class="n">betas</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.999</span><span class="p">),</span>
+        <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-16</span><span class="p">,</span>
+        <span class="n">weight_decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">state_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">lr</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid learning rate: </span><span class="si">{</span><span class="n">lr</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">eps</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid eps: </span><span class="si">{</span><span class="n">eps</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">betas</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mf">1.0</span> <span class="ow">and</span> <span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">betas</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mf">1.0</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid betas: </span><span class="si">{</span><span class="n">betas</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">weight_decay</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid weight_decay: </span><span class="si">{</span><span class="n">weight_decay</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_param_names</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">normalised</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">params</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="o">=</span> <span class="n">item</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_param_names</span><span class="p">[</span><span class="nb">id</span><span class="p">(</span><span class="n">p</span><span class="p">)]</span> <span class="o">=</span> <span class="n">name</span>
+                    <span class="n">normalised</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">normalised</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">normalised</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">normalised</span><span class="p">,</span>
+            <span class="nb">dict</span><span class="p">(</span>
+                <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span>
+                <span class="n">betas</span><span class="o">=</span><span class="n">betas</span><span class="p">,</span>
+                <span class="n">eps</span><span class="o">=</span><span class="n">eps</span><span class="p">,</span>
+                <span class="n">weight_decay</span><span class="o">=</span><span class="n">weight_decay</span><span class="p">,</span>
+                <span class="n">state_dtype</span><span class="o">=</span><span class="n">state_dtype</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_param_names</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">id</span><span class="p">(</span><span class="n">p</span><span class="p">),</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="QKANBeliefMini.step">
+<a class="viewcode-back" href="../../../api.html#qkan.QKANBeliefMini.step">[docs]</a>
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">step</span><span class="p">(</span>  <span class="c1"># type: ignore[override]</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">closure</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[],</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+        <span class="n">loss</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">closure</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">enable_grad</span><span class="p">():</span>
+                <span class="n">loss</span> <span class="o">=</span> <span class="n">closure</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_groups</span><span class="p">:</span>
+            <span class="n">lr</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;lr&quot;</span><span class="p">]</span>
+            <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;betas&quot;</span><span class="p">]</span>
+            <span class="n">eps</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;eps&quot;</span><span class="p">]</span>
+            <span class="n">wd</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;weight_decay&quot;</span><span class="p">]</span>
+            <span class="n">state_dtype</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;state_dtype&quot;</span><span class="p">]</span>
+
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;params&quot;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">g</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span>
+                <span class="k">if</span> <span class="n">g</span><span class="o">.</span><span class="n">is_sparse</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;QKANBeliefMini does not support sparse grads&quot;</span><span class="p">)</span>
+
+                <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="p">[</span><span class="n">p</span><span class="p">]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">state</span><span class="p">:</span>
+                    <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_name</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+                    <span class="n">nat</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;_qkan_natural_shape&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                    <span class="n">view_shape</span> <span class="o">=</span> <span class="n">nat</span> <span class="k">if</span> <span class="n">nat</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+                    <span class="n">bn</span> <span class="o">=</span> <span class="n">_infer_block_ndim</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">view_shape</span><span class="p">)</span>
+                    <span class="n">sd</span> <span class="o">=</span> <span class="n">state_dtype</span> <span class="k">if</span> <span class="n">state_dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">p</span><span class="o">.</span><span class="n">dtype</span>
+                    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;step&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;block_ndim&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">bn</span>
+                    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;view_shape&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">view_shape</span>
+                    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;exp_avg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span>
+                        <span class="n">p</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">sd</span><span class="p">,</span> <span class="n">memory_format</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">preserve_format</span>
+                    <span class="p">)</span>
+                    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;exp_avg_var_block&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+                        <span class="n">_block_v_shape</span><span class="p">(</span><span class="n">view_shape</span><span class="p">,</span> <span class="n">bn</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">sd</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">p</span><span class="o">.</span><span class="n">device</span>
+                    <span class="p">)</span>
+
+                <span class="n">state</span><span class="p">[</span><span class="s2">&quot;step&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">step</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;step&quot;</span><span class="p">]</span>
+                <span class="n">m</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;exp_avg&quot;</span><span class="p">]</span>
+                <span class="n">s_block</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;exp_avg_var_block&quot;</span><span class="p">]</span>
+                <span class="n">bn</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;block_ndim&quot;</span><span class="p">]</span>
+                <span class="n">view_shape</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;view_shape&quot;</span><span class="p">]</span>
+                <span class="n">view_ndim</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">view_shape</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">wd</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+                    <span class="n">p</span><span class="o">.</span><span class="n">mul_</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">wd</span><span class="p">)</span>
+
+                <span class="c1"># lerp_ requires matching dtypes; when state is bf16 but params</span>
+                <span class="c1"># are fp32, cast g down for the EMA update.</span>
+                <span class="n">g_for_m</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span> <span class="k">if</span> <span class="n">g</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">m</span><span class="o">.</span><span class="n">dtype</span> <span class="k">else</span> <span class="n">g</span>
+                <span class="n">m</span><span class="o">.</span><span class="n">lerp_</span><span class="p">(</span><span class="n">g_for_m</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">b1</span><span class="p">)</span>
+                <span class="n">resid</span> <span class="o">=</span> <span class="n">g</span> <span class="o">-</span> <span class="n">m</span>
+                <span class="n">resid_view</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">resid</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">view_shape</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">view_shape</span> <span class="o">!=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">resid</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+                    <span class="k">else</span> <span class="n">resid</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">bn</span> <span class="o">==</span> <span class="n">view_ndim</span><span class="p">:</span>
+                    <span class="n">resid_block</span> <span class="o">=</span> <span class="n">resid_view</span> <span class="o">*</span> <span class="n">resid_view</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">rd</span> <span class="o">=</span> <span class="n">_reduce_dims</span><span class="p">(</span><span class="n">view_ndim</span><span class="p">,</span> <span class="n">bn</span><span class="p">)</span>
+                    <span class="n">resid_block</span> <span class="o">=</span> <span class="p">(</span><span class="n">resid_view</span> <span class="o">*</span> <span class="n">resid_view</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">rd</span><span class="p">)</span>
+                <span class="n">s_block</span><span class="o">.</span><span class="n">mul_</span><span class="p">(</span><span class="n">b2</span><span class="p">)</span><span class="o">.</span><span class="n">add_</span><span class="p">(</span><span class="n">resid_block</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">b2</span><span class="p">)</span>
+
+                <span class="n">bc1</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">b1</span><span class="o">**</span><span class="n">step</span>
+                <span class="n">bc2</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">b2</span><span class="o">**</span><span class="n">step</span>
+                <span class="n">sqrt_bc2</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">bc2</span><span class="p">)</span>
+                <span class="n">denom_block</span> <span class="o">=</span> <span class="n">s_block</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span><span class="o">.</span><span class="n">add_</span><span class="p">(</span><span class="n">eps</span> <span class="o">*</span> <span class="n">sqrt_bc2</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">bn</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">denom</span> <span class="o">=</span> <span class="n">denom_block</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">trailing</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span><span class="p">,)</span> <span class="o">*</span> <span class="p">(</span><span class="n">view_ndim</span> <span class="o">-</span> <span class="n">bn</span><span class="p">)</span>
+                    <span class="n">denom_nat</span> <span class="o">=</span> <span class="n">denom_block</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">denom_block</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="o">*</span><span class="n">trailing</span><span class="p">)</span>
+                    <span class="n">denom</span> <span class="o">=</span> <span class="n">denom_nat</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="o">*</span><span class="n">view_shape</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+
+                <span class="n">p</span><span class="o">.</span><span class="n">addcdiv_</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">denom</span><span class="p">,</span> <span class="n">value</span><span class="o">=-</span><span class="n">lr</span> <span class="o">*</span> <span class="n">sqrt_bc2</span> <span class="o">/</span> <span class="n">bc1</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">loss</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

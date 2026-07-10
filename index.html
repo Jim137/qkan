@@ -47,8 +47,12 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="intro.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="graph_guide.html">Inference and Training Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="applications.html">Applications</a></li>
 </ul>
 
         </div>
@@ -172,8 +176,37 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li class="toctree-l2"><a class="reference internal" href="solver_guide.html#solver-overview">Solver Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="solver_guide.html#ansatz-choice">Ansatz Choice</a></li>
 <li class="toctree-l2"><a class="reference internal" href="solver_guide.html#mixed-precision">Mixed Precision</a></li>
+<li class="toctree-l2"><a class="reference internal" href="solver_guide.html#performance-tuning">Performance Tuning</a></li>
 <li class="toctree-l2"><a class="reference internal" href="solver_guide.html#real-quantum-device-deployment">Real Quantum Device Deployment</a></li>
 <li class="toctree-l2"><a class="reference internal" href="solver_guide.html#error-mitigation">Error Mitigation</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="packing_guide.html#device-profiles">Device profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="packing_guide.html#selection-api">Selection API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="packing_guide.html#packing-with-qiskit">Packing with qiskit</a></li>
+<li class="toctree-l2"><a class="reference internal" href="packing_guide.html#packing-with-cuda-q">Packing with CUDA-Q</a></li>
+<li class="toctree-l2"><a class="reference internal" href="packing_guide.html#caveats">Caveats</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="optim_guide.html">Optimizer Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="optim_guide.html#optimizer-overview">Optimizer Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optim_guide.html#adabelief">AdaBelief</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optim_guide.html#tritonadabelief">TritonAdaBelief</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optim_guide.html#qkanadammini">QKANAdamMini</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optim_guide.html#qkanbeliefmini">QKANBeliefMini</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optim_guide.html#qkanspectralmini">QKANSpectralMini</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optim_guide.html#bf16-state-dtype">bf16 <code class="docutils literal notranslate"><span class="pre">state_dtype</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="optim_guide.html#l-bfgs-finisher">L-BFGS Finisher</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optim_guide.html#cross-p-dim-checkpoint-portability">Cross-<code class="docutils literal notranslate"><span class="pre">p_dim</span></code> Checkpoint Portability</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optim_guide.html#when-to-use-which">When to use which</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="graph_guide.html">Inference and Training Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="graph_guide.html#which-helper-should-i-use">Which helper should I use?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="graph_guide.html#inference">Inference</a></li>
+<li class="toctree-l2"><a class="reference internal" href="graph_guide.html#training">Training</a></li>
+<li class="toctree-l2"><a class="reference internal" href="graph_guide.html#caveats">Caveats</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a><ul>
@@ -189,6 +222,11 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li class="toctree-l2"><a class="reference internal" href="examples/ansatz_comparison.html">Ansatz Comparison: PZ vs RPZ vs Real</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples/gqkan_gpt.html">Group QKAN for Transformers</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples/qkan2kan.html">Transferring from QKAN to KAN</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="applications.html">Applications</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="applications.html#published">Published</a></li>
+<li class="toctree-l2"><a class="reference internal" href="applications.html#preprints">Preprints</a></li>
 </ul>
 </li>
 </ul>

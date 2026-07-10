@@ -45,8 +45,12 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../intro.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../graph_guide.html">Inference and Training Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../applications.html">Applications</a></li>
 </ul>
 
         </div>
@@ -129,6 +133,7 @@
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;make_graphed_inference&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;make_graphed_train_step&quot;</span><span class="p">,</span>
     <span class="s2">&quot;compile_inference&quot;</span><span class="p">,</span>
     <span class="s2">&quot;CompiledInference&quot;</span><span class="p">,</span>
     <span class="s2">&quot;graph_submodules&quot;</span><span class="p">,</span>
@@ -204,6 +209,205 @@
         <span class="k">return</span> <span class="n">static_output</span>
 
     <span class="k">return</span> <span class="n">replay</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Low-level: train-mode graph capture (forward + loss + backward)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_reallocate_params_on_stream</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
+    <span class="n">optimizer</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Optimizer</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Clone every trainable Parameter onto the current CUDA stream.</span>
+
+<span class="sd">    CUDA-graph capture binds an autograd accumulator to whichever stream the</span>
+<span class="sd">    Parameter&#39;s storage was allocated on. When a model is constructed on the</span>
+<span class="sd">    default stream and capture is later attempted on a side stream, the</span>
+<span class="sd">    accumulator launches a kernel on the legacy stream and capture fails with</span>
+<span class="sd">    ``cudaErrorStreamCaptureImplicit``. Re-allocating the Parameters on the</span>
+<span class="sd">    capture stream re-creates the accumulators with the right affinity.</span>
+
+<span class="sd">    The optimizer&#39;s ``param_groups`` are rewired to the new Parameter objects;</span>
+<span class="sd">    any existing ``optimizer.state`` is re-keyed best-effort (state tensors</span>
+<span class="sd">    survive but are NOT migrated to a new stream — re-init momentum state if</span>
+<span class="sd">    you saw any training before).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">old_to_new</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">()):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">new_p</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="c1"># Walk dotted name to find the parent module and the attribute.</span>
+        <span class="n">parent</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span> <span class="o">=</span> <span class="n">model</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="n">parent</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">part</span><span class="p">)</span>
+        <span class="nb">setattr</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">parts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">new_p</span><span class="p">)</span>
+        <span class="n">old_to_new</span><span class="p">[</span><span class="nb">id</span><span class="p">(</span><span class="n">p</span><span class="p">)]</span> <span class="o">=</span> <span class="n">new_p</span>
+    <span class="c1"># Rebuild any view/alias caches the model maintains over its Parameters.</span>
+    <span class="k">for</span> <span class="n">sub</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">modules</span><span class="p">():</span>
+        <span class="n">init_fn</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">sub</span><span class="p">,</span> <span class="s2">&quot;_init_view_caches&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">init_fn</span><span class="p">):</span>
+            <span class="n">init_fn</span><span class="p">()</span>
+    <span class="c1"># Update optimizer references.</span>
+    <span class="n">new_state</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">param_groups</span><span class="p">:</span>
+        <span class="n">new_params</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;params&quot;</span><span class="p">]:</span>
+            <span class="n">new_p_opt</span> <span class="o">=</span> <span class="n">old_to_new</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">id</span><span class="p">(</span><span class="n">p</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">new_p_opt</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">new_params</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_params</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_p_opt</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">state</span><span class="p">:</span>
+                    <span class="n">new_state</span><span class="p">[</span><span class="n">new_p_opt</span><span class="p">]</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+        <span class="n">group</span><span class="p">[</span><span class="s2">&quot;params&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_params</span>
+    <span class="k">if</span> <span class="n">new_state</span><span class="p">:</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_state</span><span class="p">)</span>
+    <span class="c1"># QKAN-aware optimizers (QKANMuon, QKANAdamMini, QKANBeliefMini,</span>
+    <span class="c1"># QKANSpectralMini) route updates by parameter NAME via an</span>
+    <span class="c1"># id(param)-keyed side dict; migrate it so routing survives the swap.</span>
+    <span class="c1"># Popping old ids matters: once the old Parameters are collected,</span>
+    <span class="c1"># CPython can reuse their ids for unrelated tensors.</span>
+    <span class="n">param_names</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">optimizer</span><span class="p">,</span> <span class="s2">&quot;_param_names&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">param_names</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">old_id</span><span class="p">,</span> <span class="n">new_p</span> <span class="ow">in</span> <span class="n">old_to_new</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">param_names</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">old_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">param_names</span><span class="p">[</span><span class="nb">id</span><span class="p">(</span><span class="n">new_p</span><span class="p">)]</span> <span class="o">=</span> <span class="n">name</span>
+    <span class="c1"># QKANMuon caches per-group (muon, adamw) partitions of the old</span>
+    <span class="c1"># Parameter objects; drop the cache so it rebuilds on the next step.</span>
+    <span class="n">partition_cache</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">optimizer</span><span class="p">,</span> <span class="s2">&quot;_partition_cache&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">partition_cache</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">partition_cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="make_graphed_train_step">
+<a class="viewcode-back" href="../../api.html#qkan.make_graphed_train_step">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_graphed_train_step</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span>
+    <span class="n">sample_input</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">sample_target</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">loss_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+    <span class="n">optimizer</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Optimizer</span><span class="p">,</span>
+    <span class="n">warmup</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Capture forward + loss + backward into a CUDA graph for one train step.</span>
+
+<span class="sd">    The captured region is everything up to (but excluding) ``optimizer.step``:</span>
+<span class="sd">    ``optimizer.zero_grad(set_to_none=False)``, ``forward``, ``loss_fn``,</span>
+<span class="sd">    ``loss.backward()``. The optimizer step is left to the caller because</span>
+<span class="sd">    optimisers like Adam contain host-side scalar work that breaks capture.</span>
+
+<span class="sd">    The returned callable accepts ``(input, target)``, copies them into the</span>
+<span class="sd">    static buffers, replays the graph, and returns the loss tensor (a view</span>
+<span class="sd">    into a static buffer — clone before mutating). After replay, every</span>
+<span class="sd">    parameter&#39;s ``.grad`` holds the captured-step gradient and ``optimizer</span>
+<span class="sd">    .step()`` can be called as usual.</span>
+
+<span class="sd">    Side effects on ``model`` and ``optimizer``:</span>
+<span class="sd">        - Every trainable Parameter is re-allocated on the capture stream so</span>
+<span class="sd">          the autograd accumulator gets the right stream affinity. References</span>
+<span class="sd">          held by the caller (e.g. ``my_layer.theta``) ARE updated; references</span>
+<span class="sd">          taken BEFORE calling this function go stale. Re-fetch</span>
+<span class="sd">          ``model.parameters()`` if you cached anything.</span>
+<span class="sd">        - ``optimizer.param_groups`` is rewired to point at the new</span>
+<span class="sd">          Parameters; ``optimizer.state`` is re-keyed best-effort but state</span>
+<span class="sd">          tensors are NOT migrated across streams. Adam users running this on</span>
+<span class="sd">          a freshly-built optimizer (no momentum yet) are unaffected.</span>
+
+<span class="sd">    Constraints:</span>
+<span class="sd">        - ``sample_input`` / ``sample_target`` fix the shapes and dtypes</span>
+<span class="sd">          of subsequent calls; new shapes require a fresh capture.</span>
+<span class="sd">        - All parameters of ``model`` must be on CUDA. ``set_to_none=False``</span>
+<span class="sd">          inside the graph zeroes grads in-place — never swap ``.grad`` for a</span>
+<span class="sd">          new tensor outside the graph (e.g. don&#39;t call</span>
+<span class="sd">          ``optimizer.zero_grad(set_to_none=True)`` between replays).</span>
+<span class="sd">        - ``loss_fn`` must produce a scalar tensor.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        model: a module in train() mode with CUDA parameters.</span>
+<span class="sd">        sample_input: representative input tensor.</span>
+<span class="sd">        sample_target: representative target tensor.</span>
+<span class="sd">        loss_fn: ``loss_fn(output, target) -&gt; scalar`` (e.g. ``nn.MSELoss()``).</span>
+<span class="sd">        optimizer: the optimiser whose grads will be zeroed inside the graph.</span>
+<span class="sd">            ``optimizer.step()`` is NOT captured — call it after each replay.</span>
+<span class="sd">        warmup: warmup forward/backward passes on a side stream before capture.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A callable ``train_step(x, y) -&gt; loss``. Loss is a view into a</span>
+<span class="sd">        static buffer; clone it if you need to retain past the next replay.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">sample_input</span><span class="o">.</span><span class="n">is_cuda</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">sample_target</span><span class="o">.</span><span class="n">is_cuda</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;make_graphed_train_step requires CUDA input/target&quot;</span><span class="p">)</span>
+
+    <span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+
+    <span class="c1"># Static buffers for I/O — copy_&#39;d on each replay.</span>
+    <span class="n">static_input</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">sample_input</span><span class="p">)</span>
+    <span class="n">static_input</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">sample_input</span><span class="p">)</span>
+    <span class="n">static_target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">sample_target</span><span class="p">)</span>
+    <span class="n">static_target</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">sample_target</span><span class="p">)</span>
+
+    <span class="c1"># Side stream for warmup + capture. Everything stream-bound below (param</span>
+    <span class="c1"># reallocation, .grad allocation via first backward, capture itself) must</span>
+    <span class="c1"># happen here.</span>
+    <span class="n">side</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Stream</span><span class="p">()</span>
+    <span class="n">side</span><span class="o">.</span><span class="n">wait_stream</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">())</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span><span class="n">side</span><span class="p">):</span>
+        <span class="c1"># Re-allocate trainable Parameters on the side stream so their grad</span>
+        <span class="c1"># accumulators bind to the capture stream rather than the legacy</span>
+        <span class="c1"># default. Required for any model that aliases Parameters via views</span>
+        <span class="c1"># at __init__ (e.g. QKANLayer p_dim=2).</span>
+        <span class="n">_reallocate_params_on_stream</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">optimizer</span><span class="p">)</span>
+        <span class="c1"># Warmup: run a full train step (incl. backward) so all .grad</span>
+        <span class="c1"># buffers are allocated on the side stream, and any lazy state in</span>
+        <span class="c1"># the model is materialised.</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">warmup</span><span class="p">)):</span>
+            <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">static_input</span><span class="p">)</span>
+            <span class="n">loss</span> <span class="o">=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">static_target</span><span class="p">)</span>
+            <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">current_stream</span><span class="p">()</span><span class="o">.</span><span class="n">wait_stream</span><span class="p">(</span><span class="n">side</span><span class="p">)</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+
+    <span class="c1"># Capture: zero_grad(set_to_none=False) keeps grad tensors allocated and</span>
+    <span class="c1"># zeros them in-place, so the graph sees the same .grad pointers on</span>
+    <span class="c1"># every replay. Capture stream MUST be the same one we warmed up on.</span>
+    <span class="n">graph</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">CUDAGraph</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">graph</span><span class="p">(</span><span class="n">graph</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">side</span><span class="p">):</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">static_output</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">static_input</span><span class="p">)</span>
+        <span class="n">static_loss</span> <span class="o">=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">static_output</span><span class="p">,</span> <span class="n">static_target</span><span class="p">)</span>
+        <span class="n">static_loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+
+    <span class="n">sample_in_shape</span> <span class="o">=</span> <span class="n">sample_input</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">sample_in_dtype</span> <span class="o">=</span> <span class="n">sample_input</span><span class="o">.</span><span class="n">dtype</span>
+    <span class="n">sample_tgt_shape</span> <span class="o">=</span> <span class="n">sample_target</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">sample_tgt_dtype</span> <span class="o">=</span> <span class="n">sample_target</span><span class="o">.</span><span class="n">dtype</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">train_step</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">sample_in_shape</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">sample_in_dtype</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Graphed train_step requires input shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">sample_in_shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;dtype </span><span class="si">{</span><span class="n">sample_in_dtype</span><span class="si">}</span><span class="s2">; got shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;dtype </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">y</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">sample_tgt_shape</span> <span class="ow">or</span> <span class="n">y</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">sample_tgt_dtype</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Graphed train_step requires target shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">sample_tgt_shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;dtype </span><span class="si">{</span><span class="n">sample_tgt_dtype</span><span class="si">}</span><span class="s2">; got shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">y</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;dtype </span><span class="si">{</span><span class="n">y</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">static_input</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">static_target</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="n">graph</span><span class="o">.</span><span class="n">replay</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">static_loss</span>
+
+    <span class="k">return</span> <span class="n">train_step</span></div>
 
 
 

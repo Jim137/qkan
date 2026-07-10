@@ -23,7 +23,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="API Reference" href="api.html" />
+    <link rel="next" title="Circuit Packing and Calibration-Aware Layouts" href="packing_guide.html" />
     <link rel="prev" title="First Glance at QKAN and DARUAN" href="intro/qkan.html" /> 
 </head>
 
@@ -53,17 +53,28 @@
 <li class="toctree-l2"><a class="reference internal" href="#solver-overview">Solver Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#ansatz-choice">Ansatz Choice</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#mixed-precision">Mixed Precision</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#performance-tuning">Performance Tuning</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#activation-checkpointing-the-rep-loop">Activation Checkpointing the Rep Loop</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fused-triton-epilogue">Fused Triton Epilogue</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#bf16-optimizer-mini-state">BF16 Optimizer Mini-State</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#real-quantum-device-deployment">Real Quantum Device Deployment</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#ibm-quantum-qiskit">IBM Quantum (Qiskit)</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#aws-braket-via-cuda-q">AWS Braket via CUDA-Q</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#quantum-machines-qua-opx">Quantum Machines (QUA / OPX)</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#qubit-calibration-layout">Qubit-calibration layout</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#error-mitigation">Error Mitigation</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="graph_guide.html">Inference and Training Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="applications.html">Applications</a></li>
 </ul>
 
         </div>
@@ -180,6 +191,124 @@ Choose the right solver based on your hardware, model size, and deployment targe
 Use FP8 only for <code class="docutils literal notranslate"><span class="pre">c_dtype</span></code>.</p>
 </div>
 </section>
+<section id="performance-tuning">
+<h2>Performance Tuning<a class="headerlink" href="#performance-tuning" title="Link to this heading"></a></h2>
+<p>Three opt-in features trade compute or accuracy for memory. All default to off,
+so behavior matches earlier releases unless you enable them.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 28.0%" />
+<col style="width: 20.0%" />
+<col style="width: 26.0%" />
+<col style="width: 26.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Feature</p></th>
+<th class="head"><p>Scope</p></th>
+<th class="head"><p>Saves</p></th>
+<th class="head"><p>Costs</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">checkpoint_reps</span></code></p></td>
+<td><p>exact solver</p></td>
+<td><p>~1/reps rep-state memory</p></td>
+<td><p>+1 forward pass</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">fused_epilogue</span></code></p></td>
+<td><p>flash / cute / cutile epilogue</p></td>
+<td><p>2 intermediate buffers, ~3 launches</p></td>
+<td><p>CUDA-only fast path</p></td>
+</tr>
+<tr class="row-even"><td><p>bf16 optimizer state</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">QKANBeliefMini</span></code> / <code class="docutils literal notranslate"><span class="pre">TritonAdaBelief</span></code></p></td>
+<td><p>50% of optimizer state</p></td>
+<td><p>bf16 storage for <code class="docutils literal notranslate"><span class="pre">m</span></code>, <code class="docutils literal notranslate"><span class="pre">s</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<section id="activation-checkpointing-the-rep-loop">
+<h3>Activation Checkpointing the Rep Loop<a class="headerlink" href="#activation-checkpointing-the-rep-loop" title="Link to this heading"></a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">checkpoint_reps</span></code> flag on <code class="docutils literal notranslate"><span class="pre">QKANLayer</span></code> / <code class="docutils literal notranslate"><span class="pre">QKAN</span></code> wraps each iteration of
+the inner rep loop with <code class="docutils literal notranslate"><span class="pre">torch.utils.checkpoint.checkpoint(use_reentrant=False)</span></code>.
+Intermediate state tensors are recomputed in the backward pass instead of being
+stashed for autograd, removing ~1/reps of the saved-for-backward memory.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qkan</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
+    <span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span>
+    <span class="n">reps</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+    <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;exact&quot;</span><span class="p">,</span>
+    <span class="n">checkpoint_reps</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>   <span class="c1"># rep states recomputed on backward</span>
+    <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>When to use:</p>
+<ul class="simple">
+<li><p>Training the <code class="docutils literal notranslate"><span class="pre">exact</span></code> solver near OOM (large <code class="docutils literal notranslate"><span class="pre">batch</span> <span class="pre">×</span> <span class="pre">reps</span> <span class="pre">×</span> <span class="pre">group</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">reps</span></code> is high enough that the extra forward is cheaper than swapping.</p></li>
+</ul>
+<p>Tradeoff: ~33% saved-tensor memory reduction at the cost of one extra forward
+pass per step. Numerics are bit-identical to the unflagged path. Non-<code class="docutils literal notranslate"><span class="pre">exact</span></code>
+solvers ignore this kwarg; they manage rep memory in fused kernels.</p>
+</section>
+<section id="fused-triton-epilogue">
+<h3>Fused Triton Epilogue<a class="headerlink" href="#fused-triton-epilogue" title="Link to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">QKANLayer</span></code> ends every forward with
+<code class="docutils literal notranslate"><span class="pre">(postacts</span> <span class="pre">+</span> <span class="pre">postact_bias)</span> <span class="pre">*</span> <span class="pre">postact_weights</span></code> summed across the rep dim, plus
+<code class="docutils literal notranslate"><span class="pre">base_weight</span> <span class="pre">&#64;</span> <span class="pre">base_input</span></code>. By default this is about five eager ops. Enabling
+the fused epilogue collapses it into a single Triton kernel
+(<code class="docutils literal notranslate"><span class="pre">qkan_epilogue_forward</span></code> / <code class="docutils literal notranslate"><span class="pre">qkan_epilogue_backward</span></code>), skipping two
+intermediate buffers and ~3 kernel launches per layer.</p>
+<p>Enable per layer:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qkan</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;flash&quot;</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="n">qkan</span><span class="o">.</span><span class="n">qkan_layers</span><span class="p">:</span>
+    <span class="n">layer</span><span class="o">.</span><span class="n">set_fused_epilogue</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Or enable it process-wide before model construction:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">QKAN_FUSED_EPILOGUE</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>python<span class="w"> </span>train.py
+</pre></div>
+</div>
+<p>When to use:</p>
+<ul class="simple">
+<li><p>CUDA training/inference where the post-activation epilogue is a measurable
+fraction of step time (deep stacks, small <code class="docutils literal notranslate"><span class="pre">out_dim</span></code>, or after the quantum
+kernel itself has been fused).</p></li>
+</ul>
+<p>Tradeoff: CUDA-only fast path; CPU tensors fall back to the eager chain
+transparently. Numerics match eager within bf16/f32 rounding; gradients are
+fused into one backward kernel and the matmul-shaped grads stay on cuBLAS.</p>
+</section>
+<section id="bf16-optimizer-mini-state">
+<h3>BF16 Optimizer Mini-State<a class="headerlink" href="#bf16-optimizer-mini-state" title="Link to this heading"></a></h3>
+<p>The QKAN-aware optimizers <code class="docutils literal notranslate"><span class="pre">QKANBeliefMini</span></code> (pure-PyTorch) and
+<code class="docutils literal notranslate"><span class="pre">TritonAdaBelief</span></code> (fused Triton) accept a <code class="docutils literal notranslate"><span class="pre">state_dtype</span></code> kwarg. Setting it
+to <code class="docutils literal notranslate"><span class="pre">torch.bfloat16</span></code> stores the first/second moment buffers (<code class="docutils literal notranslate"><span class="pre">m</span></code> and the
+block-reduced <code class="docutils literal notranslate"><span class="pre">s</span></code>) in bf16, halving optimizer-state memory. Compute remains
+fp32 — the Triton kernel upcasts on load; the eager path uses torch’s
+bf16-aware add/mul.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qkan.optim</span><span class="w"> </span><span class="kn">import</span> <span class="n">TritonAdaBelief</span>
+
+<span class="n">opt</span> <span class="o">=</span> <span class="n">TritonAdaBelief</span><span class="p">(</span>
+    <span class="n">qkan</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span>
+    <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span>
+    <span class="n">state_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">,</span>   <span class="c1"># halves optimizer memory</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>When to use:</p>
+<ul class="simple">
+<li><p>Optimizer state dominates GPU memory (millions of params, small batch).</p></li>
+<li><p>You are already comfortable with bf16 training.</p></li>
+</ul>
+<p>Tradeoff: ~2x reduction in optimizer-state memory. Bit-exact convergence is
+not guaranteed against fp32 state, but tracks closely in practice. If your
+params are themselves bf16 and you pass <code class="docutils literal notranslate"><span class="pre">state_dtype=None</span></code>, <code class="docutils literal notranslate"><span class="pre">s</span></code> accumulates
+squared residuals in bf16 and may underflow on long runs — pass
+<code class="docutils literal notranslate"><span class="pre">state_dtype=torch.float32</span></code> explicitly to be safe. See <a class="reference internal" href="optim_guide.html"><span class="doc">Optimizer Guide</span></a> for
+the full optimizer API.</p>
+</section>
+</section>
 <section id="real-quantum-device-deployment">
 <h2>Real Quantum Device Deployment<a class="headerlink" href="#real-quantum-device-deployment" title="Link to this heading"></a></h2>
 <p>QKAN can run inference on real quantum hardware. The workflow:</p>
@@ -214,14 +343,44 @@ Use FP8 only for <code class="docutils literal notranslate"><span class="pre">c_
     <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;cudaq&quot;</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
         <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="s2">&quot;braket&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;machine&quot;</span><span class="p">:</span> <span class="s2">&quot;arn:aws:braket:us-west-1::device/qpu/rigetti/Ankaa-3&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;machine&quot;</span><span class="p">:</span> <span class="s2">&quot;arn:aws:braket:us-west-1::device/qpu/rigetti/Cepheus-1-108Q&quot;</span><span class="p">,</span>
         <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
         <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
+        <span class="s2">&quot;initial_layout&quot;</span><span class="p">:</span> <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
     <span class="p">},</span>
 <span class="p">)</span>
 <span class="n">qpu_model</span><span class="o">.</span><span class="n">initialize_from_another_model</span><span class="p">(</span><span class="n">trained_model</span><span class="p">)</span>
 </pre></div>
 </div>
+<p>The CUDA-Q solver supports the same <code class="docutils literal notranslate"><span class="pre">initial_layout</span></code> option (<code class="docutils literal notranslate"><span class="pre">None</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">list[int]</span></code>) on its packed <code class="docutils literal notranslate"><span class="pre">parallel_qubits</span></code> path.
+Because CUDA-Q has no transpiler-level layout control, the layout is applied by construction: circuit slot <code class="docutils literal notranslate"><span class="pre">j</span></code> runs on register index <code class="docutils literal notranslate"><span class="pre">layout[j]</span></code>, and every idle register qubit receives zero-angle padding gates so that compiler dead-code elimination cannot renumber the indices.
+With <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code>, calibration comes from a <code class="docutils literal notranslate"><span class="pre">DeviceProfile</span></code> (see below) — pass one via <code class="docutils literal notranslate"><span class="pre">device_profile=...</span></code>, or let a <code class="docutils literal notranslate"><span class="pre">braket</span></code> target fetch it from the machine ARN (requires <code class="docutils literal notranslate"><span class="pre">amazon-braket-sdk</span></code> and AWS credentials; the snapshot is cached per ARN for the process lifetime); <code class="docutils literal notranslate"><span class="pre">max_readout_error</span></code> / <code class="docutils literal notranslate"><span class="pre">qubit_error_threshold</span></code> filter the ranking.
+Whether the requested physical indices are honored end-to-end depends on the target: CUDA-Q’s native <code class="docutils literal notranslate"><span class="pre">iqm</span></code> / <code class="docutils literal notranslate"><span class="pre">oqc</span></code> / <code class="docutils literal notranslate"><span class="pre">anyon</span></code> targets preserve them (identity placement, no SWAPs for 1-qubit-gate circuits), while Braket’s vendor compiler may rewire them — CUDA-Q currently offers no way to disable Braket’s qubit rewiring, so a warning is emitted on <code class="docutils literal notranslate"><span class="pre">braket</span></code> targets (verified on Rigetti: the compiler chose its own placement).
+Simulator and emulated targets ignore <code class="docutils literal notranslate"><span class="pre">initial_layout</span></code> with a warning (there is no calibration to exploit).</p>
+</section>
+<section id="quantum-machines-qua-opx">
+<h3>Quantum Machines (QUA / OPX)<a class="headerlink" href="#quantum-machines-qua-opx" title="Link to this heading"></a></h3>
+<p>CUDA-Q ships a built-in <code class="docutils literal notranslate"><span class="pre">quantum_machines</span></code> hardware target (contributed upstream by Quantum Machines) that lowers kernels to OpenQASM 2.0 and submits them to a QM <em>Qoperator</em> REST server — the gate-level entry point to OPX-controlled hardware, including DGX Quantum systems.
+qkan supports it directly:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qpu_model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
+    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;cudaq&quot;</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="s2">&quot;quantum_machines&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;url&quot;</span><span class="p">:</span> <span class="s2">&quot;http://qoperator-host:8080&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;executor&quot;</span><span class="p">:</span> <span class="s2">&quot;opx-1000&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;api_key&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span>          <span class="c1"># or QUANTUM_MACHINES_API_KEY env var</span>
+        <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
+        <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">shots</span></code> is required: results come from physical sampling.</p></li>
+<li><p>Expectation values are computed from sampled bitstring marginals (<code class="docutils literal notranslate"><span class="pre">expectation_via_sample</span></code>, on by default for this target) because the 0.15.0 REST helper mis-handles multi-term <code class="docutils literal notranslate"><span class="pre">observe</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">initial_layout</span></code> indices are baked into the submitted OpenQASM; final qubit mapping is decided by the Qoperator server, so verify against your operator configuration (a warning is emitted).</p></li>
+<li><p>Access requires a QM-provisioned Qoperator endpoint (on-prem Docker deployment or a hosted service such as IQCC); there is no public endpoint.</p></li>
+</ul>
 <p>Key parameters:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">fast_measure=False</span></code>: Required for real devices. Uses <code class="docutils literal notranslate"><span class="pre">|alpha|^2</span> <span class="pre">-</span> <span class="pre">|beta|^2</span></code> (Born rule) instead of the quantum-inspired <code class="docutils literal notranslate"><span class="pre">|alpha|</span> <span class="pre">-</span> <span class="pre">|beta|</span></code> shortcut.</p></li>
@@ -230,6 +389,9 @@ Use FP8 only for <code class="docutils literal notranslate"><span class="pre">c_
 <li><p><code class="docutils literal notranslate"><span class="pre">initial_layout</span></code>: Controls which physical qubits receive the packed circuit (see below).
 Defaults to <code class="docutils literal notranslate"><span class="pre">None</span></code> (let the transpiler choose).
 Applies only when executing through a <code class="docutils literal notranslate"><span class="pre">backend</span></code>; a user-supplied <code class="docutils literal notranslate"><span class="pre">estimator</span></code> receives circuits without qkan-side transpilation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">qubit_error_threshold</span></code>: Optional single-qubit <code class="docutils literal notranslate"><span class="pre">sx</span></code> gate-error threshold for <code class="docutils literal notranslate"><span class="pre">initial_layout=&quot;auto&quot;</span></code>.
+For example, <code class="docutils literal notranslate"><span class="pre">0.001</span></code> means <code class="docutils literal notranslate"><span class="pre">sx</span></code> error &lt;= 0.1%, equivalent to single-qubit fidelity &gt;= 99.9%.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max_readout_error</span></code>: Optional readout-error threshold for <code class="docutils literal notranslate"><span class="pre">initial_layout=&quot;auto&quot;</span></code>.</p></li>
 </ul>
 </section>
 <section id="qubit-calibration-layout">
@@ -261,13 +423,28 @@ When the transpiler maps a packed N-qubit circuit onto physical qubits <code cla
 <span class="p">}</span>
 </pre></div>
 </div>
+<p>To exclude qubits above a single-qubit gate-error threshold, add <code class="docutils literal notranslate"><span class="pre">qubit_error_threshold</span></code>.
+For example, <code class="docutils literal notranslate"><span class="pre">0.001</span></code> keeps qubits whose IBM-native <code class="docutils literal notranslate"><span class="pre">sx</span></code> gate error is at or below 0.1%:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
+    <span class="s2">&quot;backend&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
+    <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
+    <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
+    <span class="s2">&quot;initial_layout&quot;</span><span class="p">:</span> <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;qubit_error_threshold&quot;</span><span class="p">:</span> <span class="mf">0.001</span><span class="p">,</span>
+<span class="p">}</span>
+</pre></div>
+</div>
 <p><code class="docutils literal notranslate"><span class="pre">best_qubits(backend,</span> <span class="pre">n)</span></code> scores each physical qubit by</p>
 <div class="math notranslate nohighlight">
 \[\mathrm{score}(q) = \mathrm{readout\_error}(q) +
                      \mathrm{sx\_err}(q) +
                      10^{-4} / \max(T_2(q)\,[\mu s],\, 1)\]</div>
 <p>and returns the <code class="docutils literal notranslate"><span class="pre">n</span></code> lowest-scoring qubit indices.
-Readout error dominates the sum; sx error breaks ties; short <span class="math notranslate nohighlight">\(T_2\)</span> is penalised only slightly because QKAN’s shallow single-qubit circuits aren’t T2-sensitive.</p>
+Readout error dominates the sum; sx error breaks ties; short <span class="math notranslate nohighlight">\(T_2\)</span> is penalised only slightly because QKAN’s shallow single-qubit circuits aren’t T2-sensitive.
+Qubits whose calibration reports NaN (faulty qubits) are treated as missing data.</p>
+<p>Use <code class="docutils literal notranslate"><span class="pre">max_readout_error</span></code> when readout filtering is also desired.
+If a threshold is supplied and fewer than <code class="docutils literal notranslate"><span class="pre">n</span></code> qubits satisfy it, <code class="docutils literal notranslate"><span class="pre">best_qubits</span></code> raises <code class="docutils literal notranslate"><span class="pre">ValueError</span></code> instead of silently using noisier qubits.
+With <code class="docutils literal notranslate"><span class="pre">parallel_qubits=&quot;auto&quot;</span></code> and <code class="docutils literal notranslate"><span class="pre">initial_layout=&quot;auto&quot;</span></code>, QKAN instead packs onto all qubits that satisfy the threshold, so the packing width follows the current calibration quality.</p>
 <p><strong>Empirical impact.</strong> Smoke test on <code class="docutils literal notranslate"><span class="pre">FakeSherbrooke</span></code> with a trained single-sample forecast, <code class="docutils literal notranslate"><span class="pre">parallel_qubits=20</span></code>, <code class="docutils literal notranslate"><span class="pre">shots=1024</span></code>:</p>
 <table class="docutils align-default">
 <thead>
@@ -367,7 +544,7 @@ Prevents catastrophic outliers from ZNE extrapolation.</p>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="intro/qkan.html" class="btn btn-neutral float-left" title="First Glance at QKAN and DARUAN" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="api.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="packing_guide.html" class="btn btn-neutral float-right" title="Circuit Packing and Calibration-Aware Layouts" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

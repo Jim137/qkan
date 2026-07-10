@@ -1,0 +1,417 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inference and Training Guide &mdash; QKAN 0.2.3dev documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+    <link rel="canonical" href="https://qkan.jimq.cc/graph_guide.html" />
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=db1dea96"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="api.html" />
+    <link rel="prev" title="Optimizer Guide" href="optim_guide.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Inference and Training Guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#which-helper-should-i-use">Which helper should I use?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#inference">Inference</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#compile-inference-recommended"><code class="docutils literal notranslate"><span class="pre">compile_inference</span></code> (recommended)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#make-graphed-inference-low-level-single-shape"><code class="docutils literal notranslate"><span class="pre">make_graphed_inference</span></code> (low-level, single shape)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graph-submodules-selective-capture"><code class="docutils literal notranslate"><span class="pre">graph_submodules</span></code> (selective capture)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#training">Training</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#make-graphed-train-step"><code class="docutils literal notranslate"><span class="pre">make_graphed_train_step</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#side-effects-on-model-and-optimizer">Side effects on <code class="docutils literal notranslate"><span class="pre">model</span></code> and <code class="docutils literal notranslate"><span class="pre">optimizer</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#mixing-in-eager-steps">Mixing in eager steps</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#caveats">Caveats</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="applications.html">Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Inference and Training Guide</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/graph_guide.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="inference-and-training-guide">
+<h1>Inference and Training Guide<a class="headerlink" href="#inference-and-training-guide" title="Link to this heading"></a></h1>
+<p>QKAN is launch-bound at small batch sizes: a single QKAN forward issues
+roughly 8 GPU kernels, each preceded by ~2 us of Python / CUDA driver
+overhead. The quantum-activation kernels are short, so for typical
+GPT-style HQKAN blocks the host launch cost dominates the GPU work —
+both at inference time and during training. <code class="docutils literal notranslate"><span class="pre">qkan.inference</span></code> provides
+three graph-capture helpers that collapse those launches:</p>
+<ul class="simple">
+<li><p><strong>``torch.compile``-style shape-cached wrapper</strong> —
+<code class="docutils literal notranslate"><span class="pre">compile_inference</span></code> / <code class="docutils literal notranslate"><span class="pre">CompiledInference</span></code>. Drop-in; lazily
+captures one CUDA graph per input shape.</p></li>
+<li><p><strong>Direct single-shape CUDA-graph capture</strong> — <code class="docutils literal notranslate"><span class="pre">make_graphed_inference</span></code>
+for eval, <code class="docutils literal notranslate"><span class="pre">make_graphed_train_step</span></code> for a full forward + backward
++ zero_grad train step.</p></li>
+<li><p><strong>Selective submodule capture</strong> — <code class="docutils literal notranslate"><span class="pre">graph_submodules</span></code> for models
+where only a few submodules (e.g. every MLP block) are launch-bound.</p></li>
+</ul>
+<p>On launch-bound workloads each typically yields a 2–3x speedup.</p>
+<p>This guide covers <a class="reference internal" href="#graph-inference"><span class="std std-ref">inference</span></a>,
+<a class="reference internal" href="#graph-training"><span class="std std-ref">training</span></a>, and shared
+<a class="reference internal" href="#graph-caveats"><span class="std std-ref">caveats</span></a>.</p>
+<section id="which-helper-should-i-use">
+<h2>Which helper should I use?<a class="headerlink" href="#which-helper-should-i-use" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 28.0%" />
+<col style="width: 36.0%" />
+<col style="width: 36.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Helper</p></th>
+<th class="head"><p>Use when</p></th>
+<th class="head"><p>Avoid when</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">compile_inference</span></code></p></td>
+<td><p>Drop-in: you want graphs, but the eval batch shape can vary
+across calls. Lazily captures one graph per shape (up to
+<code class="docutils literal notranslate"><span class="pre">max_shapes</span></code>) and falls back to eager for training /
+grad-tracking forwards.</p></td>
+<td><p>You need a single ultra-low-overhead callable and you already
+know the shape (use the lower-level <code class="docutils literal notranslate"><span class="pre">make_graphed_inference</span></code>
+instead).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">make_graphed_inference</span></code></p></td>
+<td><p>You know the inference shape ahead of time and want the minimum
+per-call dispatch overhead — no cache lookup, just replay.</p></td>
+<td><p>Shapes change between calls (raises <code class="docutils literal notranslate"><span class="pre">ValueError</span></code>).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">make_graphed_train_step</span></code></p></td>
+<td><p>Training is launch-bound and forward + backward + grad-zero fit
+one graph. Captures everything except <code class="docutils literal notranslate"><span class="pre">optimizer.step()</span></code> for
+one fixed shape.</p></td>
+<td><p>The optimizer or loss path has host-side scalar work that must
+remain eager, or you need shape variability.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">graph_submodules</span></code></p></td>
+<td><p>Full-model capture fails (Python control flow, <code class="docutils literal notranslate"><span class="pre">.item()</span></code> calls,
+SDPA RNG counters, etc.) but the launch-bound cost is
+concentrated in a few submodules (e.g. every MLP block).</p></td>
+<td><p>The entire model is graph-safe — wrap the whole thing instead.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Quick decision tree:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>Is the full model graph-safe?
+|-- No  --&gt; graph_submodules(model, sample, predicate=...)
+|-- Yes
+    |
+    Is this training (forward + backward + optimizer)?
+    |-- Yes --&gt; make_graphed_train_step(model, x, y, loss_fn, opt)
+    |-- No
+        |
+        Does the eval shape vary across calls?
+        |-- Yes --&gt; compile_inference(model)
+        |-- No  --&gt; make_graphed_inference(model, x)
+</pre></div>
+</div>
+</section>
+<section id="inference">
+<span id="graph-inference"></span><h2>Inference<a class="headerlink" href="#inference" title="Link to this heading"></a></h2>
+<section id="compile-inference-recommended">
+<h3><code class="docutils literal notranslate"><span class="pre">compile_inference</span></code> (recommended)<a class="headerlink" href="#compile-inference-recommended" title="Link to this heading"></a></h3>
+<p>The drop-in API. It wraps any module so eval / no-grad forwards capture
+and replay per shape; train / grad forwards fall back to eager.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">qkan</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKAN</span><span class="p">,</span> <span class="n">compile_inference</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="n">reps</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;flash&quot;</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">compile_inference</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>         <span class="c1"># drop-in wrapper</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                          <span class="c1"># first call: captures</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                          <span class="c1"># subsequent calls: replays</span>
+</pre></div>
+</div>
+<p>The cache key is <code class="docutils literal notranslate"><span class="pre">(shape,</span> <span class="pre">dtype,</span> <span class="pre">device)</span></code>. On a miss the wrapper
+captures a new graph (up to <code class="docutils literal notranslate"><span class="pre">max_shapes</span></code> entries, default 8). When
+the cache is saturated, further unseen shapes fall through to eager
+rather than evict an existing graph mid-replay.</p>
+<p><code class="docutils literal notranslate"><span class="pre">compile_inference</span></code> is a thin shortcut for
+<code class="docutils literal notranslate"><span class="pre">CompiledInference(module,</span> <span class="pre">...)</span></code>. The class form is equivalent:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qkan</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompiledInference</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">CompiledInference</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">max_shapes</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">warmup</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>After modifying parameters in place (e.g. loading a new checkpoint),
+call <code class="docutils literal notranslate"><span class="pre">model.clear_cache()</span></code> to drop stale graphs.
+<code class="docutils literal notranslate"><span class="pre">model.train()</span></code> clears the cache automatically.</p>
+</section>
+<section id="make-graphed-inference-low-level-single-shape">
+<h3><code class="docutils literal notranslate"><span class="pre">make_graphed_inference</span></code> (low-level, single shape)<a class="headerlink" href="#make-graphed-inference-low-level-single-shape" title="Link to this heading"></a></h3>
+<p>Use when the inference shape is known and fixed, and you want the
+absolute minimum per-call overhead — no shape cache lookup, just
+<code class="docutils literal notranslate"><span class="pre">copy_</span></code> + replay.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">qkan</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKAN</span><span class="p">,</span> <span class="n">make_graphed_inference</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="n">reps</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;flash&quot;</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+
+<span class="n">graphed</span> <span class="o">=</span> <span class="n">make_graphed_inference</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">graphed</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                            <span class="c1"># replays graph</span>
+</pre></div>
+</div>
+<p>The returned callable accepts inputs with the same shape / dtype /
+device as <code class="docutils literal notranslate"><span class="pre">sample_input</span></code>. Mismatches raise <code class="docutils literal notranslate"><span class="pre">ValueError</span></code>. The output
+tensor is <strong>reused across calls</strong> — clone it before the next replay if
+you need to keep the value:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">y1</span> <span class="o">=</span> <span class="n">graphed</span><span class="p">(</span><span class="n">x1</span><span class="p">)</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>                  <span class="c1"># keep this result</span>
+<span class="n">y2</span> <span class="o">=</span> <span class="n">graphed</span><span class="p">(</span><span class="n">x2</span><span class="p">)</span>                          <span class="c1"># overwrites the previous static buffer</span>
+</pre></div>
+</div>
+</section>
+<section id="graph-submodules-selective-capture">
+<h3><code class="docutils literal notranslate"><span class="pre">graph_submodules</span></code> (selective capture)<a class="headerlink" href="#graph-submodules-selective-capture" title="Link to this heading"></a></h3>
+<p>When full-model capture fails (for example, because an SDPA backend
+increments an RNG counter even at <code class="docutils literal notranslate"><span class="pre">dropout_p=0</span></code>, or because Python
+<code class="docutils literal notranslate"><span class="pre">if</span></code> branches depend on tensor values), wrap only the launch-bound
+submodules. QKAN’s small-launch cost typically lives in the MLP blocks,
+so graphing those captures most of the gain without making the whole
+model graph-safe.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">qkan</span><span class="w"> </span><span class="kn">import</span> <span class="n">graph_submodules</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">my_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPT2</span><span class="p">,</span> <span class="n">HQKANMLP</span>
+
+<span class="n">gpt2</span> <span class="o">=</span> <span class="n">GPT2</span><span class="p">(</span><span class="o">...</span><span class="p">)</span><span class="o">.</span><span class="n">cuda</span><span class="p">()</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">128</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+
+<span class="n">graph_submodules</span><span class="p">(</span>
+    <span class="n">gpt2</span><span class="p">,</span>
+    <span class="n">sample_idx</span><span class="p">,</span>
+    <span class="n">predicate</span><span class="o">=</span><span class="k">lambda</span> <span class="n">m</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">HQKANMLP</span><span class="p">),</span>
+<span class="p">)</span>
+
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="n">gpt2</span><span class="p">(</span><span class="n">sample_idx</span><span class="p">)</span>             <span class="c1"># MLP blocks now graphed; rest is eager</span>
+</pre></div>
+</div>
+<p>Each matching submodule is replaced in place with a
+<code class="docutils literal notranslate"><span class="pre">CompiledInference</span></code> wrapper that shares parameters with the original.
+<code class="docutils literal notranslate"><span class="pre">named_parameters()</span></code> is unchanged. The helper runs one initial eval
+forward, so the first live call does not pay the capture cost.</p>
+</section>
+</section>
+<section id="training">
+<span id="graph-training"></span><h2>Training<a class="headerlink" href="#training" title="Link to this heading"></a></h2>
+<p>QKAN training is launch-bound for the same reason inference is — the
+quantum-activation kernels are short, and a single train step issues
+forward + backward + zero_grad worth of small kernels. Capturing the
+whole train step as one CUDA graph cuts the same host overhead.</p>
+<section id="make-graphed-train-step">
+<h3><code class="docutils literal notranslate"><span class="pre">make_graphed_train_step</span></code><a class="headerlink" href="#make-graphed-train-step" title="Link to this heading"></a></h3>
+<p>Captures <strong>forward + loss + backward + zero_grad</strong> into a single CUDA
+graph for one fixed-shape train step. <code class="docutils literal notranslate"><span class="pre">optimizer.step()</span></code> is <strong>not</strong>
+captured — optimizers like Adam contain host-side scalar work that
+breaks capture, so the caller invokes <code class="docutils literal notranslate"><span class="pre">step()</span></code> after each replay. This
+also gives you a stable place to plug in QKAN-aware optimizers like
+<code class="docutils literal notranslate"><span class="pre">TritonAdaBelief</span></code> from <a class="reference internal" href="optim_guide.html"><span class="doc">Optimizer Guide</span></a>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">nn</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">qkan</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKAN</span><span class="p">,</span> <span class="n">TritonAdaBelief</span><span class="p">,</span> <span class="n">make_graphed_train_step</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="n">reps</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;flash&quot;</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">TritonAdaBelief</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+<span class="n">loss_fn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">MSELoss</span><span class="p">()</span>
+
+<span class="c1"># Sample tensors must match the shape / dtype of real batches.</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+
+<span class="n">train_step</span> <span class="o">=</span> <span class="n">make_graphed_train_step</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">loss_fn</span><span class="p">,</span> <span class="n">opt</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="ow">in</span> <span class="n">data_loader</span><span class="p">:</span>                <span class="c1"># xb, yb must match shape / dtype</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">train_step</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span>             <span class="c1"># replays graph (zero_grad + fwd + bwd)</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>                            <span class="c1"># not in graph — call yourself</span>
+</pre></div>
+</div>
+</section>
+<section id="side-effects-on-model-and-optimizer">
+<h3>Side effects on <code class="docutils literal notranslate"><span class="pre">model</span></code> and <code class="docutils literal notranslate"><span class="pre">optimizer</span></code><a class="headerlink" href="#side-effects-on-model-and-optimizer" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>Every trainable <code class="docutils literal notranslate"><span class="pre">Parameter</span></code> is re-allocated onto the capture stream
+so the autograd accumulator binds to the right stream. References
+held by the caller (e.g. <code class="docutils literal notranslate"><span class="pre">my_layer.theta</span></code>) are updated, but
+references taken <strong>before</strong> calling <code class="docutils literal notranslate"><span class="pre">make_graphed_train_step</span></code> go
+stale — re-fetch <code class="docutils literal notranslate"><span class="pre">model.parameters()</span></code> if you cached anything.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">optimizer.param_groups</span></code> is rewired to the new <code class="docutils literal notranslate"><span class="pre">Parameter</span></code>
+objects. <code class="docutils literal notranslate"><span class="pre">optimizer.state</span></code> is re-keyed best-effort, but state
+tensors are <strong>not migrated</strong> across streams. Run this on a
+freshly-built optimizer (no momentum yet) for cleanest behavior.</p></li>
+</ul>
+<p>Inside the captured graph,
+<code class="docutils literal notranslate"><span class="pre">optimizer.zero_grad(set_to_none=False)</span></code> zeroes <code class="docutils literal notranslate"><span class="pre">.grad</span></code> in place
+to preserve graph-internal pointers. <strong>Do not</strong> call
+<code class="docutils literal notranslate"><span class="pre">optimizer.zero_grad(set_to_none=True)</span></code> between replays — swapping
+<code class="docutils literal notranslate"><span class="pre">.grad</span></code> for a new tensor outside the graph invalidates the capture.</p>
+<p>The returned loss is a view into a static buffer; clone it if you
+need to retain it past the next replay.</p>
+</section>
+<section id="mixing-in-eager-steps">
+<h3>Mixing in eager steps<a class="headerlink" href="#mixing-in-eager-steps" title="Link to this heading"></a></h3>
+<p>If you need an occasional eager step (eval pass, validation step, LR
+scheduler tick that mutates parameter groups, etc.), run it between
+graph replays as long as you do not reassign <code class="docutils literal notranslate"><span class="pre">.grad</span></code> or reshape any
+captured tensor. Eval-mode forwards through the model also work — the
+train-step graph only references the train pathway.</p>
+<p>For sporadic shape changes (e.g. last batch has a different size),
+fall back to an eager step for that batch; capturing per shape isn’t
+supported by <code class="docutils literal notranslate"><span class="pre">make_graphed_train_step</span></code> today.</p>
+</section>
+</section>
+<section id="caveats">
+<span id="graph-caveats"></span><h2>Caveats<a class="headerlink" href="#caveats" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt><strong>CUDA graphs require fixed shapes.</strong></dt><dd><p>A captured graph hard-codes input shape, dtype, and device. Calling
+a graphed callable with a different shape raises <code class="docutils literal notranslate"><span class="pre">ValueError</span></code>
+for the low-level helpers; <code class="docutils literal notranslate"><span class="pre">compile_inference</span></code> captures a new
+graph (up to <code class="docutils literal notranslate"><span class="pre">max_shapes</span></code>) and falls back to eager once the
+cache is saturated. If your eval batch size varies a lot, either
+widen <code class="docutils literal notranslate"><span class="pre">max_shapes</span></code> or pad inputs to a fixed shape.</p>
+</dd>
+<dt><strong>Output tensors are reused buffers.</strong></dt><dd><p><code class="docutils literal notranslate"><span class="pre">make_graphed_inference</span></code> returns a callable whose output is a
+view into a static buffer overwritten on every replay. Clone the
+result if you need to keep it past the next call.
+The same applies to the loss returned by <code class="docutils literal notranslate"><span class="pre">make_graphed_train_step</span></code>.
+<code class="docutils literal notranslate"><span class="pre">CompiledInference</span></code> inherits this behavior for cache hits.</p>
+</dd>
+<dt><strong>Parameter mutation invalidates graphs.</strong></dt><dd><p>The captured graph references specific parameter storage. Editing
+parameters in place (e.g. loading a checkpoint) requires
+<code class="docutils literal notranslate"><span class="pre">CompiledInference.clear_cache()</span></code>.
+<code class="docutils literal notranslate"><span class="pre">train()</span></code> / <code class="docutils literal notranslate"><span class="pre">eval()</span></code> transitions clear the cache automatically.</p>
+</dd>
+<dt><strong>Non-graph-safe ops break full-model capture.</strong></dt><dd><p>Python control flow on tensor values, <code class="docutils literal notranslate"><span class="pre">.item()</span></code>, <code class="docutils literal notranslate"><span class="pre">.cpu()</span></code>, CPU
+syncs, and SDPA backends that touch RNG state all break capture.
+If <code class="docutils literal notranslate"><span class="pre">compile_inference</span></code> raises during capture, narrow the scope
+with <code class="docutils literal notranslate"><span class="pre">graph_submodules</span></code> to wrap only the graph-safe portions.</p>
+</dd>
+<dt><strong>``compile_inference`` falls back to eager in several cases.</strong></dt><dd><p>The wrapper takes the eager path whenever any of the following
+hold: training mode, grad enabled, multiple positional arguments,
+any keyword arguments, non-tensor input, non-CUDA input, or
+<code class="docutils literal notranslate"><span class="pre">x.requires_grad</span></code>. This keeps the wrapper safe to drop on top of
+any model, but you will see no speedup unless you wrap the forward in
+<code class="docutils literal notranslate"><span class="pre">torch.no_grad()</span></code> and call the eval-mode model with a single CUDA
+tensor.</p>
+</dd>
+<dt><strong>Warmup cost.</strong></dt><dd><p>Capture is preceded by <code class="docutils literal notranslate"><span class="pre">warmup</span></code> (default 3) forward passes on a
+side stream to stabilize cuBLAS / cuDNN algorithm selection. For
+<code class="docutils literal notranslate"><span class="pre">make_graphed_train_step</span></code>, warmup includes a full backward so
+<code class="docutils literal notranslate"><span class="pre">.grad</span></code> buffers are allocated on the capture stream. Expect the
+first call to be noticeably slower; amortize by capturing once
+before timing.</p>
+</dd>
+<dt><strong>``compile_inference`` vs. ``torch.compile``.</strong></dt><dd><p><code class="docutils literal notranslate"><span class="pre">compile_inference</span></code> is a CUDA-graph wrapper, not a tracing JIT.
+It does not recompile graphs across shapes — it captures a new one
+per shape. If you want kernel-level fusion or shape-polymorphic
+compilation, use <code class="docutils literal notranslate"><span class="pre">torch.compile</span></code> directly. Combine it with CUDA
+graphs by passing <code class="docutils literal notranslate"><span class="pre">mode=&quot;reduce-overhead&quot;</span></code>, or compose
+<code class="docutils literal notranslate"><span class="pre">compile_inference</span></code> on top of a <code class="docutils literal notranslate"><span class="pre">torch.compile</span></code>d module.</p>
+</dd>
+</dl>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="optim_guide.html" class="btn btn-neutral float-left" title="Optimizer Guide" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="api.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
