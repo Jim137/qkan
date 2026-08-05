@@ -1874,7 +1874,17 @@ def triton_pz_backward(
     grad_output = grad_output.contiguous()
 
     n_oi = out_dim * in_dim
-    BLOCK_B = _select_block_b(n_oi, batch)
+    # B5's 10,000-way grid has enough independent work to fill the device.
+    # A 256-lane tile halves batch-block programs and scalar gradient atomics
+    # without increasing padded state storage (1000 rounds to 1024 either way).
+    large_pz = n_oi >= 256 and batch >= 256
+    BLOCK_B = 1024 if large_pz else _select_block_b(n_oi, batch)
+    if large_pz:
+        NUM_WARPS = 4 if c_dtype == torch.bfloat16 else 2
+    else:
+        NUM_WARPS = 4
+    WAVES_PER_EU = 1 if large_pz else 0
+    NUM_STAGES = 2
     n_states = 3 * reps + 3  # H state + 3 per layer + after final Rz
     n_b_blocks = triton.cdiv(batch, BLOCK_B)
     n_programs = n_oi * n_b_blocks
@@ -1953,6 +1963,9 @@ def triton_pz_backward(
         FAST_MEASURE=fast_measure,
         FP8_PRESCALE=224.0 if compute_fp8 else 1.0,
         BLOCK_B=BLOCK_B,
+        num_warps=NUM_WARPS,
+        waves_per_eu=WAVES_PER_EU,
+        num_stages=NUM_STAGES,
     )
 
     return (
