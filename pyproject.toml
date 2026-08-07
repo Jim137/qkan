@@ -136,6 +136,9 @@ Homepage = "https://github.com/Jim137/qkan"
 # guard in solver/cute/cute_ops.py JIT-rebuilds from them when the prebuilt
 # kernel does not match the local GPU — including from installed wheels.
 qkan = ["csrc/*.cu"]
+# PZ backward launch policies are read at runtime through importlib.resources,
+# so they must be present in wheels as well as in the source tree.
+"qkan.solver.flash.policies" = ["*.json"]
 
 [tool.ruff]
 lint.select = ["F", "I"]
