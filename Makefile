@@ -5,13 +5,16 @@ install:
 	pip install -e .
 
 lint:
-	ruff check src --ignore E731,E741,F405,F821
-	ruff format src --diff
+	ruff check src skills/tests --ignore E731,E741,F405,F821
+	ruff format src skills/tests --diff
 	mypy src
 
 lint-fix:
-	ruff check src --ignore E731,E741,F405,F821 --fix
-	ruff format src
+	ruff check src skills/tests --ignore E731,E741,F405,F821 --fix
+	ruff format src skills/tests
+
+test:
+	pytest skills/tests
 
 .PHONY: docs
 
