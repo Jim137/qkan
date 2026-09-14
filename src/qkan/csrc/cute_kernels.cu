@@ -48,7 +48,11 @@ static constexpr float INV_SQRT2 = 0.7071067811865476f;
 // PyTorch tensors are contiguous in the LAST dimension, so we must
 // provide explicit strides matching C order.
 // The leading stride is int64_t: batch-scaled offsets (b * out_dim * in_dim)
-// exceed 2^31 at realistic sizes and would wrap negative in int32.
+// exceed 2^31 at realistic sizes and would wrap negative in int32.  crd2idx
+// folds each mode's coord*stride independently, so this widens mode 0 only —
+// the trailing modes stay int32 and are bounded by check_launch_inputs.  The
+// same macros also build parameter views, where the widening is harmless but
+// is not a signal that a given view is batch-scaled.
 #define ROWMAJOR2(d0, d1) \
     make_layout(make_shape((d0), (d1)), make_stride((int64_t)(d1), 1))
 #define ROWMAJOR3(d0, d1, d2) \
@@ -286,7 +290,7 @@ __global__ void cute_pz_bwd_kernel(
     // int64: the states buffer holds batch*out*in-scaled element counts, so
     // program base offsets pass 2^31 at a few thousand rows for 128x128.
     int64_t program_idx = (int64_t)pid_oi * n_b_blocks + pid_b;
-    int state_stride_n = n_states * 4 * BLOCK_B;
+    int64_t state_stride_n = (int64_t)n_states * 4 * BLOCK_B;
     int state_stride_s = 4 * BLOCK_B;
     int state_stride_c = BLOCK_B;
     StateT* my_states = states_ptr + program_idx * state_stride_n;
@@ -1180,36 +1184,38 @@ static int select_block_b(int n_oi, int batch, int base = 32) {
     return 32;
 }
 
-// Forward kernels: template<typename IOT, int BLOCK_B>
+// One launch protocol for every block-tiled kernel (forward and backward
+// are structurally identical; T is the I/O type for forwards and the state
+// checkpoint type for backwards).
+//
 // Launch on the current CUDA stream (at::cuda::getCurrentCUDAStream) so the
 // kernel is captured correctly by torch.cuda.CUDAGraph. Without the explicit
 // stream the launch lands on the null stream and CUDA graphs silently drop it.
-#define DISPATCH_FWD(block_b, IOT_TYPE, KERNEL, grid, smem, ...) \
+//
+// A zero-extent grid is an invalid launch configuration, so skip the launch
+// (and its check) when either extent is empty rather than making each of the
+// six launchers guard for itself.
+//
+// cudaGetLastError() returns the last error from ANY prior call on this
+// thread, so a stale one is consumed before launching: without that the check
+// below would blame this launch for an unrelated earlier fault.
+#define DISPATCH_BLOCK_B(block_b, T, KERNEL, grid, smem, ...) \
     do { \
+        if ((grid).x == 0u || (grid).y == 0u) break; \
         auto stream = at::cuda::getCurrentCUDAStream(); \
+        C10_CUDA_CLEAR_ERROR(); \
         switch (block_b) { \
-            case 32:  KERNEL<IOT_TYPE, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
-            case 64:  KERNEL<IOT_TYPE, 64> <<<grid, 64,  smem, stream>>>(__VA_ARGS__); break; \
-            case 128: KERNEL<IOT_TYPE, 128><<<grid, 128, smem, stream>>>(__VA_ARGS__); break; \
-            case 256: KERNEL<IOT_TYPE, 256><<<grid, 256, smem, stream>>>(__VA_ARGS__); break; \
-            default:  KERNEL<IOT_TYPE, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
+            case 32:  KERNEL<T, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
+            case 64:  KERNEL<T, 64> <<<grid, 64,  smem, stream>>>(__VA_ARGS__); break; \
+            case 128: KERNEL<T, 128><<<grid, 128, smem, stream>>>(__VA_ARGS__); break; \
+            case 256: KERNEL<T, 256><<<grid, 256, smem, stream>>>(__VA_ARGS__); break; \
+            default:  KERNEL<T, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
         } \
         C10_CUDA_KERNEL_LAUNCH_CHECK(); \
     } while(0)
 
-// Backward kernels: template<typename StateT, int BLOCK_B>
-#define DISPATCH_BWD(block_b, STATE_T, KERNEL, grid, smem, ...) \
-    do { \
-        auto stream = at::cuda::getCurrentCUDAStream(); \
-        switch (block_b) { \
-            case 32:  KERNEL<STATE_T, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
-            case 64:  KERNEL<STATE_T, 64> <<<grid, 64,  smem, stream>>>(__VA_ARGS__); break; \
-            case 128: KERNEL<STATE_T, 128><<<grid, 128, smem, stream>>>(__VA_ARGS__); break; \
-            case 256: KERNEL<STATE_T, 256><<<grid, 256, smem, stream>>>(__VA_ARGS__); break; \
-            default:  KERNEL<STATE_T, 32> <<<grid, 32,  smem, stream>>>(__VA_ARGS__); break; \
-        } \
-        C10_CUDA_KERNEL_LAUNCH_CHECK(); \
-    } while(0)
+#define DISPATCH_FWD(...) DISPATCH_BLOCK_B(__VA_ARGS__)
+#define DISPATCH_BWD(...) DISPATCH_BLOCK_B(__VA_ARGS__)
 
 // ====================================================================
 // Host helpers
@@ -1222,15 +1228,38 @@ static inline torch::Tensor prep(torch::Tensor t, torch::ScalarType dtype) {
     return t;
 }
 
-/// The kernels keep parameter-tensor offsets and the out*in program count in
-/// int32 (only batch-scaled offsets are widened to 64-bit in the views), so
-/// sizes past int32 must fail loudly here instead of corrupting memory.
-static inline void check_int32_sizes(
-    const torch::Tensor& x, const torch::Tensor& theta, const torch::Tensor& pw)
+/// Validates the launcher input contract: the shapes the kernels build their
+/// strides from, and the sizes they index with.  Parameter offsets, the out*in
+/// program count and everything derived from reps are int32 (only the
+/// batch-scaled offsets are 64-bit), so anything that would wrap has to fail
+/// loudly here instead of corrupting memory.
+static inline void check_launch_inputs(
+    const torch::Tensor& x, const torch::Tensor& theta,
+    const torch::Tensor& pw, const torch::Tensor& pb)
 {
     constexpr int64_t kIntMax = std::numeric_limits<int>::max();
+    TORCH_CHECK(theta.dim() >= 3,
+        "CuTe solver: theta must have at least 3 dims (out_dim, in_dim, reps"
+        "...), got ", theta.dim());
+    // Every ansatz derives reps from theta.size(2), and reps drives n_states
+    // and the shared-memory byte count, both int32.  A zero-length axis makes
+    // pz/rpz's reps = size(2) - 1 negative, which walks the state buffer and
+    // the smem trig cache backwards.
+    TORCH_CHECK(theta.size(2) >= 1,
+        "CuTe solver: theta.size(2) (the reps axis) must be at least 1, got ",
+        theta.size(2));
+    // The kernels build theta's strides from x.size(1), so the numel bound
+    // below only covers the offsets they actually form if the two agree.
+    TORCH_CHECK(theta.size(1) == x.size(1),
+        "CuTe solver: theta.size(1) = ", theta.size(1),
+        " does not match in_dim = ", x.size(1));
     TORCH_CHECK(theta.numel() <= kIntMax,
         "CuTe solver: theta has ", theta.numel(), " elements, exceeds int32 range");
+    // grad_pb is allocated from pb.sizes() but written with the same raw
+    // int32 index as grad_pw, so bounding pw alone leaves pb unchecked.
+    TORCH_CHECK(pw.sizes() == pb.sizes(),
+        "CuTe solver: preacts weight ", pw.sizes(), " and preacts bias ",
+        pb.sizes(), " must have the same shape");
     TORCH_CHECK(pw.numel() <= kIntMax,
         "CuTe solver: preacts have ", pw.numel(), " elements, exceeds int32 range");
     // The numel checks are vacuous for zero-element params (reps == 0), so
@@ -1252,6 +1281,18 @@ static inline int checked_n_b_blocks(int64_t batch, int block_b) {
     return (int)n_b_blk;
 }
 
+/// Dynamic shared memory is an int32 byte count derived from reps.  Past the
+/// device limit the launch fails with a bare "invalid argument", so name the
+/// actual cause here instead.
+static inline int checked_smem_bytes(int64_t bytes, int reps, c10::DeviceIndex device) {
+    int64_t limit = at::cuda::getDeviceProperties(device)->sharedMemPerBlock;
+    TORCH_CHECK(bytes <= limit,
+        "CuTe solver: reps = ", reps, " needs ", bytes,
+        " bytes of shared memory per block (device max ", limit,
+        "); reduce reps");
+    return (int)bytes;
+}
+
 // ====================================================================
 // Python-facing launchers
 // ====================================================================
@@ -1261,25 +1302,28 @@ torch::Tensor cute_pz_forward(
     torch::Tensor pw, torch::Tensor pb,
     bool preacts_trainable, bool fast_measure, bool use_bf16)
 {
-    check_int32_sizes(x, theta, pw);
+    check_launch_inputs(x, theta, pw, pb);
     int batch   = x.size(0);
     int in_dim  = x.size(1);
     int out_dim = theta.size(0);
     int reps    = theta.size(2) - 1;
 
+    // Guard before allocating: an oversized batch must report the grid limit
+    // rather than OOM on the output tensor first.
+    int n_oi = out_dim * in_dim;
+    int block_b = select_block_b(n_oi, batch);
+    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
+    int smem = checked_smem_bytes((int64_t)(reps + 1) * 2 * 2 * sizeof(float), reps, x.device().index());
+
     auto io_dtype = use_bf16 ? torch::kBFloat16 : torch::kFloat32;
+    auto output = torch::empty({batch, out_dim, in_dim},
+        torch::TensorOptions().device(x.device()).dtype(io_dtype));
     x     = prep(x, io_dtype);
     theta = prep(theta, io_dtype);
     pw = prep(pw, io_dtype);
     pb = prep(pb, io_dtype);
 
-    auto output = torch::empty({batch, out_dim, in_dim},
-        torch::TensorOptions().device(x.device()).dtype(io_dtype));
-    int n_oi = out_dim * in_dim;
-    int block_b = select_block_b(n_oi, batch);
-    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
     dim3 grid(n_oi, n_b_blk);
-    int smem = (reps + 1) * 2 * 2 * sizeof(float);
 
     if (use_bf16) {
         DISPATCH_FWD(block_b, bf16_t, cute_pz_fwd_kernel, grid, smem,
@@ -1309,7 +1353,7 @@ std::vector<torch::Tensor> cute_pz_backward(
     bool preacts_trainable, bool fast_measure, int state_bits)
 {
     // state_bits: 32 = f32 states, 8 = fp8 prescaled, 4 = fp4 prescaled (experimental)
-    check_int32_sizes(x, theta, pw);
+    check_launch_inputs(x, theta, pw, pb);
     int batch   = x.size(0);
     int in_dim  = x.size(1);
     int out_dim = theta.size(0);
@@ -1327,6 +1371,10 @@ std::vector<torch::Tensor> cute_pz_backward(
     // int64: the product overflows int at large batch although both factors fit.
     int64_t n_prog = (int64_t)n_oi * n_b_blk;
     int n_states = 3 * reps + 3;
+    int n_trig = (reps + 1) * 2;
+    int num_warps = (block_b + 31) / 32;
+    int smem = checked_smem_bytes(
+        ((int64_t)2 * n_trig + num_warps) * sizeof(float), reps, x.device().index());
 
     // State dtype & prescale selection
     auto dev_opts = torch::TensorOptions().device(x.device());
@@ -1353,9 +1401,6 @@ std::vector<torch::Tensor> cute_pz_backward(
         : torch::zeros({1}, dev_opts.dtype(torch::kFloat32));
 
     dim3 grid(n_oi, n_b_blk);
-    int n_trig = (reps + 1) * 2;
-    int num_warps = (block_b + 31) / 32;
-    int smem = (2 * n_trig + num_warps) * sizeof(float);
 
     if (state_bits == 8) {
         DISPATCH_BWD(block_b, fp8_t, cute_pz_bwd_kernel, grid, smem,
@@ -1399,23 +1444,24 @@ torch::Tensor cute_rpz_forward(
     torch::Tensor pw, torch::Tensor pb,
     bool fast_measure, bool use_bf16)
 {
-    check_int32_sizes(x, theta, pw);
+    check_launch_inputs(x, theta, pw, pb);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2) - 1;
 
+    int n_oi = out_dim * in_dim;
+    int block_b = select_block_b(n_oi, batch);
+    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
+    int smem = checked_smem_bytes((int64_t)(reps + 1) * 2 * sizeof(float), reps, x.device().index());
+
     auto io_dtype = use_bf16 ? torch::kBFloat16 : torch::kFloat32;
+    auto output = torch::empty({batch, out_dim, in_dim},
+        torch::TensorOptions().device(x.device()).dtype(io_dtype));
     x = prep(x, io_dtype);
     theta = prep(theta, io_dtype);
     pw = prep(pw, io_dtype);
     pb = prep(pb, io_dtype);
 
-    auto output = torch::empty({batch, out_dim, in_dim},
-        torch::TensorOptions().device(x.device()).dtype(io_dtype));
-    int n_oi = out_dim * in_dim;
-    int block_b = select_block_b(n_oi, batch);
-    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
     dim3 grid(n_oi, n_b_blk);
-    int smem = (reps + 1) * 2 * sizeof(float);
 
     if (use_bf16) {
         DISPATCH_FWD(block_b, bf16_t, cute_rpz_fwd_kernel, grid, smem,
@@ -1442,7 +1488,7 @@ std::vector<torch::Tensor> cute_rpz_backward(
     torch::Tensor grad_output,
     bool fast_measure, int state_bits)
 {
-    check_int32_sizes(x, theta, pw);
+    check_launch_inputs(x, theta, pw, pb);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2) - 1;
 
@@ -1457,6 +1503,9 @@ std::vector<torch::Tensor> cute_rpz_backward(
     int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
     int64_t n_prog = (int64_t)n_oi * n_b_blk;
     int n_states = 2 * reps + 2;
+    int num_warps = (block_b + 31) / 32;
+    int smem = checked_smem_bytes(
+        ((int64_t)2 * (reps + 1) + num_warps) * sizeof(float), reps, x.device().index());
 
     auto dev_opts = torch::TensorOptions().device(x.device());
     torch::Tensor states;
@@ -1478,8 +1527,6 @@ std::vector<torch::Tensor> cute_rpz_backward(
     auto grad_pb = torch::zeros(pb.sizes(), dev_opts.dtype(torch::kFloat32));
 
     dim3 grid(n_oi, n_b_blk);
-    int num_warps = (block_b + 31) / 32;
-    int smem = (2 * (reps + 1) + num_warps) * sizeof(float);
 
     if (state_bits == 8) {
         DISPATCH_BWD(block_b, fp8_t, cute_rpz_bwd_kernel, grid, smem,
@@ -1519,23 +1566,24 @@ torch::Tensor cute_real_forward(
     bool preacts_trainable, bool fast_measure, bool compute_bf16,
     bool use_bf16)
 {
-    check_int32_sizes(x, theta, pw);
+    check_launch_inputs(x, theta, pw, pb);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2);
 
+    int n_oi = out_dim * in_dim;
+    int block_b = select_block_b(n_oi, batch, compute_bf16 ? 32 : 32);
+    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
+    int smem = checked_smem_bytes((int64_t)reps * 2 * sizeof(float), reps, x.device().index());
+
     auto io_dtype = use_bf16 ? torch::kBFloat16 : torch::kFloat32;
+    auto output = torch::empty({batch, out_dim, in_dim},
+        torch::TensorOptions().device(x.device()).dtype(io_dtype));
     x = prep(x, io_dtype);
     theta = prep(theta, io_dtype);
     pw = prep(pw, io_dtype);
     pb = prep(pb, io_dtype);
 
-    auto output = torch::empty({batch, out_dim, in_dim},
-        torch::TensorOptions().device(x.device()).dtype(io_dtype));
-    int n_oi = out_dim * in_dim;
-    int block_b = select_block_b(n_oi, batch, compute_bf16 ? 32 : 32);
-    int n_b_blk = checked_n_b_blocks(x.size(0), block_b);
     dim3 grid(n_oi, n_b_blk);
-    int smem = reps * 2 * sizeof(float);
 
     if (use_bf16) {
         DISPATCH_FWD(block_b, bf16_t, cute_real_fwd_kernel, grid, smem,
@@ -1565,7 +1613,7 @@ std::vector<torch::Tensor> cute_real_backward(
     bool preacts_trainable, bool fast_measure, bool compute_bf16,
     int state_bits)
 {
-    check_int32_sizes(x, theta, pw);
+    check_launch_inputs(x, theta, pw, pb);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2);
 
@@ -1581,6 +1629,9 @@ std::vector<torch::Tensor> cute_real_backward(
     int64_t n_prog = (int64_t)n_oi * n_b_blk;
     int n_states = 3 * reps + 1;
     int n_components = compute_bf16 ? 2 : 4;
+    int num_warps = (block_b + 31) / 32;
+    int smem = checked_smem_bytes(
+        ((int64_t)2 * reps + num_warps) * sizeof(float), reps, x.device().index());
 
     auto dev_opts = torch::TensorOptions().device(x.device());
     torch::Tensor states;
@@ -1603,8 +1654,6 @@ std::vector<torch::Tensor> cute_real_backward(
         : torch::zeros({1}, dev_opts.dtype(torch::kFloat32));
 
     dim3 grid(n_oi, n_b_blk);
-    int num_warps = (block_b + 31) / 32;
-    int smem = (2 * reps + num_warps) * sizeof(float);
 
     if (state_bits == 8) {
         DISPATCH_BWD(block_b, fp8_t, cute_real_bwd_kernel, grid, smem,

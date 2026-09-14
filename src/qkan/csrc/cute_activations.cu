@@ -303,6 +303,10 @@ static inline void launch_fwd(ActKind kind, const IOT* x, IOT* y, int64_t n,
     constexpr int VEC = vec_traits<IOT>::VEC;
     int64_t n_vec = n / VEC;
     int64_t n_aligned = n_vec * VEC;
+    // cudaGetLastError() returns the last error from ANY prior call on this
+    // thread; consume a stale one so the launch checks below cannot blame
+    // these kernels for an unrelated earlier fault.
+    C10_CUDA_CLEAR_ERROR();
     if (n_vec > 0) {
         dim3 grid(static_cast<unsigned int>((n_vec + BLOCK_B - 1) / BLOCK_B));
         DISPATCH_KIND(kind, IOT, cute_act_fwd_kernel_vec, grid, n_vec, x, y, n_vec);
@@ -319,6 +323,10 @@ static inline void launch_bwd(ActKind kind, const IOT* x, const IOT* gy,
     constexpr int VEC = vec_traits<IOT>::VEC;
     int64_t n_vec = n / VEC;
     int64_t n_aligned = n_vec * VEC;
+    // cudaGetLastError() returns the last error from ANY prior call on this
+    // thread; consume a stale one so the launch checks below cannot blame
+    // these kernels for an unrelated earlier fault.
+    C10_CUDA_CLEAR_ERROR();
     if (n_vec > 0) {
         dim3 grid(static_cast<unsigned int>((n_vec + BLOCK_B - 1) / BLOCK_B));
         DISPATCH_KIND(kind, IOT, cute_act_bwd_kernel_vec, grid, n_vec,
