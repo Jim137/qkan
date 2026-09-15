@@ -1235,19 +1235,17 @@ static inline torch::Tensor prep(torch::Tensor t, torch::ScalarType dtype) {
 /// loudly here instead of corrupting memory.
 static inline void check_launch_inputs(
     const torch::Tensor& x, const torch::Tensor& theta,
-    const torch::Tensor& pw, const torch::Tensor& pb)
+    const torch::Tensor& pw, const torch::Tensor& pb, int reps)
 {
     constexpr int64_t kIntMax = std::numeric_limits<int>::max();
-    TORCH_CHECK(theta.dim() >= 3,
-        "CuTe solver: theta must have at least 3 dims (out_dim, in_dim, reps"
-        "...), got ", theta.dim());
-    // Every ansatz derives reps from theta.size(2), and reps drives n_states
-    // and the shared-memory byte count, both int32.  A zero-length axis makes
-    // pz/rpz's reps = size(2) - 1 negative, which walks the state buffer and
-    // the smem trig cache backwards.
-    TORCH_CHECK(theta.size(2) >= 1,
-        "CuTe solver: theta.size(2) (the reps axis) must be at least 1, got ",
-        theta.size(2));
+    // reps drives n_states and the shared-memory byte count, both int32.  A
+    // negative reps walks the state buffer and the smem trig cache backwards,
+    // so bound the derived value rather than theta's axis length: pz/rpz take
+    // theta.size(2) - 1, but real takes theta.size(2), where 0 is a valid
+    // zero-repetition circuit.
+    TORCH_CHECK(reps >= 0,
+        "CuTe solver: reps = ", reps, " must be non-negative (theta.size(2) = ",
+        theta.size(2), ")");
     // The kernels build theta's strides from x.size(1), so the numel bound
     // below only covers the offsets they actually form if the two agree.
     TORCH_CHECK(theta.size(1) == x.size(1),
@@ -1302,11 +1300,11 @@ torch::Tensor cute_pz_forward(
     torch::Tensor pw, torch::Tensor pb,
     bool preacts_trainable, bool fast_measure, bool use_bf16)
 {
-    check_launch_inputs(x, theta, pw, pb);
     int batch   = x.size(0);
     int in_dim  = x.size(1);
     int out_dim = theta.size(0);
     int reps    = theta.size(2) - 1;
+    check_launch_inputs(x, theta, pw, pb, reps);
 
     // Guard before allocating: an oversized batch must report the grid limit
     // rather than OOM on the output tensor first.
@@ -1353,11 +1351,11 @@ std::vector<torch::Tensor> cute_pz_backward(
     bool preacts_trainable, bool fast_measure, int state_bits)
 {
     // state_bits: 32 = f32 states, 8 = fp8 prescaled, 4 = fp4 prescaled (experimental)
-    check_launch_inputs(x, theta, pw, pb);
     int batch   = x.size(0);
     int in_dim  = x.size(1);
     int out_dim = theta.size(0);
     int reps    = theta.size(2) - 1;
+    check_launch_inputs(x, theta, pw, pb, reps);
 
     x     = prep(x, torch::kFloat32);
     theta = prep(theta, torch::kFloat32);
@@ -1444,9 +1442,9 @@ torch::Tensor cute_rpz_forward(
     torch::Tensor pw, torch::Tensor pb,
     bool fast_measure, bool use_bf16)
 {
-    check_launch_inputs(x, theta, pw, pb);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2) - 1;
+    check_launch_inputs(x, theta, pw, pb, reps);
 
     int n_oi = out_dim * in_dim;
     int block_b = select_block_b(n_oi, batch);
@@ -1488,9 +1486,9 @@ std::vector<torch::Tensor> cute_rpz_backward(
     torch::Tensor grad_output,
     bool fast_measure, int state_bits)
 {
-    check_launch_inputs(x, theta, pw, pb);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2) - 1;
+    check_launch_inputs(x, theta, pw, pb, reps);
 
     x = prep(x, torch::kFloat32);
     theta = prep(theta, torch::kFloat32);
@@ -1566,9 +1564,9 @@ torch::Tensor cute_real_forward(
     bool preacts_trainable, bool fast_measure, bool compute_bf16,
     bool use_bf16)
 {
-    check_launch_inputs(x, theta, pw, pb);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2);
+    check_launch_inputs(x, theta, pw, pb, reps);
 
     int n_oi = out_dim * in_dim;
     int block_b = select_block_b(n_oi, batch, compute_bf16 ? 32 : 32);
@@ -1613,9 +1611,9 @@ std::vector<torch::Tensor> cute_real_backward(
     bool preacts_trainable, bool fast_measure, bool compute_bf16,
     int state_bits)
 {
-    check_launch_inputs(x, theta, pw, pb);
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2);
+    check_launch_inputs(x, theta, pw, pb, reps);
 
     x = prep(x, torch::kFloat32);
     theta = prep(theta, torch::kFloat32);

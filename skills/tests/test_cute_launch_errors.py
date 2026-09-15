@@ -102,3 +102,33 @@ def test_arch_mismatch_does_not_rebuild_inside_forward(run_snippet):
     )
     # the message has to say what to do, not just that something failed
     assert "QKAN_FORCE_BUILD" in result.stdout, result.stdout
+
+
+def test_arch_mismatch_is_not_cached_as_usable(run_snippet):
+    """A retry after the mismatch must not get the rejected module back.
+
+    _load_prebuilt() assigns the module to the _ext cache as a side effect, so
+    failing without clearing it makes the next call return the incompatible
+    extension straight from cache and skip the probe entirely.
+    """
+    result = run_snippet("""
+        import qkan.solver.cute.cute_ops as co
+
+        co._ext = None
+        co._supports_current_device = lambda ext: False
+        co._load_jit = lambda: (_ for _ in ()).throw(
+            AssertionError("JIT rebuild attempted")
+        )
+
+        for attempt in (1, 2):
+            try:
+                ext = co._get_ext()
+            except ImportError:
+                print(f"attempt {attempt}: ImportError")
+            else:
+                print(f"attempt {attempt}: RETURNED {ext!r}")
+    """)
+    assert result.stdout.count("ImportError") == 2, (
+        f"stdout={result.stdout}\nstderr={result.stderr[-2000:]}"
+    )
+    assert "RETURNED" not in result.stdout, result.stdout

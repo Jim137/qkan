@@ -163,6 +163,10 @@ def _get_ext():
         # JIT rebuild here would stall a training step for minutes from
         # inside autograd. Fail with the reinstall command instead.
         capability = torch.cuda.get_device_capability()
+        # _load_prebuilt() cached the module in _ext on its way here; leaving
+        # it set would make a retry return the rejected extension straight from
+        # cache at the top of this function, skipping the probe entirely.
+        _ext = None
         _CUTE_KERNELS_AVAILABLE = False
         # ImportError is this module's convention for "no CuTe kernels", and
         # what the solver-selection guards in cute.py already catch.

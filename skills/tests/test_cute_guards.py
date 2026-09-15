@@ -125,6 +125,24 @@ def test_degenerate_reps_rejected(run_snippet):
     assert "illegal memory access" not in result.stdout
 
 
+def test_zero_reps_real_ansatz_accepted(run_snippet):
+    """real derives reps from theta.size(2) directly, so reps == 0 is valid.
+
+    pz/rpz take theta.size(2) - 1, so the same axis length means reps == -1
+    there; the bound belongs on the derived reps, not on the axis.
+    """
+    result = run_snippet("""
+        from qkan import QKANLayer
+
+        layer = QKANLayer(6, 4, reps=0, ansatz="real", solver="cute", device="cuda")
+        assert layer.theta.shape[2] == 0, layer.theta.shape
+        y = layer(torch.randn(8, 6, device="cuda"))
+        assert torch.isfinite(y).all(), y
+        print("OK", tuple(y.shape))
+    """)
+    assert "OK" in result.stdout, f"stdout={result.stdout}\nstderr={result.stderr}"
+
+
 def test_reps_exceeding_shared_memory_rejected(run_snippet):
     result = run_snippet("""
         out_dim, in_dim, reps = 2, 2, 100_000
