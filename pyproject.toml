@@ -65,6 +65,7 @@ real-device = [
 
 dev = [
     "mypy",
+    "pytest",
     "ruff",
     "isort",
     "build",

@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import os
 import pathlib
-import warnings
 
 import torch
 
@@ -160,25 +159,24 @@ def _get_ext():
     if prebuilt is not None:
         if _supports_current_device(prebuilt):
             return prebuilt
+        # _get_ext() is resolved lazily, on the first forward/backward, so a
+        # JIT rebuild here would stall a training step for minutes from
+        # inside autograd. Fail with the reinstall command instead.
         capability = torch.cuda.get_device_capability()
+        # _load_prebuilt() cached the module in _ext on its way here; leaving
+        # it set would make a retry return the rejected extension straight from
+        # cache at the top of this function, skipping the probe entirely.
         _ext = None
         _CUTE_KERNELS_AVAILABLE = False
-        warnings.warn(
+        # ImportError is this module's convention for "no CuTe kernels", and
+        # what the solver-selection guards in cute.py already catch.
+        raise ImportError(
             "qkan._C was built without kernels for this GPU (compute "
-            f"capability {capability[0]}.{capability[1]}); attempting a "
-            "JIT rebuild for the local architecture. Reinstall with "
-            f"QKAN_CUDA_ARCHS={capability[0]}{capability[1]} "
-            "QKAN_FORCE_BUILD=TRUE to avoid the rebuild.",
-            RuntimeWarning,
-            stacklevel=3,
+            f"capability {capability[0]}.{capability[1]}). Reinstall for the "
+            f"local architecture with QKAN_CUDA_ARCHS={capability[0]}{capability[1]} "
+            "QKAN_FORCE_BUILD=TRUE pip install --no-build-isolation -e .[cute], "
+            "or select a different solver."
         )
-        try:
-            return _load_jit()
-        except ImportError as error:
-            raise ImportError(
-                "the prebuilt qkan._C does not support this GPU and a JIT "
-                f"rebuild is unavailable: {error}"
-            ) from error
     _ext = _load_jit()
     return _ext
 
