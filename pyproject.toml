@@ -90,7 +90,17 @@ doc = [
 # cudart, but torch's ATen/cuda/CUDAContext.h transitively pulls in
 # cusparse / cublas, and torch 2.7/2.8 arm64 wheels dynamically link
 # libnvJitLink without bundling it — so we must declare these here.
-# Bare names: let pip pick the latest patch in the cu12/cu13 family.
+# Bare names: let pip pick the latest patch in the CUDA family.
+#
+# The two families are spelled differently. CUDA 12 keeps the `-cu12` suffix.
+# For CUDA 13 NVIDIA dropped the suffix entirely and turned every `-cu13` name
+# into a 0.0.1 sdist stub whose setup.py calls sys.exit(1) on wheel build, so
+# listing those names makes `pip install qkan[cute]` fail outright.
+#
+# The unsuffixed packages are versioned by library soname, not by toolkit: most
+# are 13.x, but nvidia-cusparse is 12.8.x because cuSPARSE still ships
+# libcusparse.so.12 under CUDA 13 — which is exactly what the cu13 build of
+# libtorch_cuda.so links against.
 cute-cu12 = [
     "ninja",
     "nvidia-cuda-runtime-cu12",
@@ -102,11 +112,11 @@ cute-cu12 = [
 
 cute-cu13 = [
     "ninja",
-    "nvidia-cuda-runtime-cu13",
-    "nvidia-cuda-nvrtc-cu13",
-    "nvidia-cublas-cu13",
-    "nvidia-cusparse-cu13",
-    "nvidia-nvjitlink-cu13",
+    "nvidia-cuda-runtime",
+    "nvidia-cuda-nvrtc",
+    "nvidia-cublas",
+    "nvidia-cusparse",
+    "nvidia-nvjitlink",
 ]
 
 # Legacy alias — defaults to cu13 to match the [gpu] meta-extra. Kept so
