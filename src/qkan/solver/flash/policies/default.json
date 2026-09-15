@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "name": "default",
+  "operation": "pz_backward",
+  "architecture": {
+    "kind": "any"
+  },
+  "match": {
+    "kind": "any"
+  },
+  "block_selector": {
+    "kind": "original"
+  },
+  "precisions": {
+    "fp32": {
+      "num_warps": 4,
+      "waves_per_eu": 0,
+      "num_stages": 2
+    },
+    "bf16": {
+      "num_warps": 4,
+      "waves_per_eu": 0,
+      "num_stages": 2
+    },
+    "fp8": {
+      "num_warps": 4,
+      "waves_per_eu": 0,
+      "num_stages": 2
+    }
+  },
+  "description": "Original PZ backward block selector and launch metadata for every supported runtime shape and architecture."
+}
