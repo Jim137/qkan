@@ -119,6 +119,7 @@ class QKANLayer(nn.Module):
                 "tn",
                 "cute",
                 "cutile",
+                "flydsl",
                 "qiskit",
                 "cudaq",
             ],
@@ -154,7 +155,7 @@ class QKANLayer(nn.Module):
         self.checkpoint_reps = checkpoint_reps
         # If base_activation is a string ("silu", "gelu", ...), pick the
         # backend implementation matching the chosen solver — cute/flash/
-        # cutile get their fused kernel, others fall back to torch.nn.
+        # cutile/flydsl get their fused kernel, others fall back to torch.nn.
         # ``"gelu"`` resolves to gelu_exact (matches torch's default).
         if isinstance(base_activation, str):
             base_activation = make_base_activation(base_activation, solver)
@@ -184,6 +185,7 @@ class QKANLayer(nn.Module):
                 "tn",
                 "cute",
                 "cutile",
+                "flydsl",
                 "qiskit",
                 "cudaq",
             ],
@@ -197,10 +199,10 @@ class QKANLayer(nn.Module):
         self.is_batchnorm = is_batchnorm
         self.fast_measure = fast_measure
         self.seed = seed
-        # Flash / cutile / cute solvers use real-valued Triton/CUDA kernels and
+        # Flash / cutile / cute / flydsl solvers use real-valued GPU kernels and
         # cannot operate on complex dtypes.  Transparently map complex → real so
         # users can keep the default ``c_dtype=torch.complex64`` without error.
-        if solver in ("flash", "cutile", "cute") and c_dtype in (
+        if solver in ("flash", "cutile", "cute", "flydsl") and c_dtype in (
             torch.complex64,
             torch.complex128,
         ):
@@ -1037,6 +1039,7 @@ class QKAN(nn.Module):
                 "tn",
                 "cute",
                 "cutile",
+                "flydsl",
                 "qiskit",
                 "cudaq",
             ],
@@ -1138,6 +1141,7 @@ class QKAN(nn.Module):
                 "tn",
                 "cute",
                 "cutile",
+                "flydsl",
                 "qiskit",
                 "cudaq",
             ],

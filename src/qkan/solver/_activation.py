@@ -20,6 +20,7 @@ helper picks the activation kernel matching the chosen ``solver``:
   cute   -> qkan.solver.cute_activation.CuTeActivation
   flash  -> qkan.solver.triton_activation.TritonActivation
   cutile -> qkan.solver.cutile_activation.CuTileActivation
+  flydsl -> qkan.solver.flydsl.flydsl_activation.FlyDSLActivation
   other  -> torch.nn equivalent (SiLU, GELU, ReLU, Tanh, Sigmoid)
 
 Backend imports are guarded; if the matching backend isn't installed we
@@ -86,6 +87,13 @@ def make_base_activation(kind: str, solver: object) -> nn.Module:
             from .cutile.cutile_activation import CuTileActivation
 
             return CuTileActivation(k)
+        except ImportError:
+            pass
+    elif solver == "flydsl":
+        try:
+            from .flydsl.flydsl_activation import FlyDSLActivation
+
+            return FlyDSLActivation(k)
         except ImportError:
             pass
 
