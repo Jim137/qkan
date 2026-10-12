@@ -202,9 +202,13 @@ class QKANLayer(nn.Module):
         # Flash / cutile / cute / flydsl solvers use real-valued GPU kernels and
         # cannot operate on complex dtypes.  Transparently map complex → real so
         # users can keep the default ``c_dtype=torch.complex64`` without error.
-        if solver in ("flash", "cutile", "cute", "flydsl") and c_dtype in (
-            torch.complex64,
-            torch.complex128,
+        # Only for ansatzes the fused kernels implement: the rest fall back to
+        # torch_exact_solver, whose Rz/Rx gates need the complex dtype.
+        if (
+            solver in ("flash", "cutile", "cute", "flydsl")
+            and isinstance(ansatz, str)
+            and ansatz in ("pz_encoding", "pz", "rpz_encoding", "rpz", "real")
+            and c_dtype in (torch.complex64, torch.complex128)
         ):
             _complex_to_real = {
                 torch.complex64: torch.float32,
