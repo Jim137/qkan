@@ -48,9 +48,9 @@ _INV_SQRT_2PI = 0.3989422804014327  # N(0,1) pdf coefficient
 
 
 if _FLYDSL_KERNELS_AVAILABLE:
-    import flydsl.compiler as flyc
-    import flydsl.expr as fx
-    from flydsl.expr import const_expr
+    import flydsl.compiler as flyc  # type: ignore[import-not-found, import-untyped]
+    import flydsl.expr as fx  # type: ignore[import-not-found, import-untyped]
+    from flydsl.expr import const_expr  # type: ignore[import-not-found, import-untyped]
 
     def _sigmoid(x):
         return 1.0 / (1.0 + fx.math.exp(0.0 - x))

@@ -50,9 +50,12 @@ import math
 import torch
 
 try:
-    import flydsl.compiler as flyc
-    import flydsl.expr as fx
-    from flydsl.expr import const_expr, range_constexpr
+    import flydsl.compiler as flyc  # type: ignore[import-not-found, import-untyped]
+    import flydsl.expr as fx  # type: ignore[import-not-found, import-untyped]
+    from flydsl.expr import (  # type: ignore[import-not-found, import-untyped]
+        const_expr,
+        range_constexpr,
+    )
 
     # FlyDSL emits AMDGPU code only; a CUDA build of torch cannot run it.
     _FLYDSL_KERNELS_AVAILABLE = torch.version.hip is not None
@@ -691,11 +694,11 @@ def flydsl_backward(
     device = x.device
 
     grad_theta = torch.zeros(theta.shape, device=device, dtype=torch.float32)
+    grad_pw: torch.Tensor | None = None
+    grad_pb: torch.Tensor | None = None
     if preacts:
         grad_pw = torch.zeros(preacts_w.shape, device=device, dtype=torch.float32)
         grad_pb = torch.zeros(preacts_b.shape, device=device, dtype=torch.float32)
-    else:
-        grad_pw = grad_pb = None
     if batch == 0 or n_oi == 0:
         grad_x = torch.zeros(batch, in_dim, device=device, dtype=torch.float32)
         return grad_x, grad_theta, grad_pw, grad_pb
@@ -712,8 +715,8 @@ def flydsl_backward(
         pb,
         _flat_f32(grad_output),
         grad_theta.view(-1),
-        grad_pw.view(-1) if preacts else grad_theta.view(-1),
-        grad_pb.view(-1) if preacts else grad_theta.view(-1),
+        grad_pw.view(-1) if grad_pw is not None else grad_theta.view(-1),
+        grad_pb.view(-1) if grad_pb is not None else grad_theta.view(-1),
         grad_x_part.view(-1),
         batch,
         in_dim,
