@@ -34,7 +34,7 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from .flydsl_ops import _FLYDSL_KERNELS_AVAILABLE
+from .flydsl_ops import _FLYDSL_KERNELS_AVAILABLE, _launch
 
 __all__ = ["FlyDSLActivation"]
 
@@ -180,14 +180,16 @@ def flydsl_activation_forward(x: torch.Tensor, kind: str) -> torch.Tensor:
     y = torch.empty_like(xf)
     n = xf.numel()
     if n:
-        _launch_act_forward(
+        _launch(
+            _launch_act_forward,
+            (kind, bf16),
             xf,
             y,
             n,
             -(-n // _ACT_BLOCK),
             kind,
             bf16,
-            stream=torch.cuda.current_stream(x.device),
+            torch.cuda.current_stream(x.device),
         )
     return y.view(x.shape).to(x.dtype)
 
@@ -201,7 +203,9 @@ def flydsl_activation_backward(
     gx = torch.empty_like(xf)
     n = xf.numel()
     if n:
-        _launch_act_backward(
+        _launch(
+            _launch_act_backward,
+            (kind, bf16),
             gyf,
             xf,
             gx,
@@ -209,7 +213,7 @@ def flydsl_activation_backward(
             -(-n // _ACT_BLOCK),
             kind,
             bf16,
-            stream=torch.cuda.current_stream(x.device),
+            torch.cuda.current_stream(x.device),
         )
     return gx.view(x.shape).to(x.dtype)
 

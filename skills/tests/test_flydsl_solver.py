@@ -118,6 +118,45 @@ def test_bf16_output_and_grad_dtypes():
     assert theta.grad.dtype == torch.bfloat16
 
 
+@pytest.mark.parametrize("ansatz", ["pz", "rpz", "real"])
+def test_bf16_inputs_read_natively(ansatz):
+    """bf16 x / params / grad_output give the same result as their f32 values."""
+    from qkan.solver.flydsl import flydsl_ops as ops
+
+    bf16 = [t.detach().bfloat16() for t in _inputs(ansatz)]
+    f32 = [t.float() for t in bf16]
+    go = torch.randn(37, 3, 5, device="cuda").bfloat16()
+    for fn, extra in (
+        (ops.flydsl_forward, ()),
+        (ops.flydsl_backward, (go,)),
+    ):
+        args_bf16 = (*bf16, *extra, 3, ansatz, True)
+        args_f32 = (*f32, *(t.float() for t in extra), 3, ansatz, True)
+        results = fn(*args_bf16), fn(*args_f32)
+        if fn is ops.flydsl_forward:
+            results = ([results[0]], [results[1]])
+        for a, b in zip(*results):
+            assert torch.equal(a, b)
+
+
+@pytest.mark.parametrize("ansatz", ["pz", "real"])
+def test_unused_theta_slots_get_zero_grad(ansatz):
+    """Theta entries no gate reads get exactly zero gradient."""
+    from qkan.solver.flydsl import flydsl_ops as ops
+
+    x, theta, pw, pb = (t.detach() for t in _inputs(ansatz))
+    used = theta.shape[3]
+    padded = torch.cat([theta, torch.randn_like(theta)], dim=3)
+    go = torch.randn(37, 3, 5, device="cuda")
+    for _ in range(3):  # reused allocations must not leak stale values
+        _, grad_theta, _, _ = ops.flydsl_backward(
+            x, padded, pw, pb, go, 3, ansatz, False
+        )
+        _, expected, _, _ = ops.flydsl_backward(x, theta, pw, pb, go, 3, ansatz, False)
+        assert torch.equal(grad_theta[..., used:], torch.zeros_like(expected))
+        assert torch.equal(grad_theta[..., :used], expected)
+
+
 def test_empty_batch():
     from qkan.solver import flydsl_exact_solver
 

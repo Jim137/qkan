@@ -39,13 +39,19 @@ Each thread owns one ``(o, i)`` circuit and a contiguous chunk of the batch:
     ``(b, o, i)`` and reduced over ``o`` the same way. No atomics are used, so
     the backward pass is deterministic.
 
-All math runs in float32. The forward output is float32 or bfloat16 (bf16 I/O
-halves the dominant ``(batch, out_dim, in_dim)`` write); the backward pass
-always runs in float32.
+All math runs in float32. bf16 inputs, parameters and ``grad_output`` are
+read as bf16 and widened in registers, so no host-side casts run before a
+launch. The forward output is float32 or bfloat16 (bf16 I/O halves the
+dominant ``(batch, out_dim, in_dim)`` write); the backward pass always
+accumulates and returns float32.
+
+Launchers are compiled once per compile-time configuration and then called
+through FlyDSL's compiled-function fast path (see :func:`_launch`).
 """
 
 from __future__ import annotations
 
+import functools
 import math
 
 import torch
@@ -170,7 +176,7 @@ def _load_f32(T, idx, bf16):
 
 if _FLYDSL_KERNELS_AVAILABLE:
 
-    def _load_circuit_params(TH, PW, PB, oi, REPS, N_TH, TH_P, ANSATZ, PREACTS):
+    def _load_circuit_params(TH, PW, PB, oi, REPS, N_TH, TH_P, ANSATZ, PREACTS, P_BF16):
         """Per-(o, i) trig of every theta plus preacts weight/bias, in registers."""
         th_base = fx.Int64(oi) * N_TH
         n_th_layers = REPS + int(ANSATZ != "real")
@@ -179,15 +185,17 @@ if _FLYDSL_KERNELS_AVAILABLE:
         for l in range_constexpr(n_th_layers):
             layer = []
             for p in range_constexpr(n_th_per_layer):
-                layer.append(_half_angle(TH[th_base + (l * TH_P + p)]))
+                layer.append(
+                    _half_angle(_load_f32(TH, th_base + (l * TH_P + p), P_BF16))
+                )
             trig.append(layer)
 
         ws, bs = [], []
         if const_expr(PREACTS):
             pw_base = fx.Int64(oi) * REPS
             for l in range_constexpr(REPS):
-                ws.append(PW[pw_base + l])
-                bs.append(PB[pw_base + l])
+                ws.append(_load_f32(PW, pw_base + l, P_BF16))
+                bs.append(_load_f32(PB, pw_base + l, P_BF16))
         return trig, ws, bs
 
     def _encodings(x, ws, bs, REPS, PREACTS):
@@ -286,13 +294,14 @@ if _FLYDSL_KERNELS_AVAILABLE:
         PREACTS: fx.Constexpr[bool],
         FAST: fx.Constexpr[bool],
         X_BF16: fx.Constexpr[bool],
+        P_BF16: fx.Constexpr[bool],
         OUT_BF16: fx.Constexpr[bool],
     ):
         oi = fx.block_idx.x * _BLOCK + fx.thread_idx.x
         if oi < n_oi:
             i = oi % in_dim
             trig, ws, bs = _load_circuit_params(
-                TH, PW, PB, oi, REPS, N_TH, TH_P, ANSATZ, PREACTS
+                TH, PW, PB, oi, REPS, N_TH, TH_P, ANSATZ, PREACTS, P_BF16
             )
             b_start, b_end = _batch_range(batch, b_chunk)
             for b in range(b_start, b_end):
@@ -325,12 +334,15 @@ if _FLYDSL_KERNELS_AVAILABLE:
         ANSATZ: fx.Constexpr[str],
         PREACTS: fx.Constexpr[bool],
         FAST: fx.Constexpr[bool],
+        X_BF16: fx.Constexpr[bool],
+        P_BF16: fx.Constexpr[bool],
+        GO_BF16: fx.Constexpr[bool],
     ):
         oi = fx.block_idx.x * _BLOCK + fx.thread_idx.x
         if oi < n_oi:
             i = oi % in_dim
             trig, ws, bs = _load_circuit_params(
-                TH, PW, PB, oi, REPS, N_TH, TH_P, ANSATZ, PREACTS
+                TH, PW, PB, oi, REPS, N_TH, TH_P, ANSATZ, PREACTS, P_BF16
             )
             zero = fx.Float32(0.0)
             g_th = [[zero for _ in layer] for layer in trig]
@@ -339,11 +351,12 @@ if _FLYDSL_KERNELS_AVAILABLE:
 
             b_start, b_end = _batch_range(batch, b_chunk)
             for b in range(b_start, b_end):
-                x = X[fx.Int64(b) * in_dim + i]
+                x = _load_f32(X, fx.Int64(b) * in_dim + i, X_BF16)
                 out_idx = fx.Int64(b) * n_oi + oi
                 enc = _encodings(x, ws, bs, REPS, PREACTS)
                 psi = _simulate(enc, trig, REPS, ANSATZ)
-                adj = _measure_adjoint(psi, GO[out_idx], ANSATZ, FAST)
+                go = _load_f32(GO, out_idx, GO_BF16)
+                adj = _measure_adjoint(psi, go, ANSATZ, FAST)
                 g_x = zero
 
                 # Reverse sweep: at each gate take the parameter gradient from
@@ -412,12 +425,16 @@ if _FLYDSL_KERNELS_AVAILABLE:
 
             # Each batch chunk writes its partial sums to its own row; the host
             # reduces the rows. No atomics: the per-parameter atomic adds of
-            # thousands of chunks serialized on the same addresses.
+            # thousands of chunks serialized on the same addresses. Theta
+            # entries no gate reads get an explicit zero, so the buffer needs
+            # no zero-fill.
             row = fx.Int64(fx.block_idx.y) * n_oi + oi
             th_base = row * N_TH
             for l in range_constexpr(len(g_th)):
                 for p in range_constexpr(len(g_th[l])):
                     GT[th_base + (l * TH_P + p)] = g_th[l][p]
+                for p in range_constexpr(len(g_th[l]), TH_P):
+                    GT[th_base + (l * TH_P + p)] = zero
             if const_expr(PREACTS):
                 pw_base = row * REPS
                 for l in range_constexpr(REPS):
@@ -443,6 +460,7 @@ if _FLYDSL_KERNELS_AVAILABLE:
         PREACTS: fx.Constexpr[bool],
         FAST: fx.Constexpr[bool],
         X_BF16: fx.Constexpr[bool],
+        P_BF16: fx.Constexpr[bool],
         OUT_BF16: fx.Constexpr[bool],
         stream: fx.Stream = fx.Stream(None),
     ):
@@ -463,6 +481,7 @@ if _FLYDSL_KERNELS_AVAILABLE:
             PREACTS,
             FAST,
             X_BF16,
+            P_BF16,
             OUT_BF16,
         ).launch(
             grid=((n_oi + _BLOCK - 1) // _BLOCK, n_b_chunks, 1),
@@ -492,6 +511,9 @@ if _FLYDSL_KERNELS_AVAILABLE:
         ANSATZ: fx.Constexpr[str],
         PREACTS: fx.Constexpr[bool],
         FAST: fx.Constexpr[bool],
+        X_BF16: fx.Constexpr[bool],
+        P_BF16: fx.Constexpr[bool],
+        GO_BF16: fx.Constexpr[bool],
         stream: fx.Stream = fx.Stream(None),
     ):
         _qkan_backward_kernel(
@@ -514,6 +536,9 @@ if _FLYDSL_KERNELS_AVAILABLE:
             ANSATZ,
             PREACTS,
             FAST,
+            X_BF16,
+            P_BF16,
+            GO_BF16,
         ).launch(
             grid=((n_oi + _BLOCK - 1) // _BLOCK, n_b_chunks, 1),
             block=(_BLOCK, 1, 1),
@@ -531,6 +556,11 @@ def _use_bf16(c_dtype: torch.dtype) -> bool:
     return c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
 
 
+@functools.lru_cache(maxsize=None)
+def _compute_units(device: torch.device) -> int:
+    return torch.cuda.get_device_properties(device).multi_processor_count
+
+
 def _batch_chunks(n_oi: int, batch: int, device: torch.device) -> tuple[int, int]:
     """Split the batch so roughly ``_THREADS_PER_CU`` threads run per CU.
 
@@ -538,7 +568,7 @@ def _batch_chunks(n_oi: int, batch: int, device: torch.device) -> tuple[int, int
     samples and write fewer gradient partial rows; more chunks fill the GPU when
     ``out_dim * in_dim`` alone cannot.
     """
-    n_cu = torch.cuda.get_device_properties(device).multi_processor_count
+    n_cu = _compute_units(device)
     want = max(1, math.ceil(n_cu * _THREADS_PER_CU / max(n_oi, 1)))
     n_chunks = max(1, min(batch, want))
     b_chunk = math.ceil(batch / n_chunks)
@@ -573,12 +603,37 @@ def _check_shapes(x, theta, preacts_w, preacts_b, reps, ansatz, preacts):
             )
 
 
-def _flat_f32(t: torch.Tensor) -> torch.Tensor:
-    return t.to(torch.float32).contiguous().view(-1)
+def _flat(t: torch.Tensor, bf16: bool) -> torch.Tensor:
+    """Flat contiguous bf16 or float32 view (the two dtypes the kernels read)."""
+    return t.to(torch.bfloat16 if bf16 else torch.float32).contiguous().view(-1)
+
+
+# Compiled launchers keyed by launcher and every compile-time argument. The
+# kernels take flat tensors whose sizes are runtime values, so one compiled
+# launcher serves every shape. Calling it directly skips the per-call
+# signature binding and cache-key building of ``@flyc.jit`` dispatch, which
+# costs more host time than the kernel takes on the GPU at QKAN layer sizes.
+_COMPILED: dict = {}
+
+
+def _launch(launcher, constexprs, *args):
+    key = (launcher, constexprs)
+    compiled = _COMPILED.get(key)
+    if compiled is not None:
+        compiled(*args)
+        return
+    # flyc.compile also runs this first launch.
+    compiled = flyc.compile(launcher, *args)
+    if compiled is not None:
+        _COMPILED[key] = compiled
 
 
 def _prepare(x, theta, preacts_w, preacts_b, reps, ansatz, preacts_trainable):
-    """Validate and flatten the circuit parameters for a kernel launch."""
+    """Validate and flatten the circuit parameters for a kernel launch.
+
+    The parameters stay bf16 when all of them are bf16 (the kernels widen on
+    load) and are cast to float32 otherwise.
+    """
     if not _FLYDSL_KERNELS_AVAILABLE:
         raise ImportError(
             "FlyDSL kernels need the flydsl package and a ROCm build of PyTorch."
@@ -590,14 +645,18 @@ def _prepare(x, theta, preacts_w, preacts_b, reps, ansatz, preacts_trainable):
     preacts = preacts_trainable or kind == "rpz"
     _check_shapes(x, theta, preacts_w, preacts_b, reps, kind, preacts)
 
-    th = _flat_f32(theta)
+    p_bf16 = theta.dtype == torch.bfloat16 and (
+        not preacts
+        or (preacts_w.dtype == torch.bfloat16 and preacts_b.dtype == torch.bfloat16)
+    )
+    th = _flat(theta, p_bf16)
     if preacts:
-        pw, pb = _flat_f32(preacts_w), _flat_f32(preacts_b)
+        pw, pb = _flat(preacts_w, p_bf16), _flat(preacts_b, p_bf16)
     else:
         # Unused by the kernel, but every tensor argument needs real storage.
         pw = pb = th
     n_th = theta.shape[2] * theta.shape[3]
-    return kind, preacts, th, pw, pb, n_th, theta.shape[3]
+    return kind, preacts, th, pw, pb, n_th, theta.shape[3], p_bf16
 
 
 def flydsl_forward(
@@ -628,7 +687,7 @@ def flydsl_forward(
     Returns:
         (batch, out_dim, in_dim) in float32 or bfloat16.
     """
-    kind, preacts, th, pw, pb, n_th, th_p = _prepare(
+    kind, preacts, th, pw, pb, n_th, th_p, p_bf16 = _prepare(
         x, theta, preacts_w, preacts_b, reps, ansatz, preacts_trainable
     )
     batch, in_dim = x.shape
@@ -636,7 +695,6 @@ def flydsl_forward(
     n_oi = out_dim * in_dim
     out_bf16 = _use_bf16(c_dtype)
     x_bf16 = x.dtype == torch.bfloat16
-    xf = x.contiguous().view(-1) if x_bf16 else _flat_f32(x)
 
     out = torch.empty(
         batch,
@@ -648,8 +706,21 @@ def flydsl_forward(
     if out.numel() == 0:
         return out
     b_chunk, n_b_chunks = _batch_chunks(n_oi, batch, x.device)
-    _launch_forward(
-        xf,
+    constexprs = (
+        reps,
+        n_th,
+        th_p,
+        kind,
+        preacts,
+        fast_measure,
+        x_bf16,
+        p_bf16,
+        out_bf16,
+    )
+    _launch(
+        _launch_forward,
+        constexprs,
+        _flat(x, x_bf16),
         th,
         pw,
         pb,
@@ -659,15 +730,8 @@ def flydsl_forward(
         n_oi,
         b_chunk,
         n_b_chunks,
-        reps,
-        n_th,
-        th_p,
-        kind,
-        preacts,
-        fast_measure,
-        x_bf16,
-        out_bf16,
-        stream=torch.cuda.current_stream(x.device),
+        *constexprs,
+        torch.cuda.current_stream(x.device),
     )
     return out
 
@@ -688,7 +752,7 @@ def flydsl_backward(
     Returns ``(grad_x, grad_theta, grad_preacts_w, grad_preacts_b)``; the
     preacts gradients are ``None`` when the kernel does not read the preacts.
     """
-    kind, preacts, th, pw, pb, n_th, th_p = _prepare(
+    kind, preacts, th, pw, pb, n_th, th_p, p_bf16 = _prepare(
         x, theta, preacts_w, preacts_b, reps, ansatz, preacts_trainable
     )
     batch, in_dim = x.shape
@@ -701,18 +765,19 @@ def flydsl_backward(
         grad_theta = torch.zeros(theta.shape, device=device, dtype=torch.float32)
         if not preacts:
             return grad_x, grad_theta, None, None
-        grad_pw = torch.zeros(preacts_w.shape, device=device, dtype=torch.float32)
-        return grad_x, grad_theta, grad_pw, torch.zeros_like(grad_pw)
+        zeros_pw = torch.zeros(preacts_w.shape, device=device, dtype=torch.float32)
+        return grad_x, grad_theta, zeros_pw, torch.zeros_like(zeros_pw)
 
+    x_bf16 = x.dtype == torch.bfloat16
+    go_bf16 = grad_output.dtype == torch.bfloat16
     # Per-(b, o, i) contributions to grad_x, summed over o below.
     grad_x_part = torch.empty(
         batch, out_dim, in_dim, device=device, dtype=torch.float32
     )
     b_chunk, n_b_chunks = _batch_chunks(n_oi, batch, device)
     # One row of parameter-gradient partial sums per batch chunk, summed over
-    # chunks below. Zeroed because theta entries a gate does not use are
-    # never written.
-    theta_part = torch.zeros(
+    # chunks below.
+    theta_part = torch.empty(
         (n_b_chunks, *theta.shape), device=device, dtype=torch.float32
     )
     pw_part: torch.Tensor | None = None
@@ -722,12 +787,25 @@ def flydsl_backward(
             (n_b_chunks, *preacts_w.shape), device=device, dtype=torch.float32
         )
         pb_part = torch.empty_like(pw_part)
-    _launch_backward(
-        _flat_f32(x),
+    constexprs = (
+        reps,
+        n_th,
+        th_p,
+        kind,
+        preacts,
+        fast_measure,
+        x_bf16,
+        p_bf16,
+        go_bf16,
+    )
+    _launch(
+        _launch_backward,
+        constexprs,
+        _flat(x, x_bf16),
         th,
         pw,
         pb,
-        _flat_f32(grad_output),
+        _flat(grad_output, go_bf16),
         theta_part.view(-1),
         pw_part.view(-1) if pw_part is not None else theta_part.view(-1),
         pb_part.view(-1) if pb_part is not None else theta_part.view(-1),
@@ -737,13 +815,8 @@ def flydsl_backward(
         n_oi,
         b_chunk,
         n_b_chunks,
-        reps,
-        n_th,
-        th_p,
-        kind,
-        preacts,
-        fast_measure,
-        stream=torch.cuda.current_stream(device),
+        *constexprs,
+        torch.cuda.current_stream(device),
     )
     grad_pw = pw_part.sum(dim=0) if pw_part is not None else None
     grad_pb = pb_part.sum(dim=0) if pb_part is not None else None
