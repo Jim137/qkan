@@ -34,9 +34,10 @@ Each thread owns one ``(o, i)`` circuit and a contiguous chunk of the batch:
     un-applying each gate to recover the state it saw (and applying the same
     inverse to the adjoint). All of it stays in registers.
   * theta / preacts gradients are summed in registers over the batch chunk and
-    flushed with one atomic add per parameter per thread. ``grad_x`` is written
-    per ``(b, o, i)`` and reduced over ``o`` with a single ``torch.sum``,
-    which keeps it deterministic.
+    written to that chunk's own row of a partial-sum buffer, which is reduced
+    over chunks with a single ``torch.sum``. ``grad_x`` is written per
+    ``(b, o, i)`` and reduced over ``o`` the same way. No atomics are used, so
+    the backward pass is deterministic.
 
 All math runs in float32. The forward output is float32 or bfloat16 (bf16 I/O
 halves the dominant ``(batch, out_dim, in_dim)`` write); the backward pass
@@ -409,17 +410,19 @@ if _FLYDSL_KERNELS_AVAILABLE:
 
                 GXP[out_idx] = g_x
 
-            th_base = fx.Int64(oi) * N_TH
+            # Each batch chunk writes its partial sums to its own row; the host
+            # reduces the rows. No atomics: the per-parameter atomic adds of
+            # thousands of chunks serialized on the same addresses.
+            row = fx.Int64(fx.block_idx.y) * n_oi + oi
+            th_base = row * N_TH
             for l in range_constexpr(len(g_th)):
                 for p in range_constexpr(len(g_th[l])):
-                    fx.atomic_add(
-                        fx.get_iter(GT) + (th_base + (l * TH_P + p)), g_th[l][p]
-                    )
+                    GT[th_base + (l * TH_P + p)] = g_th[l][p]
             if const_expr(PREACTS):
-                pw_base = fx.Int64(oi) * REPS
+                pw_base = row * REPS
                 for l in range_constexpr(REPS):
-                    fx.atomic_add(fx.get_iter(GW) + (pw_base + l), g_w[l])
-                    fx.atomic_add(fx.get_iter(GB) + (pw_base + l), g_b[l])
+                    GW[pw_base + l] = g_w[l]
+                    GB[pw_base + l] = g_b[l]
 
     @flyc.jit
     def _launch_forward(
@@ -532,7 +535,7 @@ def _batch_chunks(n_oi: int, batch: int, device: torch.device) -> tuple[int, int
     """Split the batch so roughly ``_THREADS_PER_CU`` threads run per CU.
 
     Fewer, longer chunks reuse the per-thread trig registers across more
-    samples and issue fewer gradient atomics; more chunks fill the GPU when
+    samples and write fewer gradient partial rows; more chunks fill the GPU when
     ``out_dim * in_dim`` alone cannot.
     """
     n_cu = torch.cuda.get_device_properties(device).multi_processor_count
@@ -693,30 +696,41 @@ def flydsl_backward(
     n_oi = out_dim * in_dim
     device = x.device
 
-    grad_theta = torch.zeros(theta.shape, device=device, dtype=torch.float32)
-    grad_pw: torch.Tensor | None = None
-    grad_pb: torch.Tensor | None = None
-    if preacts:
-        grad_pw = torch.zeros(preacts_w.shape, device=device, dtype=torch.float32)
-        grad_pb = torch.zeros(preacts_b.shape, device=device, dtype=torch.float32)
     if batch == 0 or n_oi == 0:
         grad_x = torch.zeros(batch, in_dim, device=device, dtype=torch.float32)
-        return grad_x, grad_theta, grad_pw, grad_pb
+        grad_theta = torch.zeros(theta.shape, device=device, dtype=torch.float32)
+        if not preacts:
+            return grad_x, grad_theta, None, None
+        grad_pw = torch.zeros(preacts_w.shape, device=device, dtype=torch.float32)
+        return grad_x, grad_theta, grad_pw, torch.zeros_like(grad_pw)
 
     # Per-(b, o, i) contributions to grad_x, summed over o below.
     grad_x_part = torch.empty(
         batch, out_dim, in_dim, device=device, dtype=torch.float32
     )
     b_chunk, n_b_chunks = _batch_chunks(n_oi, batch, device)
+    # One row of parameter-gradient partial sums per batch chunk, summed over
+    # chunks below. Zeroed because theta entries a gate does not use are
+    # never written.
+    theta_part = torch.zeros(
+        (n_b_chunks, *theta.shape), device=device, dtype=torch.float32
+    )
+    pw_part: torch.Tensor | None = None
+    pb_part: torch.Tensor | None = None
+    if preacts:
+        pw_part = torch.empty(
+            (n_b_chunks, *preacts_w.shape), device=device, dtype=torch.float32
+        )
+        pb_part = torch.empty_like(pw_part)
     _launch_backward(
         _flat_f32(x),
         th,
         pw,
         pb,
         _flat_f32(grad_output),
-        grad_theta.view(-1),
-        grad_pw.view(-1) if grad_pw is not None else grad_theta.view(-1),
-        grad_pb.view(-1) if grad_pb is not None else grad_theta.view(-1),
+        theta_part.view(-1),
+        pw_part.view(-1) if pw_part is not None else theta_part.view(-1),
+        pb_part.view(-1) if pb_part is not None else theta_part.view(-1),
         grad_x_part.view(-1),
         batch,
         in_dim,
@@ -731,4 +745,6 @@ def flydsl_backward(
         fast_measure,
         stream=torch.cuda.current_stream(device),
     )
-    return grad_x_part.sum(dim=1), grad_theta, grad_pw, grad_pb
+    grad_pw = pw_part.sum(dim=0) if pw_part is not None else None
+    grad_pb = pb_part.sum(dim=0) if pb_part is not None else None
+    return grad_x_part.sum(dim=1), theta_part.sum(dim=0), grad_pw, grad_pb
