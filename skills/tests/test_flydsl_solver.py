@@ -53,8 +53,8 @@ def _inputs(ansatz, batch=37, in_dim=5, out_dim=3, reps=3, seed=1):
     )
 
 
-def _run(solver, ansatz, preacts, fast, dtype, reps=3):
-    x, theta, pw, pb = _inputs(ansatz, reps=reps)
+def _run(solver, ansatz, preacts, fast, dtype, reps=3, out_dim=3, in_dim=5):
+    x, theta, pw, pb = _inputs(ansatz, reps=reps, out_dim=out_dim, in_dim=in_dim)
     out = solver(
         x,
         theta,
@@ -102,6 +102,22 @@ def test_reps_extremes(reps):
 
     expected = _run(torch_exact_solver, "pz", True, True, torch.complex64, reps)
     actual = _run(flydsl_exact_solver, "pz", True, True, torch.float32, reps)
+    _assert_close(expected, actual, TOL)
+
+
+@pytest.mark.parametrize(
+    "ansatz,preacts,reps,out_dim",
+    list(itertools.product(["pz", "rpz", "real"], [False, True], [1, 3], [32, 48])),
+)
+def test_output_blocking(ansatz, preacts, reps, out_dim):
+    """Threads running several outputs: with in_dim 16, out_dim 32 / 48 give
+    4 circuits per thread forward and 1-8 backward, depending on the thetas
+    per circuit."""
+    from qkan.solver import flydsl_exact_solver
+
+    shape = dict(reps=reps, out_dim=out_dim, in_dim=16)
+    expected = _run(torch_exact_solver, ansatz, preacts, True, torch.complex64, **shape)
+    actual = _run(flydsl_exact_solver, ansatz, preacts, True, torch.float32, **shape)
     _assert_close(expected, actual, TOL)
 
 

@@ -75,8 +75,19 @@ _INV_SQRT2 = 0.7071067811865476
 # Threads per workgroup: one CDNA wavefront (wave64).
 _BLOCK = 64
 
-# Threads to keep in flight per compute unit before batch chunks grow longer.
-_THREADS_PER_CU = 2048
+# Threads to keep in flight per compute unit before batch chunks grow longer,
+# for the forward and backward kernels. Tuned on MI300X (sweep over 256-8192
+# for QKAN shapes from 16x16 to 256x256, real / pz / rpz, reps 1-3).
+_THREADS_PER_CU_FWD = 1024
+_THREADS_PER_CU_BWD = 1024
+
+# Most circuits (outputs o) one thread runs for its input index i when the
+# encoding depends on x alone, so they share one sincos and one x load. The
+# backward pass keeps a gradient accumulator per theta, so its block is also
+# capped at _O_BLOCK_BWD_THETAS thetas per thread to avoid register spills.
+_MAX_O_BLOCK_FWD = 4
+_MAX_O_BLOCK_BWD = 8
+_O_BLOCK_BWD_THETAS = 8
 
 # Canonical ansatz names used as the kernels' compile-time switch.
 _ANSATZ_CANONICAL = {
@@ -276,6 +287,14 @@ if _FLYDSL_KERNELS_AVAILABLE:
         b_end = fx.min(b_start + b_chunk, batch)
         return b_start, b_end
 
+    def _thread_circuits(in_dim, O_BLK):
+        """This thread's input index ``i`` and the flat ``(o, i)`` index of each
+        of its ``O_BLK`` circuits (outputs ``o0 .. o0 + O_BLK - 1``)."""
+        t = fx.block_idx.x * _BLOCK + fx.thread_idx.x
+        i = t % in_dim
+        o0 = (t // in_dim) * O_BLK
+        return t, i, [(o0 + k) * in_dim + i for k in range_constexpr(O_BLK)]
+
     @flyc.kernel
     def _qkan_forward_kernel(
         X: fx.Tensor,
@@ -286,6 +305,7 @@ if _FLYDSL_KERNELS_AVAILABLE:
         batch: fx.Int32,
         in_dim: fx.Int32,
         n_oi: fx.Int32,
+        n_threads: fx.Int32,
         b_chunk: fx.Int32,
         REPS: fx.Constexpr[int],
         N_TH: fx.Constexpr[int],
@@ -296,22 +316,29 @@ if _FLYDSL_KERNELS_AVAILABLE:
         X_BF16: fx.Constexpr[bool],
         P_BF16: fx.Constexpr[bool],
         OUT_BF16: fx.Constexpr[bool],
+        O_BLK: fx.Constexpr[int],
     ):
-        oi = fx.block_idx.x * _BLOCK + fx.thread_idx.x
-        if oi < n_oi:
-            i = oi % in_dim
-            trig, ws, bs = _load_circuit_params(
-                TH, PW, PB, oi, REPS, N_TH, TH_P, ANSATZ, PREACTS, P_BF16
-            )
+        t, i, ois = _thread_circuits(in_dim, O_BLK)
+        if t < n_threads:
+            params = [
+                _load_circuit_params(
+                    TH, PW, PB, ois[k], REPS, N_TH, TH_P, ANSATZ, PREACTS, P_BF16
+                )
+                for k in range_constexpr(O_BLK)
+            ]
             b_start, b_end = _batch_range(batch, b_chunk)
             for b in range(b_start, b_end):
                 x = _load_f32(X, fx.Int64(b) * in_dim + i, X_BF16)
-                enc = _encodings(x, ws, bs, REPS, PREACTS)
-                state = _simulate(enc, trig, REPS, ANSATZ)
-                result = _measure(state, ANSATZ, FAST)
-                if const_expr(OUT_BF16):
-                    result = result.to(fx.BFloat16)
-                OUT[fx.Int64(b) * n_oi + oi] = result
+                # O_BLK > 1 only without preacts, where the encoding depends on
+                # x alone: one sincos serves all of this thread's circuits.
+                enc = _encodings(x, params[0][1], params[0][2], REPS, PREACTS)
+                out_base = fx.Int64(b) * n_oi
+                for k in range_constexpr(O_BLK):
+                    state = _simulate(enc, params[k][0], REPS, ANSATZ)
+                    result = _measure(state, ANSATZ, FAST)
+                    if const_expr(OUT_BF16):
+                        result = result.to(fx.BFloat16)
+                    OUT[out_base + ois[k]] = result
 
     @flyc.kernel
     def _qkan_backward_kernel(
@@ -327,6 +354,7 @@ if _FLYDSL_KERNELS_AVAILABLE:
         batch: fx.Int32,
         in_dim: fx.Int32,
         n_oi: fx.Int32,
+        n_threads: fx.Int32,
         b_chunk: fx.Int32,
         REPS: fx.Constexpr[int],
         N_TH: fx.Constexpr[int],
@@ -337,109 +365,130 @@ if _FLYDSL_KERNELS_AVAILABLE:
         X_BF16: fx.Constexpr[bool],
         P_BF16: fx.Constexpr[bool],
         GO_BF16: fx.Constexpr[bool],
+        O_BLK: fx.Constexpr[int],
     ):
-        oi = fx.block_idx.x * _BLOCK + fx.thread_idx.x
-        if oi < n_oi:
-            i = oi % in_dim
-            trig, ws, bs = _load_circuit_params(
-                TH, PW, PB, oi, REPS, N_TH, TH_P, ANSATZ, PREACTS, P_BF16
-            )
+        t, i, ois = _thread_circuits(in_dim, O_BLK)
+        if t < n_threads:
+            params = [
+                _load_circuit_params(
+                    TH, PW, PB, ois[k], REPS, N_TH, TH_P, ANSATZ, PREACTS, P_BF16
+                )
+                for k in range_constexpr(O_BLK)
+            ]
             zero = fx.Float32(0.0)
-            g_th = [[zero for _ in layer] for layer in trig]
-            g_w = [zero for _ in range_constexpr(len(ws))]
-            g_b = [zero for _ in range_constexpr(len(ws))]
+            g_th = [
+                [[zero for _ in layer] for layer in params[k][0]]
+                for k in range_constexpr(O_BLK)
+            ]
+            g_w = [
+                [zero for _ in range_constexpr(len(params[k][1]))]
+                for k in range_constexpr(O_BLK)
+            ]
+            g_b = [
+                [zero for _ in range_constexpr(len(params[k][1]))]
+                for k in range_constexpr(O_BLK)
+            ]
 
             b_start, b_end = _batch_range(batch, b_chunk)
             for b in range(b_start, b_end):
                 x = _load_f32(X, fx.Int64(b) * in_dim + i, X_BF16)
-                out_idx = fx.Int64(b) * n_oi + oi
-                enc = _encodings(x, ws, bs, REPS, PREACTS)
-                psi = _simulate(enc, trig, REPS, ANSATZ)
-                go = _load_f32(GO, out_idx, GO_BF16)
-                adj = _measure_adjoint(psi, go, ANSATZ, FAST)
+                out_base = fx.Int64(b) * n_oi
+                # Shared by the O_BLK circuits (O_BLK > 1 only without preacts).
+                enc = _encodings(x, params[0][1], params[0][2], REPS, PREACTS)
+                # This thread's grad_x contribution, summed over its circuits.
                 g_x = zero
+                for k in range_constexpr(O_BLK):
+                    trig = params[k][0]
+                    ws = params[k][1]
+                    psi = _simulate(enc, trig, REPS, ANSATZ)
+                    go = _load_f32(GO, out_base + ois[k], GO_BF16)
+                    adj = _measure_adjoint(psi, go, ANSATZ, FAST)
 
-                # Reverse sweep: at each gate take the parameter gradient from
-                # the post-gate state, then un-apply the gate to state and adjoint.
-                if const_expr(ANSATZ == "real"):
-                    p0, p1 = psi
-                    a0, a1 = adj
-                    for l in range_constexpr(REPS - 1, -1, -1):
-                        g_enc = _ry_real_grad(a0, a1, p0, p1)
-                        p0, p1 = _ry_real_inv(p0, p1, *enc[l])
-                        a0, a1 = _ry_real_inv(a0, a1, *enc[l])
-                        if const_expr(PREACTS):
-                            g_w[l] = g_w[l] + g_enc * x
-                            g_b[l] = g_b[l] + g_enc
-                            g_x = g_x + g_enc * ws[l]
-                        else:
-                            g_x = g_x + g_enc
-                        p1 = 0.0 - p1  # Z
-                        a1 = 0.0 - a1
-                        g_th[l][0] = g_th[l][0] + _ry_real_grad(a0, a1, p0, p1)
-                        p0, p1 = _ry_real_inv(p0, p1, *trig[l][0])
-                        a0, a1 = _ry_real_inv(a0, a1, *trig[l][0])
-                        p0, p1 = p1, p0  # X
-                        a0, a1 = a1, a0
-                else:
-                    # The final layer is indexed as [-1]: a name inside a
-                    # subscript-assignment target (g_th[REPS]) would be
-                    # treated by the AST rewriter as loop state and lose its
-                    # compile-time value.
-                    if const_expr(ANSATZ == "pz"):
-                        g_th[-1][1] = g_th[-1][1] + _ry_grad(adj, psi)
-                        psi = _ry_inv(*psi, *trig[-1][1])
-                        adj = _ry_inv(*adj, *trig[-1][1])
-                        g_th[-1][0] = g_th[-1][0] + _rz_grad(adj, psi)
-                        psi = _rz_inv(*psi, *trig[-1][0])
-                        adj = _rz_inv(*adj, *trig[-1][0])
-                    else:  # rpz
-                        g_th[-1][0] = g_th[-1][0] + _ry_grad(adj, psi)
-                        psi = _ry_inv(*psi, *trig[-1][0])
-                        adj = _ry_inv(*adj, *trig[-1][0])
-
-                    for l in range_constexpr(REPS - 1, -1, -1):
-                        g_enc = _rz_grad(adj, psi)
-                        psi = _rz_inv(*psi, *enc[l])
-                        adj = _rz_inv(*adj, *enc[l])
-                        if const_expr(PREACTS):
-                            g_w[l] = g_w[l] + g_enc * x
-                            g_b[l] = g_b[l] + g_enc
-                            g_x = g_x + g_enc * ws[l]
-                        else:
-                            g_x = g_x + g_enc
-
+                    # Reverse sweep: at each gate take the parameter gradient
+                    # from the post-gate state, then un-apply the gate to state
+                    # and adjoint.
+                    if const_expr(ANSATZ == "real"):
+                        p0, p1 = psi
+                        a0, a1 = adj
+                        for l in range_constexpr(REPS - 1, -1, -1):
+                            g_enc = _ry_real_grad(a0, a1, p0, p1)
+                            p0, p1 = _ry_real_inv(p0, p1, *enc[l])
+                            a0, a1 = _ry_real_inv(a0, a1, *enc[l])
+                            if const_expr(PREACTS):
+                                g_w[k][l] = g_w[k][l] + g_enc * x
+                                g_b[k][l] = g_b[k][l] + g_enc
+                                g_x = g_x + g_enc * ws[l]
+                            else:
+                                g_x = g_x + g_enc
+                            p1 = 0.0 - p1  # Z
+                            a1 = 0.0 - a1
+                            g_th[k][l][0] = g_th[k][l][0] + _ry_real_grad(
+                                a0, a1, p0, p1
+                            )
+                            p0, p1 = _ry_real_inv(p0, p1, *trig[l][0])
+                            a0, a1 = _ry_real_inv(a0, a1, *trig[l][0])
+                            p0, p1 = p1, p0  # X
+                            a0, a1 = a1, a0
+                    else:
+                        # The final layer is indexed as [-1]: a name inside a
+                        # subscript-assignment target (g_th[k][REPS]) would be
+                        # treated by the AST rewriter as loop state and lose its
+                        # compile-time value.
                         if const_expr(ANSATZ == "pz"):
-                            g_th[l][1] = g_th[l][1] + _ry_grad(adj, psi)
-                            psi = _ry_inv(*psi, *trig[l][1])
-                            adj = _ry_inv(*adj, *trig[l][1])
-                            g_th[l][0] = g_th[l][0] + _rz_grad(adj, psi)
-                            psi = _rz_inv(*psi, *trig[l][0])
-                            adj = _rz_inv(*adj, *trig[l][0])
+                            g_th[k][-1][1] = g_th[k][-1][1] + _ry_grad(adj, psi)
+                            psi = _ry_inv(*psi, *trig[-1][1])
+                            adj = _ry_inv(*adj, *trig[-1][1])
+                            g_th[k][-1][0] = g_th[k][-1][0] + _rz_grad(adj, psi)
+                            psi = _rz_inv(*psi, *trig[-1][0])
+                            adj = _rz_inv(*adj, *trig[-1][0])
                         else:  # rpz
-                            g_th[l][0] = g_th[l][0] + _ry_grad(adj, psi)
-                            psi = _ry_inv(*psi, *trig[l][0])
-                            adj = _ry_inv(*adj, *trig[l][0])
+                            g_th[k][-1][0] = g_th[k][-1][0] + _ry_grad(adj, psi)
+                            psi = _ry_inv(*psi, *trig[-1][0])
+                            adj = _ry_inv(*adj, *trig[-1][0])
 
-                GXP[out_idx] = g_x
+                        for l in range_constexpr(REPS - 1, -1, -1):
+                            g_enc = _rz_grad(adj, psi)
+                            psi = _rz_inv(*psi, *enc[l])
+                            adj = _rz_inv(*adj, *enc[l])
+                            if const_expr(PREACTS):
+                                g_w[k][l] = g_w[k][l] + g_enc * x
+                                g_b[k][l] = g_b[k][l] + g_enc
+                                g_x = g_x + g_enc * ws[l]
+                            else:
+                                g_x = g_x + g_enc
+
+                            if const_expr(ANSATZ == "pz"):
+                                g_th[k][l][1] = g_th[k][l][1] + _ry_grad(adj, psi)
+                                psi = _ry_inv(*psi, *trig[l][1])
+                                adj = _ry_inv(*adj, *trig[l][1])
+                                g_th[k][l][0] = g_th[k][l][0] + _rz_grad(adj, psi)
+                                psi = _rz_inv(*psi, *trig[l][0])
+                                adj = _rz_inv(*adj, *trig[l][0])
+                            else:  # rpz
+                                g_th[k][l][0] = g_th[k][l][0] + _ry_grad(adj, psi)
+                                psi = _ry_inv(*psi, *trig[l][0])
+                                adj = _ry_inv(*adj, *trig[l][0])
+
+                GXP[fx.Int64(b) * n_threads + t] = g_x
 
             # Each batch chunk writes its partial sums to its own row; the host
             # reduces the rows. No atomics: the per-parameter atomic adds of
             # thousands of chunks serialized on the same addresses. Theta
             # entries no gate reads get an explicit zero, so the buffer needs
             # no zero-fill.
-            row = fx.Int64(fx.block_idx.y) * n_oi + oi
-            th_base = row * N_TH
-            for l in range_constexpr(len(g_th)):
-                for p in range_constexpr(len(g_th[l])):
-                    GT[th_base + (l * TH_P + p)] = g_th[l][p]
-                for p in range_constexpr(len(g_th[l]), TH_P):
-                    GT[th_base + (l * TH_P + p)] = zero
-            if const_expr(PREACTS):
-                pw_base = row * REPS
-                for l in range_constexpr(REPS):
-                    GW[pw_base + l] = g_w[l]
-                    GB[pw_base + l] = g_b[l]
+            row_base = fx.Int64(fx.block_idx.y) * n_oi
+            for k in range_constexpr(O_BLK):
+                th_base = (row_base + ois[k]) * N_TH
+                for l in range_constexpr(len(g_th[k])):
+                    for p in range_constexpr(len(g_th[k][l])):
+                        GT[th_base + (l * TH_P + p)] = g_th[k][l][p]
+                    for p in range_constexpr(len(g_th[k][l]), TH_P):
+                        GT[th_base + (l * TH_P + p)] = zero
+                if const_expr(PREACTS):
+                    pw_base = (row_base + ois[k]) * REPS
+                    for l in range_constexpr(REPS):
+                        GW[pw_base + l] = g_w[k][l]
+                        GB[pw_base + l] = g_b[k][l]
 
     @flyc.jit
     def _launch_forward(
@@ -451,6 +500,7 @@ if _FLYDSL_KERNELS_AVAILABLE:
         batch: fx.Int32,
         in_dim: fx.Int32,
         n_oi: fx.Int32,
+        n_threads: fx.Int32,
         b_chunk: fx.Int32,
         n_b_chunks: fx.Int32,
         REPS: fx.Constexpr[int],
@@ -462,6 +512,7 @@ if _FLYDSL_KERNELS_AVAILABLE:
         X_BF16: fx.Constexpr[bool],
         P_BF16: fx.Constexpr[bool],
         OUT_BF16: fx.Constexpr[bool],
+        O_BLK: fx.Constexpr[int],
         stream: fx.Stream = fx.Stream(None),
     ):
         _qkan_forward_kernel(
@@ -473,6 +524,7 @@ if _FLYDSL_KERNELS_AVAILABLE:
             batch,
             in_dim,
             n_oi,
+            n_threads,
             b_chunk,
             REPS,
             N_TH,
@@ -483,8 +535,9 @@ if _FLYDSL_KERNELS_AVAILABLE:
             X_BF16,
             P_BF16,
             OUT_BF16,
+            O_BLK,
         ).launch(
-            grid=((n_oi + _BLOCK - 1) // _BLOCK, n_b_chunks, 1),
+            grid=((n_threads + _BLOCK - 1) // _BLOCK, n_b_chunks, 1),
             block=(_BLOCK, 1, 1),
             stream=stream,
         )
@@ -503,6 +556,7 @@ if _FLYDSL_KERNELS_AVAILABLE:
         batch: fx.Int32,
         in_dim: fx.Int32,
         n_oi: fx.Int32,
+        n_threads: fx.Int32,
         b_chunk: fx.Int32,
         n_b_chunks: fx.Int32,
         REPS: fx.Constexpr[int],
@@ -514,6 +568,7 @@ if _FLYDSL_KERNELS_AVAILABLE:
         X_BF16: fx.Constexpr[bool],
         P_BF16: fx.Constexpr[bool],
         GO_BF16: fx.Constexpr[bool],
+        O_BLK: fx.Constexpr[int],
         stream: fx.Stream = fx.Stream(None),
     ):
         _qkan_backward_kernel(
@@ -529,6 +584,7 @@ if _FLYDSL_KERNELS_AVAILABLE:
             batch,
             in_dim,
             n_oi,
+            n_threads,
             b_chunk,
             REPS,
             N_TH,
@@ -539,8 +595,9 @@ if _FLYDSL_KERNELS_AVAILABLE:
             X_BF16,
             P_BF16,
             GO_BF16,
+            O_BLK,
         ).launch(
-            grid=((n_oi + _BLOCK - 1) // _BLOCK, n_b_chunks, 1),
+            grid=((n_threads + _BLOCK - 1) // _BLOCK, n_b_chunks, 1),
             block=(_BLOCK, 1, 1),
             stream=stream,
         )
@@ -561,15 +618,29 @@ def _compute_units(device: torch.device) -> int:
     return torch.cuda.get_device_properties(device).multi_processor_count
 
 
-def _batch_chunks(n_oi: int, batch: int, device: torch.device) -> tuple[int, int]:
-    """Split the batch so roughly ``_THREADS_PER_CU`` threads run per CU.
+def _o_block(out_dim: int, in_dim: int, preacts: bool, max_blk: int) -> int:
+    """Circuits per thread: the largest power of two up to ``max_blk`` that
+    divides ``out_dim`` and still leaves a full wavefront of threads per batch
+    chunk; 1 when the encoding differs per (o, i)."""
+    if preacts:
+        return 1
+    o_blk = 1 << (max(1, max_blk).bit_length() - 1)
+    while o_blk > 1 and (out_dim % o_blk or out_dim // o_blk * in_dim < _BLOCK):
+        o_blk //= 2
+    return o_blk
+
+
+def _batch_chunks(
+    n_threads: int, batch: int, device: torch.device, threads_per_cu: int
+) -> tuple[int, int]:
+    """Split the batch so roughly ``threads_per_cu`` threads run per CU.
 
     Fewer, longer chunks reuse the per-thread trig registers across more
     samples and write fewer gradient partial rows; more chunks fill the GPU when
-    ``out_dim * in_dim`` alone cannot.
+    the ``n_threads`` threads of one chunk alone cannot.
     """
     n_cu = _compute_units(device)
-    want = max(1, math.ceil(n_cu * _THREADS_PER_CU / max(n_oi, 1)))
+    want = max(1, math.ceil(n_cu * threads_per_cu / max(n_threads, 1)))
     n_chunks = max(1, min(batch, want))
     b_chunk = math.ceil(batch / n_chunks)
     return b_chunk, math.ceil(batch / b_chunk)
@@ -705,7 +776,9 @@ def flydsl_forward(
     )
     if out.numel() == 0:
         return out
-    b_chunk, n_b_chunks = _batch_chunks(n_oi, batch, x.device)
+    o_blk = _o_block(out_dim, in_dim, preacts, _MAX_O_BLOCK_FWD)
+    n_threads = out_dim // o_blk * in_dim
+    b_chunk, n_b_chunks = _batch_chunks(n_threads, batch, x.device, _THREADS_PER_CU_FWD)
     constexprs = (
         reps,
         n_th,
@@ -716,6 +789,7 @@ def flydsl_forward(
         x_bf16,
         p_bf16,
         out_bf16,
+        o_blk,
     )
     _launch(
         _launch_forward,
@@ -728,6 +802,7 @@ def flydsl_forward(
         batch,
         in_dim,
         n_oi,
+        n_threads,
         b_chunk,
         n_b_chunks,
         *constexprs,
@@ -770,11 +845,15 @@ def flydsl_backward(
 
     x_bf16 = x.dtype == torch.bfloat16
     go_bf16 = grad_output.dtype == torch.bfloat16
-    # Per-(b, o, i) contributions to grad_x, summed over o below.
+    max_blk = min(_MAX_O_BLOCK_BWD, max(1, _O_BLOCK_BWD_THETAS // n_th))
+    o_blk = _o_block(out_dim, in_dim, preacts, max_blk)
+    n_threads = out_dim // o_blk * in_dim
+    # grad_x contributions per (b, thread): each thread has already summed
+    # over its o_blk outputs; the rest of the sum over o is done below.
     grad_x_part = torch.empty(
-        batch, out_dim, in_dim, device=device, dtype=torch.float32
+        batch, out_dim // o_blk, in_dim, device=device, dtype=torch.float32
     )
-    b_chunk, n_b_chunks = _batch_chunks(n_oi, batch, device)
+    b_chunk, n_b_chunks = _batch_chunks(n_threads, batch, device, _THREADS_PER_CU_BWD)
     # One row of parameter-gradient partial sums per batch chunk, summed over
     # chunks below.
     theta_part = torch.empty(
@@ -797,6 +876,7 @@ def flydsl_backward(
         x_bf16,
         p_bf16,
         go_bf16,
+        o_blk,
     )
     _launch(
         _launch_backward,
@@ -813,6 +893,7 @@ def flydsl_backward(
         batch,
         in_dim,
         n_oi,
+        n_threads,
         b_chunk,
         n_b_chunks,
         *constexprs,
