@@ -78,11 +78,18 @@ def _pz_encoding_kernel(
     if idx_o >= out_dim:
         return
 
+    # Batch-scaled offsets pass 2^31 elements at realistic sizes, but
+    # tl.program_id is int32, as is any int argument below 2^31 (#31).  b_offs
+    # itself stays small and int32; only its products with a stride are
+    # widened, so no 64-bit vector stays live across the reps loops.  Same
+    # rule in every kernel here.
     b_offs = pid_b * BLOCK_B + tl.arange(0, BLOCK_B)
     b_mask = b_offs < batch_size
 
     x_vals = tl.load(
-        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+        x_ptr + b_offs.to(tl.int64) * stride_x_b + idx_i * stride_x_i,
+        mask=b_mask,
+        other=0.0,
     ).to(tl.float32)
 
     INV_SQRT2: tl.constexpr = 0.7071067811865476
@@ -163,7 +170,9 @@ def _pz_encoding_kernel(
     else:
         result = (r0 * r0 + i0 * i0) - (r1 * r1 + i1 * i1)
 
-    out_offs = b_offs * stride_o_b + idx_o * stride_o_o + idx_i * stride_o_i
+    out_offs = (
+        b_offs.to(tl.int64) * stride_o_b + idx_o * stride_o_o + idx_i * stride_o_i
+    )
     tl.store(out_ptr + out_offs, result, mask=b_mask)
 
 
@@ -300,7 +309,9 @@ def _rpz_encoding_kernel(
     b_mask = b_offs < batch_size
 
     x_vals = tl.load(
-        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+        x_ptr + b_offs.to(tl.int64) * stride_x_b + idx_i * stride_x_i,
+        mask=b_mask,
+        other=0.0,
     ).to(tl.float32)
 
     INV_SQRT2: tl.constexpr = 0.7071067811865476
@@ -355,7 +366,9 @@ def _rpz_encoding_kernel(
     else:
         result = (r0 * r0 + i0 * i0) - (r1 * r1 + i1 * i1)
 
-    out_offs = b_offs * stride_o_b + idx_o * stride_o_o + idx_i * stride_o_i
+    out_offs = (
+        b_offs.to(tl.int64) * stride_o_b + idx_o * stride_o_o + idx_i * stride_o_i
+    )
     tl.store(out_ptr + out_offs, result, mask=b_mask)
 
 
@@ -502,12 +515,14 @@ def _rpz_encoding_backward_kernel(
     b_range = tl.arange(0, BLOCK_B)
 
     x_vals = tl.load(
-        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+        x_ptr + b_offs.to(tl.int64) * stride_x_b + idx_i * stride_x_i,
+        mask=b_mask,
+        other=0.0,
     ).to(tl.float32)
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     pw_base = pw_ptr + idx_o * stride_pw_o + idx_i * stride_pw_i
     pb_base = pb_ptr + idx_o * stride_pb_o + idx_i * stride_pb_i
-    program_idx = pid_oi * tl.cdiv(batch_size, BLOCK_B) + pid_b
+    program_idx = pid_oi.to(tl.int64) * tl.cdiv(batch_size, BLOCK_B) + pid_b
     FP8_INV = 1.0 / FP8_PRESCALE
     states_base = states_ptr + program_idx * stride_s_n
 
@@ -645,7 +660,10 @@ def _rpz_encoding_backward_kernel(
 
     # ── Phase 2: Measurement gradient ──
     go = tl.load(
-        grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i,
+        grad_out_ptr
+        + b_offs.to(tl.int64) * stride_go_b
+        + idx_o * stride_go_o
+        + idx_i * stride_go_i,
         mask=b_mask,
         other=0.0,
     ).to(tl.float32)
@@ -869,7 +887,7 @@ def _rpz_encoding_backward_kernel(
         nai1 = -s * ai0 + c * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-    gx_offs = grad_x_ptr + b_offs * stride_gx_b + idx_i * stride_gx_i
+    gx_offs = grad_x_ptr + b_offs.to(tl.int64) * stride_gx_b + idx_i * stride_gx_i
     tl.atomic_add(gx_offs, grad_x_local, mask=b_mask)
 
 
@@ -1071,7 +1089,9 @@ def _real_encoding_kernel(
 
     # Load x values for the batch tile [BLOCK_B]
     x_vals = tl.load(
-        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+        x_ptr + b_offs.to(tl.int64) * stride_x_b + idx_i * stride_x_i,
+        mask=b_mask,
+        other=0.0,
     )
 
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
@@ -1179,7 +1199,9 @@ def _real_encoding_kernel(
             result = (r0 * r0 + i0 * i0) - (r1 * r1 + i1 * i1)
 
     # Vectorized store for batch tile
-    out_offs = b_offs * stride_o_b + idx_o * stride_o_o + idx_i * stride_o_i
+    out_offs = (
+        b_offs.to(tl.int64) * stride_o_b + idx_o * stride_o_o + idx_i * stride_o_i
+    )
     tl.store(out_ptr + out_offs, result, mask=b_mask)
 
 
@@ -1264,10 +1286,12 @@ def _pz_encoding_backward_kernel(
     b_range = tl.arange(0, BLOCK_B)
 
     x_vals = tl.load(
-        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+        x_ptr + b_offs.to(tl.int64) * stride_x_b + idx_i * stride_x_i,
+        mask=b_mask,
+        other=0.0,
     ).to(tl.float32)
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
-    program_idx = pid_oi * tl.cdiv(batch_size, BLOCK_B) + pid_b
+    program_idx = pid_oi.to(tl.int64) * tl.cdiv(batch_size, BLOCK_B) + pid_b
     FP8_INV = 1.0 / FP8_PRESCALE
     states_base = states_ptr + program_idx * stride_s_n
 
@@ -1491,7 +1515,10 @@ def _pz_encoding_backward_kernel(
 
     # ── Phase 2: Measurement gradient ──
     go = tl.load(
-        grad_out_ptr + b_offs * stride_go_b + idx_o * stride_go_o + idx_i * stride_go_i,
+        grad_out_ptr
+        + b_offs.to(tl.int64) * stride_go_b
+        + idx_o * stride_go_o
+        + idx_i * stride_go_i,
         mask=b_mask,
         other=0.0,
     ).to(tl.float32)
@@ -1849,7 +1876,7 @@ def _pz_encoding_backward_kernel(
         nai1 = -s * ar1 + c * ai1
         ar0, ai0, ar1, ai1 = nar0, nai0, nar1, nai1
 
-    gx_offs = grad_x_ptr + b_offs * stride_gx_b + idx_i * stride_gx_i
+    gx_offs = grad_x_ptr + b_offs.to(tl.int64) * stride_gx_b + idx_i * stride_gx_i
     tl.atomic_add(gx_offs, grad_x_local, mask=b_mask)
 
 
@@ -2126,11 +2153,13 @@ def _real_encoding_backward_kernel(
     b_mask = b_offs < batch_size
 
     x_vals = tl.load(
-        x_ptr + b_offs * stride_x_b + idx_i * stride_x_i, mask=b_mask, other=0.0
+        x_ptr + b_offs.to(tl.int64) * stride_x_b + idx_i * stride_x_i,
+        mask=b_mask,
+        other=0.0,
     )
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     # states_base indexes into (n_programs, n_states, BLOCK_B, n_components)
-    program_idx = pid_oi * tl.cdiv(batch_size, BLOCK_B) + pid_b
+    program_idx = pid_oi.to(tl.int64) * tl.cdiv(batch_size, BLOCK_B) + pid_b
     FP8_INV = 1.0 / FP8_PRESCALE
     states_base = states_ptr + program_idx * stride_s_n
     b_range = tl.arange(0, BLOCK_B)
@@ -2250,7 +2279,7 @@ def _real_encoding_backward_kernel(
         # Phase 2: Measurement gradient (vectorized over batch)
         go = tl.load(
             grad_out_ptr
-            + b_offs * stride_go_b
+            + b_offs.to(tl.int64) * stride_go_b
             + idx_o * stride_go_o
             + idx_i * stride_go_i,
             mask=b_mask,
@@ -2394,7 +2423,7 @@ def _real_encoding_backward_kernel(
             ar0, ar1 = ar1, ar0
 
         # grad_x: vectorized masked atomic_add
-        gx_offs = grad_x_ptr + b_offs * stride_gx_b + idx_i * stride_gx_i
+        gx_offs = grad_x_ptr + b_offs.to(tl.int64) * stride_gx_b + idx_i * stride_gx_i
         tl.atomic_add(gx_offs, grad_x_local, mask=b_mask)
     else:
         # ── Full complex state path: states are (..., BLOCK_B, 4) ──
@@ -2573,7 +2602,7 @@ def _real_encoding_backward_kernel(
         # Phase 2: Measurement gradient
         go = tl.load(
             grad_out_ptr
-            + b_offs * stride_go_b
+            + b_offs.to(tl.int64) * stride_go_b
             + idx_o * stride_go_o
             + idx_i * stride_go_i,
             mask=b_mask,
@@ -2775,7 +2804,7 @@ def _real_encoding_backward_kernel(
             # Backward through X gate
             ar0, ai0, ar1, ai1 = ar1, ai1, ar0, ai0
 
-        gx_offs = grad_x_ptr + b_offs * stride_gx_b + idx_i * stride_gx_i
+        gx_offs = grad_x_ptr + b_offs.to(tl.int64) * stride_gx_b + idx_i * stride_gx_i
         tl.atomic_add(gx_offs, grad_x_local, mask=b_mask)
 
 
