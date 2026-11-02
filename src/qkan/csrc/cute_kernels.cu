@@ -1228,8 +1228,20 @@ static inline torch::Tensor prep(torch::Tensor t, torch::ScalarType dtype) {
     return t;
 }
 
-/// Validates the launcher input contract: the shapes the kernels build their
-/// strides from, and the sizes they index with.  Parameter offsets, the out*in
+/// The kernels take raw data pointers, so a tensor left on the host (or on a
+/// different GPU from x) hands them an address they cannot use.  On drivers with HMM
+/// that even "works" -- slowly, and with the right answer -- so the mistake
+/// would only surface as an illegal access on someone else's machine.
+static inline void check_on_device(
+    const torch::Tensor& t, const char* name, const torch::Tensor& x)
+{
+    TORCH_CHECK(t.is_cuda() && t.device() == x.device(),
+        "CuTe solver: ", name, " must be a CUDA tensor on ", x.device(),
+        ", got ", t.device());
+}
+
+/// Validates the launcher input contract: where the inputs live, the shapes
+/// the kernels build their strides from, and the sizes they index with.  Parameter offsets, the out*in
 /// program count and everything derived from reps are int32 (only the
 /// batch-scaled offsets are 64-bit), so anything that would wrap has to fail
 /// loudly here instead of corrupting memory.
@@ -1238,6 +1250,10 @@ static inline void check_launch_inputs(
     const torch::Tensor& pw, const torch::Tensor& pb, int reps)
 {
     constexpr int64_t kIntMax = std::numeric_limits<int>::max();
+    TORCH_CHECK(x.is_cuda(), "CuTe solver: x must be a CUDA tensor, got ", x.device());
+    check_on_device(theta, "theta", x);
+    check_on_device(pw, "preacts weight", x);
+    check_on_device(pb, "preacts bias", x);
     // reps drives n_states and the shared-memory byte count, both int32.  A
     // negative reps walks the state buffer and the smem trig cache backwards,
     // so bound the derived value rather than theta's axis length: pz/rpz take
@@ -1265,6 +1281,22 @@ static inline void check_launch_inputs(
     TORCH_CHECK(theta.size(0) * x.size(1) <= kIntMax,
         "CuTe solver: out_dim * in_dim = ", theta.size(0) * x.size(1),
         " exceeds int32 range");
+}
+
+/// The backward kernels also read grad_output, through a (batch, out_dim,
+/// in_dim) view built from x and theta -- so a smaller tensor would be read
+/// past its end, the same way an undersized grad_y would in the activations.
+static inline void check_backward_inputs(
+    const torch::Tensor& x, const torch::Tensor& theta,
+    const torch::Tensor& pw, const torch::Tensor& pb,
+    const torch::Tensor& grad_output, int reps)
+{
+    check_launch_inputs(x, theta, pw, pb, reps);
+    check_on_device(grad_output, "grad_output", x);
+    TORCH_CHECK(grad_output.sizes() == torch::IntArrayRef({x.size(0), theta.size(0), x.size(1)}),
+        "CuTe solver: grad_output shape ", grad_output.sizes(),
+        " must be (batch, out_dim, in_dim) = (", x.size(0), ", ", theta.size(0),
+        ", ", x.size(1), ")");
 }
 
 /// Ceil-div of batch into grid.y blocks, in 64-bit on the untruncated
@@ -1355,7 +1387,7 @@ std::vector<torch::Tensor> cute_pz_backward(
     int in_dim  = x.size(1);
     int out_dim = theta.size(0);
     int reps    = theta.size(2) - 1;
-    check_launch_inputs(x, theta, pw, pb, reps);
+    check_backward_inputs(x, theta, pw, pb, grad_output, reps);
 
     x     = prep(x, torch::kFloat32);
     theta = prep(theta, torch::kFloat32);
@@ -1488,7 +1520,7 @@ std::vector<torch::Tensor> cute_rpz_backward(
 {
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2) - 1;
-    check_launch_inputs(x, theta, pw, pb, reps);
+    check_backward_inputs(x, theta, pw, pb, grad_output, reps);
 
     x = prep(x, torch::kFloat32);
     theta = prep(theta, torch::kFloat32);
@@ -1613,7 +1645,7 @@ std::vector<torch::Tensor> cute_real_backward(
 {
     int batch = x.size(0), in_dim = x.size(1);
     int out_dim = theta.size(0), reps = theta.size(2);
-    check_launch_inputs(x, theta, pw, pb, reps);
+    check_backward_inputs(x, theta, pw, pb, grad_output, reps);
 
     x = prep(x, torch::kFloat32);
     theta = prep(theta, torch::kFloat32);
@@ -1637,6 +1669,9 @@ std::vector<torch::Tensor> cute_real_backward(
     if (state_bits == 8) {
         states = torch::empty({n_prog, n_states, n_components, block_b}, dev_opts.dtype(torch::kFloat8_e4m3fn));
         prescale = 224.0f;
+    } else if (state_bits == 16) {
+        states = torch::empty({n_prog, n_states, n_components, block_b}, dev_opts.dtype(torch::kBFloat16));
+        prescale = 1.0f;
     } else {
         states = torch::empty({n_prog, n_states, n_components, block_b}, dev_opts.dtype(torch::kFloat32));
         prescale = 1.0f;
