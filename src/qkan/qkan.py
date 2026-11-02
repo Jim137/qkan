@@ -99,6 +99,10 @@ class QKANLayer(nn.Module):
         p_dtype : torch.dtype
             Parameter dtype (``torch.float32`` or ``torch.bfloat16``).
             Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.
+            The output dtype follows the layer's base ``F.linear`` term, as for
+            ``nn.Linear``: ``p_dtype`` normally, the autocast dtype under
+            ``torch.autocast``. The opt-in fused epilogue does not follow
+            autocast yet and returns the solver output's dtype (#33).
         _x0 : Optional[torch.Tensor]
             Leave for ResQKANLayer
     """
@@ -616,7 +620,10 @@ class QKANLayer(nn.Module):
                     self._eff_base_w = bw_2d * m_2d
                 if self.postact_bias_trainable or self._pb_is_nonzero:
                     pb_2d = self._as_oi(self.postact_bias)
-                    self._bias_sum = (pb_2d * self._eff_pw).sum(dim=1)
+                    prod = pb_2d * self._eff_pw
+                    # explicit dtype, or .eval() under autocast caches an fp32
+                    # bias that F.linear rejects outside autocast (#23)
+                    self._bias_sum = prod.sum(dim=1, dtype=prod.dtype)
                 else:
                     self._bias_sum = None
         return ret
@@ -743,9 +750,11 @@ class QKANLayer(nn.Module):
             return qkan_epilogue_forward(
                 postacts, eff_pw, None, base_input, eff_base_w, self._bias_sum
             )
-        main = (postacts * eff_pw).sum(dim=2)
+        # Same dtype handling as _forward_train.
+        prod = postacts * eff_pw
+        main = prod.sum(dim=2, dtype=prod.dtype)
         base = F.linear(base_input, eff_base_w, bias=self._bias_sum)
-        return main + base
+        return main.to(base.dtype) + base
 
     def _forward_train(self, x: torch.Tensor) -> torch.Tensor:
         """Training path — reads live params via aliased views, no eval cache."""
@@ -778,11 +787,16 @@ class QKANLayer(nn.Module):
             pb = self._pb_oi if use_pb else None
             return QKANEpilogue.apply(postacts, eff_pw, pb, base_input, base_w)
         if use_pb:
-            main = torch.sum((postacts + self._pb_oi) * eff_pw, dim=2)
+            prod = (postacts + self._pb_oi) * eff_pw
         else:
-            main = (postacts * eff_pw).sum(dim=2)
+            prod = postacts * eff_pw
+        # Autocast runs F.linear in the autocast dtype but promotes `sum` to
+        # fp32, which dragged the whole output to fp32 (#23).  Summing in the
+        # product's own dtype and casting only the (B, O) result keeps the
+        # output on F.linear's dtype, and is a no-op wherever they already agree.
+        main = prod.sum(dim=2, dtype=prod.dtype)
         base = F.linear(base_input, base_w)
-        return main + base
+        return main.to(base.dtype) + base
 
     def set_fused_epilogue(self, enabled: bool = True) -> None:
         """Toggle the fused Triton epilogue path (forward + backward).
