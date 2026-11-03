@@ -121,6 +121,37 @@ def test_output_blocking(ansatz, preacts, reps, out_dim):
     _assert_close(expected, actual, TOL)
 
 
+@pytest.mark.parametrize(
+    "ansatz,preacts", [("pz", False), ("rpz", True), ("real", True)]
+)
+def test_several_samples_per_thread(monkeypatch, ansatz, preacts):
+    """With one CU, each thread runs a chunk of 19 samples and sums its
+    gradients over them, and the second of the two chunks is a sample short."""
+    from qkan.solver import flydsl_exact_solver
+    from qkan.solver.flydsl import flydsl_ops as ops
+
+    monkeypatch.setattr(ops, "_compute_units", lambda device: 1)
+    monkeypatch.setattr(ops, "_THREADS_PER_CU_FWD", 16)
+    monkeypatch.setattr(ops, "_THREADS_PER_CU_BWD", 16)
+    expected = _run(torch_exact_solver, ansatz, preacts, True, torch.complex64)
+    actual = _run(flydsl_exact_solver, ansatz, preacts, True, torch.float32)
+    _assert_close(expected, actual, TOL)
+
+
+@pytest.mark.parametrize("ansatz", ["pz", "rpz", "real"])
+def test_bf16_output_is_the_rounded_f32_output(ansatz):
+    """QKANLayer runs every real-ansatz layer with bf16 output."""
+    from qkan.solver.flydsl import flydsl_ops as ops
+
+    x, theta, pw, pb = (t.detach() for t in _inputs(ansatz))
+    out = ops.flydsl_forward(x, theta, pw, pb, 3, ansatz, True)
+    out_bf16 = ops.flydsl_forward(
+        x, theta, pw, pb, 3, ansatz, True, c_dtype=torch.bfloat16
+    )
+    assert out_bf16.dtype == torch.bfloat16
+    torch.testing.assert_close(out_bf16.float(), out, rtol=2**-8, atol=0.0)
+
+
 def test_bf16_output_and_grad_dtypes():
     from qkan.solver import flydsl_exact_solver
 

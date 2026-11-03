@@ -587,9 +587,6 @@ class QKANLayer(nn.Module):
         # Param storage may have moved — rebuild cached views over the new
         # storage. No-op under p_dim=4.
         self._init_view_caches()
-        # p_dtype may have changed — refresh the cached dtype-cast flag so
-        # solver outputs are cast to the live parameter dtype.
-        self._needs_dtype_cast = self.c_dtype != self.p_dtype
         return ret
 
     def train(self, mode: bool = True):
@@ -659,11 +656,8 @@ class QKANLayer(nn.Module):
     # Solver dispatch (shared by both routes)
     # ------------------------------------------------------------------
     def _resolve_solver_fn(self) -> None:
-        """Pre-resolve the solver callable + dtype-cast need.
-
-        Skips per-forward registry lookups and a no-op ``.to(p_dtype)``
-        cast when ``c_dtype == p_dtype``.
-        """
+        """Pre-resolve the solver callable, skipping per-forward registry
+        lookups."""
         fn: Optional[Callable] = None
         if self.solver == "qml":
             fn = None  # qml has its own loop in _run_solver
@@ -672,9 +666,6 @@ class QKANLayer(nn.Module):
         elif callable(self.solver):
             fn = self.solver
         self._solver_fn: Optional[Callable] = fn
-        # Cast is a no-op when dtypes match — skip the `.to()` Python call.
-        # (Also refreshed by ``to()`` when a dtype move changes p_dtype.)
-        self._needs_dtype_cast = self.c_dtype != self.p_dtype
 
     def _run_solver(
         self,
@@ -718,7 +709,11 @@ class QKANLayer(nn.Module):
                 checkpoint_reps=self.checkpoint_reps,
                 **self.solver_kwargs,
             )
-            return postacts.to(self.p_dtype) if self._needs_dtype_cast else postacts
+            # The fused kernels write float32 or bf16 postacts whatever c_dtype
+            # is, so cast on the actual dtype rather than on c_dtype.
+            if postacts.dtype == self.p_dtype:
+                return postacts
+            return postacts.to(self.p_dtype)
         return fn(
             x,
             theta_v,

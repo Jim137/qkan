@@ -21,6 +21,7 @@ from ..exact import torch_exact_solver
 try:
     from .flydsl_ops import (
         _FLYDSL_KERNELS_AVAILABLE,
+        _first_order_only,
         flydsl_backward,
         flydsl_forward,
     )
@@ -92,11 +93,20 @@ class _FlyDSLFunction(torch.autograd.Function):
             ctx.preacts_trainable,
             ctx.fast_measure,
         )
+        grads = _first_order_only(
+            (
+                _grad_like(grad_x, x),
+                _grad_like(grad_theta, theta),
+                _grad_like(grad_pw, preacts_w),
+                _grad_like(grad_pb, preacts_b),
+            ),
+            (x, theta, preacts_w, preacts_b, grad_output),
+            "the flydsl solver has no second derivatives, so its gradients "
+            "cannot be differentiated; use solver='exact' for higher-order "
+            "gradients",
+        )
         return (
-            _grad_like(grad_x, x),
-            _grad_like(grad_theta, theta),
-            _grad_like(grad_pw, preacts_w),
-            _grad_like(grad_pb, preacts_b),
+            *grads,
             None,  # reps
             None,  # fast_measure
             None,  # preacts_trainable

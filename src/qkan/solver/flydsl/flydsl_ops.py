@@ -45,29 +45,36 @@ launch. The forward output is float32 or bfloat16 (bf16 I/O halves the
 dominant ``(batch, out_dim, in_dim)`` write); the backward pass always
 accumulates and returns float32.
 
-Launchers are compiled once per compile-time configuration and then called
-through FlyDSL's compiled-function fast path (see :func:`_launch`).
+Launchers are compiled once per compile-time configuration and device, then
+called through FlyDSL's compiled-function fast path (see :func:`_launch`).
 """
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import math
+import os
+import threading
 
 import torch
 
-try:
-    import flydsl.compiler as flyc  # type: ignore[import-not-found, import-untyped]
-    import flydsl.expr as fx  # type: ignore[import-not-found, import-untyped]
-    from flydsl.expr import (  # type: ignore[import-not-found, import-untyped]
-        const_expr,
-        range_constexpr,
-    )
+_FLYDSL_KERNELS_AVAILABLE = False
+# FlyDSL emits AMDGPU code only, so a CUDA or CPU build of torch cannot run it:
+# skip the import there, which would load FlyDSL's MLIR/LLVM bindings and
+# install its sys.excepthook for nothing.
+if torch.version.hip is not None:
+    try:
+        import flydsl.compiler as flyc  # type: ignore[import-not-found, import-untyped]
+        import flydsl.expr as fx  # type: ignore[import-not-found, import-untyped]
+        from flydsl.expr import (  # type: ignore[import-not-found, import-untyped]
+            const_expr,
+            range_constexpr,
+        )
 
-    # FlyDSL emits AMDGPU code only; a CUDA build of torch cannot run it.
-    _FLYDSL_KERNELS_AVAILABLE = torch.version.hip is not None
-except ImportError:
-    _FLYDSL_KERNELS_AVAILABLE = False
+        _FLYDSL_KERNELS_AVAILABLE = True
+    except ImportError:
+        pass
 
 
 _INV_SQRT2 = 0.7071067811865476
@@ -88,6 +95,18 @@ _THREADS_PER_CU_BWD = 1024
 _MAX_O_BLOCK_FWD = 4
 _MAX_O_BLOCK_BWD = 8
 _O_BLOCK_BWD_THETAS = 8
+
+# Most batch chunks per launch: they form the grid's y dimension, which HIP
+# caps (hipModuleLaunchKernel fails past 65536 in ROCm 6.4-7.2).
+_MAX_GRID_Y = 65535
+
+# FlyDSL passes the size of every tensor argument as an int32, so a launch
+# takes no tensor with more elements; longer batches are split over launches.
+_MAX_KERNEL_NUMEL = 2**31 - 1
+
+# Most samples per launch: the kernels compute the end of a batch chunk,
+# b_start + b_chunk, in int32, which stays below 2**31 for 2**30 samples.
+_MAX_LAUNCH_ROWS = 2**30
 
 # Canonical ansatz names used as the kernels' compile-time switch.
 _ANSATZ_CANONICAL = {
@@ -513,6 +532,9 @@ if _FLYDSL_KERNELS_AVAILABLE:
         P_BF16: fx.Constexpr[bool],
         OUT_BF16: fx.Constexpr[bool],
         O_BLK: fx.Constexpr[int],
+        # DEVICE and ARCH only key FlyDSL's caches; see _launch.
+        DEVICE: fx.Constexpr[int],
+        ARCH: fx.Constexpr[str],
         stream: fx.Stream = fx.Stream(None),
     ):
         _qkan_forward_kernel(
@@ -569,6 +591,9 @@ if _FLYDSL_KERNELS_AVAILABLE:
         P_BF16: fx.Constexpr[bool],
         GO_BF16: fx.Constexpr[bool],
         O_BLK: fx.Constexpr[int],
+        # DEVICE and ARCH only key FlyDSL's caches; see _launch.
+        DEVICE: fx.Constexpr[int],
+        ARCH: fx.Constexpr[str],
         stream: fx.Stream = fx.Stream(None),
     ):
         _qkan_backward_kernel(
@@ -631,19 +656,41 @@ def _o_block(out_dim: int, in_dim: int, preacts: bool, max_blk: int) -> int:
 
 
 def _batch_chunks(
-    n_threads: int, batch: int, device: torch.device, threads_per_cu: int
+    n_threads: int,
+    batch: int,
+    device: torch.device,
+    threads_per_cu: int,
+    max_chunks: int = _MAX_GRID_Y,
 ) -> tuple[int, int]:
     """Split the batch so roughly ``threads_per_cu`` threads run per CU.
 
     Fewer, longer chunks reuse the per-thread trig registers across more
     samples and write fewer gradient partial rows; more chunks fill the GPU when
-    the ``n_threads`` threads of one chunk alone cannot.
+    the ``n_threads`` threads of one chunk alone cannot. At most ``max_chunks``
+    chunks are used.
     """
     n_cu = _compute_units(device)
     want = max(1, math.ceil(n_cu * threads_per_cu / max(n_threads, 1)))
-    n_chunks = max(1, min(batch, want))
+    n_chunks = max(1, min(batch, want, max_chunks))
     b_chunk = math.ceil(batch / n_chunks)
     return b_chunk, math.ceil(batch / b_chunk)
+
+
+def _batch_slices(batch: int, row_numel: int) -> list[tuple[int, int]]:
+    """``(first sample, samples)`` of the launches a batch is split into: at
+    most ``_MAX_LAUNCH_ROWS`` samples each, and no tensor of at most
+    ``row_numel`` elements per sample over ``_MAX_KERNEL_NUMEL`` elements.
+    One launch unless the batch is huge."""
+    step = min(_MAX_LAUNCH_ROWS, max(1, _MAX_KERNEL_NUMEL // max(row_numel, 1)))
+    return [(b0, min(step, batch - b0)) for b0 in range(0, batch, step)]
+
+
+def _rows(t: torch.Tensor, b0: int, rows: int, batch: int) -> torch.Tensor:
+    """Samples ``b0 .. b0 + rows - 1`` of a flat tensor of ``batch`` samples."""
+    if rows == batch:
+        return t
+    n = t.numel() // batch
+    return t[b0 * n : (b0 + rows) * n]
 
 
 def _check_shapes(x, theta, preacts_w, preacts_b, reps, ansatz, preacts):
@@ -672,11 +719,47 @@ def _check_shapes(x, theta, preacts_w, preacts_b, reps, ansatz, preacts):
                 f"preacts weight/bias must have shape {expected}, got "
                 f"{tuple(preacts_w.shape)} and {tuple(preacts_b.shape)}"
             )
+    # Only the batch can be split over launches. theta has at least as many
+    # elements as the preacts, and a sample of out has out_dim * in_dim.
+    if max(theta.numel(), theta.shape[0] * x.shape[1]) > _MAX_KERNEL_NUMEL:
+        raise ValueError(
+            f"flydsl kernels take tensors of at most {_MAX_KERNEL_NUMEL} "
+            f"elements; theta of shape {tuple(theta.shape)} is too large"
+        )
+
+
+def _check_devices(
+    x: torch.Tensor,
+    theta: torch.Tensor,
+    preacts_w: torch.Tensor | None = None,
+    preacts_b: torch.Tensor | None = None,
+    grad_output: torch.Tensor | None = None,
+) -> None:
+    """The kernels get raw pointers, so every tensor must be on x's GPU."""
+    if not x.is_cuda:
+        raise ValueError(f"flydsl kernels run on a ROCm GPU, but x is on {x.device}")
+    index = x.get_device()
+    for name, t in (
+        ("theta", theta),
+        ("preacts_weight", preacts_w),
+        ("preacts_bias", preacts_b),
+        ("grad_output", grad_output),
+    ):
+        if t is not None and t.get_device() != index:
+            raise ValueError(
+                f"flydsl kernels need every tensor on x's device ({x.device}), "
+                f"but {name} is on {t.device}"
+            )
 
 
 def _flat(t: torch.Tensor, bf16: bool) -> torch.Tensor:
     """Flat contiguous bf16 or float32 view (the two dtypes the kernels read)."""
-    return t.to(torch.bfloat16 if bf16 else torch.float32).contiguous().view(-1)
+    flat = t.to(torch.bfloat16 if bf16 else torch.float32).contiguous().view(-1)
+    if flat.stride(0) != 1:
+        # A 1-element tensor counts as contiguous whatever its stride (e.g. the
+        # expanded gradient of out.sum()), but FlyDSL needs a unit stride.
+        flat = flat.clone(memory_format=torch.contiguous_format)
+    return flat
 
 
 # Compiled launchers keyed by launcher and every compile-time argument. The
@@ -686,20 +769,82 @@ def _flat(t: torch.Tensor, bf16: bool) -> torch.Tensor:
 # costs more host time than the kernel takes on the GPU at QKAN layer sizes.
 _COMPILED: dict = {}
 
+# Serializes compiles, as _compile_arch sets a process-wide variable.
+_COMPILE_LOCK = threading.Lock()
 
-def _launch(launcher, constexprs, *args):
-    key = (launcher, constexprs)
-    compiled = _COMPILED.get(key)
-    if compiled is not None:
-        compiled(*args)
+# Environment variables through which a user picks FlyDSL's target arch, in
+# FlyDSL's order of precedence (it reads ARCH without a prefix).
+_ARCH_OVERRIDES = ("ARCH", "FLYDSL_GPU_ARCH", "HSA_OVERRIDE_GFX_VERSION")
+
+
+@functools.lru_cache(maxsize=None)
+def _device_arch(device: torch.device) -> str:
+    # gcnArchName carries target features after the name: gfx90a:sramecc+:xnack-
+    return torch.cuda.get_device_properties(device).gcnArchName.split(":")[0]
+
+
+@contextlib.contextmanager
+def _compile_arch(device: torch.device):
+    """Have FlyDSL compile for ``device``'s arch unless the user picked one,
+    and yield the arch compiled for (as the user's variable spells it).
+
+    FlyDSL otherwise targets one arch for the whole process: the first GPU
+    that rocm_agent_enumerator lists, or gfx942 when that tool is not on PATH.
+    """
+    for var in _ARCH_OVERRIDES:
+        value = os.environ.get(var)
+        if value:
+            yield value
+            return
+    arch = _device_arch(device)
+    os.environ["FLYDSL_GPU_ARCH"] = arch
+    try:
+        yield arch
+    finally:
+        os.environ.pop("FLYDSL_GPU_ARCH", None)
+
+
+def _launch(launcher, constexprs, device, *args):
+    """Run ``launcher(*args, *constexprs, DEVICE, ARCH, stream)`` on the
+    current stream of ``device``, compiling it on first use.
+
+    FlyDSL loads a compiled launcher's code object onto the device that is
+    current when it first runs. It keys its caches by the arguments and the
+    arch of the launcher's first compile in the process, whatever arch later
+    compiles target, so the launchers take the device index and the arch
+    compiled for as the constants DEVICE and ARCH. FlyDSL ignores the
+    constants of later calls, so each entry keeps the ones it was compiled
+    with.
+    """
+    index = device.index
+    stream = torch.cuda.current_stream(device)
+    key = (launcher, constexprs, index)
+    entry = _COMPILED.get(key)
+    if entry is not None:
+        compiled, constants = entry
+        if index == torch.cuda.current_device():
+            compiled(*args, *constants, stream)
+        else:
+            # A launch on the default stream goes to the current device.
+            with torch.cuda.device(device):
+                compiled(*args, *constants, stream)
         return
-    # flyc.compile also runs this first launch.
-    compiled = flyc.compile(launcher, *args)
-    if compiled is not None:
-        _COMPILED[key] = compiled
+    with torch.cuda.device(device), _COMPILE_LOCK, _compile_arch(device) as arch:
+        constants = (*constexprs, index, arch)
+        # flyc.compile also runs this first launch.
+        compiled = flyc.compile(launcher, *args, *constants, stream)
+    if compiled is None:
+        raise RuntimeError(
+            "FlyDSL compiled the flydsl kernels without running them, as it "
+            "does while the COMPILE_ONLY environment variable is set; unset it "
+            "to run them"
+        )
+    _COMPILED[key] = (compiled, constants)
 
 
-def _prepare(x, theta, preacts_w, preacts_b, reps, ansatz, preacts_trainable):
+def _prepare(
+    x, theta, preacts_w, preacts_b, reps, ansatz, preacts_trainable, grad_output=None
+):
     """Validate and flatten the circuit parameters for a kernel launch.
 
     The parameters stay bf16 when all of them are bf16 (the kernels widen on
@@ -713,8 +858,13 @@ def _prepare(x, theta, preacts_w, preacts_b, reps, ansatz, preacts_trainable):
         raise ValueError(f"Unsupported ansatz for flydsl: {ansatz}")
     kind = _ANSATZ_CANONICAL[ansatz]
     # rpz always encodes w*x+b; pz / real only when the preacts are trainable.
-    preacts = preacts_trainable or kind == "rpz"
+    # bool(): FlyDSL takes only builtin scalars (not numpy's) as constexprs.
+    preacts = bool(preacts_trainable) or kind == "rpz"
     _check_shapes(x, theta, preacts_w, preacts_b, reps, kind, preacts)
+    if preacts:
+        _check_devices(x, theta, preacts_w, preacts_b, grad_output)
+    else:
+        _check_devices(x, theta, grad_output=grad_output)
 
     p_bf16 = theta.dtype == torch.bfloat16 and (
         not preacts
@@ -778,36 +928,40 @@ def flydsl_forward(
         return out
     o_blk = _o_block(out_dim, in_dim, preacts, _MAX_O_BLOCK_FWD)
     n_threads = out_dim // o_blk * in_dim
-    b_chunk, n_b_chunks = _batch_chunks(n_threads, batch, x.device, _THREADS_PER_CU_FWD)
     constexprs = (
-        reps,
+        int(reps),
         n_th,
         th_p,
         kind,
         preacts,
-        fast_measure,
+        bool(fast_measure),
         x_bf16,
         p_bf16,
         out_bf16,
         o_blk,
     )
-    _launch(
-        _launch_forward,
-        constexprs,
-        _flat(x, x_bf16),
-        th,
-        pw,
-        pb,
-        out.view(-1),
-        batch,
-        in_dim,
-        n_oi,
-        n_threads,
-        b_chunk,
-        n_b_chunks,
-        *constexprs,
-        torch.cuda.current_stream(x.device),
-    )
+    device = x.device
+    xf, out_flat = _flat(x, x_bf16), out.view(-1)
+    for b0, rows in _batch_slices(batch, n_oi):
+        b_chunk, n_b_chunks = _batch_chunks(
+            n_threads, rows, device, _THREADS_PER_CU_FWD
+        )
+        _launch(
+            _launch_forward,
+            constexprs,
+            device,
+            _rows(xf, b0, rows, batch),
+            th,
+            pw,
+            pb,
+            _rows(out_flat, b0, rows, batch),
+            rows,
+            in_dim,
+            n_oi,
+            n_threads,
+            b_chunk,
+            n_b_chunks,
+        )
     return out
 
 
@@ -828,7 +982,7 @@ def flydsl_backward(
     preacts gradients are ``None`` when the kernel does not read the preacts.
     """
     kind, preacts, th, pw, pb, n_th, th_p, p_bf16 = _prepare(
-        x, theta, preacts_w, preacts_b, reps, ansatz, preacts_trainable
+        x, theta, preacts_w, preacts_b, reps, ansatz, preacts_trainable, grad_output
     )
     batch, in_dim = x.shape
     out_dim = theta.shape[0]
@@ -845,7 +999,8 @@ def flydsl_backward(
 
     x_bf16 = x.dtype == torch.bfloat16
     go_bf16 = grad_output.dtype == torch.bfloat16
-    max_blk = min(_MAX_O_BLOCK_BWD, max(1, _O_BLOCK_BWD_THETAS // n_th))
+    # n_th is 0 for the real ansatz with reps=0.
+    max_blk = min(_MAX_O_BLOCK_BWD, max(1, _O_BLOCK_BWD_THETAS // max(n_th, 1)))
     o_blk = _o_block(out_dim, in_dim, preacts, max_blk)
     n_threads = out_dim // o_blk * in_dim
     # grad_x contributions per (b, thread): each thread has already summed
@@ -853,52 +1008,103 @@ def flydsl_backward(
     grad_x_part = torch.empty(
         batch, out_dim // o_blk, in_dim, device=device, dtype=torch.float32
     )
-    b_chunk, n_b_chunks = _batch_chunks(n_threads, batch, device, _THREADS_PER_CU_BWD)
-    # One row of parameter-gradient partial sums per batch chunk, summed over
-    # chunks below.
-    theta_part = torch.empty(
-        (n_b_chunks, *theta.shape), device=device, dtype=torch.float32
-    )
-    pw_part: torch.Tensor | None = None
-    pb_part: torch.Tensor | None = None
-    if preacts:
-        pw_part = torch.empty(
-            (n_b_chunks, *preacts_w.shape), device=device, dtype=torch.float32
-        )
-        pb_part = torch.empty_like(pw_part)
+    # Each launch writes theta.numel() partial sums per batch chunk.
+    max_chunks = min(_MAX_GRID_Y, _MAX_KERNEL_NUMEL // max(theta.numel(), 1))
     constexprs = (
-        reps,
+        int(reps),
         n_th,
         th_p,
         kind,
         preacts,
-        fast_measure,
+        bool(fast_measure),
         x_bf16,
         p_bf16,
         go_bf16,
         o_blk,
     )
-    _launch(
-        _launch_backward,
-        constexprs,
-        _flat(x, x_bf16),
-        th,
-        pw,
-        pb,
-        _flat(grad_output, go_bf16),
-        theta_part.view(-1),
-        pw_part.view(-1) if pw_part is not None else theta_part.view(-1),
-        pb_part.view(-1) if pb_part is not None else theta_part.view(-1),
-        grad_x_part.view(-1),
-        batch,
-        in_dim,
-        n_oi,
-        n_threads,
-        b_chunk,
-        n_b_chunks,
-        *constexprs,
-        torch.cuda.current_stream(device),
-    )
-    grad_pw = pw_part.sum(dim=0) if pw_part is not None else None
-    grad_pb = pb_part.sum(dim=0) if pb_part is not None else None
-    return grad_x_part.sum(dim=1), theta_part.sum(dim=0), grad_pw, grad_pb
+    xf, gof = _flat(x, x_bf16), _flat(grad_output, go_bf16)
+    gxpf = grad_x_part.view(-1)
+    sum_theta: torch.Tensor | None = None
+    sum_pw: torch.Tensor | None = None
+    sum_pb: torch.Tensor | None = None
+    for b0, rows in _batch_slices(batch, n_oi):
+        b_chunk, n_b_chunks = _batch_chunks(
+            n_threads, rows, device, _THREADS_PER_CU_BWD, max_chunks
+        )
+        # One row of parameter-gradient partial sums per batch chunk, summed
+        # over chunks below.
+        theta_part = torch.empty(
+            (n_b_chunks, *theta.shape), device=device, dtype=torch.float32
+        )
+        pw_part: torch.Tensor | None = None
+        pb_part: torch.Tensor | None = None
+        if preacts:
+            pw_part = torch.empty(
+                (n_b_chunks, *preacts_w.shape), device=device, dtype=torch.float32
+            )
+            pb_part = torch.empty_like(pw_part)
+        _launch(
+            _launch_backward,
+            constexprs,
+            device,
+            _rows(xf, b0, rows, batch),
+            th,
+            pw,
+            pb,
+            _rows(gof, b0, rows, batch),
+            theta_part.view(-1),
+            pw_part.view(-1) if pw_part is not None else theta_part.view(-1),
+            pb_part.view(-1) if pb_part is not None else theta_part.view(-1),
+            _rows(gxpf, b0, rows, batch),
+            rows,
+            in_dim,
+            n_oi,
+            n_threads,
+            b_chunk,
+            n_b_chunks,
+        )
+        sum_theta = _add_chunk_sums(sum_theta, theta_part)
+        if pw_part is not None and pb_part is not None:
+            sum_pw = _add_chunk_sums(sum_pw, pw_part)
+            sum_pb = _add_chunk_sums(sum_pb, pb_part)
+    assert sum_theta is not None  # the batch is not empty
+    return grad_x_part.sum(dim=1), sum_theta, sum_pw, sum_pb
+
+
+def _add_chunk_sums(total: torch.Tensor | None, part: torch.Tensor) -> torch.Tensor:
+    """``total`` plus ``part`` summed over its batch-chunk rows."""
+    rows = part.sum(dim=0)
+    return rows if total is None else total.add_(rows)
+
+
+class _NoSecondDerivatives(torch.autograd.Function):
+    """Passes gradients through; differentiating them raises ``message``."""
+
+    @staticmethod
+    def forward(ctx, message, n_grads, *tensors):  # type: ignore[override]
+        ctx.message = message
+        return tensors[:n_grads]
+
+    @staticmethod
+    def backward(ctx, *grads):  # type: ignore[override]
+        raise RuntimeError(ctx.message)
+
+
+def _first_order_only(grads: tuple, inputs: tuple, message: str) -> tuple:
+    """``grads`` of a backward that has no second derivatives.
+
+    Grad mode is on in a backward only under create_graph=True. The gradients
+    are then tied to ``inputs`` (the saved forward inputs and grad_output)
+    through a node that raises ``message`` if a later backward reaches it,
+    instead of coming back as constants whose own gradients would silently be
+    zero. Uses that never differentiate them, such as a penalty on another
+    layer's gradient, keep working.
+    """
+    if not torch.is_grad_enabled():
+        return grads
+    present = [g for g in grads if g is not None]
+    linked = [t for t in inputs if t is not None and t.requires_grad]
+    if not present or not linked:
+        return grads
+    out = iter(_NoSecondDerivatives.apply(message, len(present), *present, *linked))
+    return tuple(None if g is None else next(out) for g in grads)

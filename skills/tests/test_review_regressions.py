@@ -96,12 +96,13 @@ def test_adam_then_lbfgs_through_train_():
     assert len(results["train_loss"]) == 4  # crossed the LBFGS switch
 
 
-def test_dtype_cast_flag_refreshes_on_to():
+def test_postacts_follow_the_parameter_dtype_after_to():
     layer = QKANLayer(2, 2, reps=2, solver="exact", seed=0)
-    assert layer._needs_dtype_cast is (layer.c_dtype != layer.p_dtype)
     layer.to(dtype=torch.bfloat16)  # keyword path
     assert layer.p_dtype == torch.bfloat16
-    assert layer._needs_dtype_cast is (layer.c_dtype != torch.bfloat16)
+    # Solver outputs are cast to the live parameter dtype; float32 postacts
+    # would promote the output to float32.
+    assert layer(torch.randn(3, 2, dtype=torch.bfloat16)).dtype == torch.bfloat16
 
 
 def test_adabelief_eager_fallback_mixed_state_dtype():

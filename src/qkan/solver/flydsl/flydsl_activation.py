@@ -34,7 +34,13 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from .flydsl_ops import _FLYDSL_KERNELS_AVAILABLE, _launch
+from .flydsl_ops import (
+    _FLYDSL_KERNELS_AVAILABLE,
+    _batch_slices,
+    _first_order_only,
+    _flat,
+    _launch,
+)
 
 __all__ = ["FlyDSLActivation"]
 
@@ -141,6 +147,9 @@ if _FLYDSL_KERNELS_AVAILABLE:
         n_blocks: fx.Int32,
         KIND: fx.Constexpr[str],
         BF16: fx.Constexpr[bool],
+        # DEVICE and ARCH only key FlyDSL's caches; see flydsl_ops._launch.
+        DEVICE: fx.Constexpr[int],
+        ARCH: fx.Constexpr[str],
         stream: fx.Stream = fx.Stream(None),
     ):
         _act_forward_kernel(X, Y, n, KIND, BF16).launch(
@@ -156,6 +165,9 @@ if _FLYDSL_KERNELS_AVAILABLE:
         n_blocks: fx.Int32,
         KIND: fx.Constexpr[str],
         BF16: fx.Constexpr[bool],
+        # DEVICE and ARCH only key FlyDSL's caches; see flydsl_ops._launch.
+        DEVICE: fx.Constexpr[int],
+        ARCH: fx.Constexpr[str],
         stream: fx.Stream = fx.Stream(None),
     ):
         _act_backward_kernel(GY, X, GX, n, KIND, BF16).launch(
@@ -165,9 +177,17 @@ if _FLYDSL_KERNELS_AVAILABLE:
 
 def _io_view(t: torch.Tensor) -> tuple[torch.Tensor, bool]:
     """Flat contiguous f32/bf16 view of ``t`` and whether it is bf16."""
-    if t.dtype == torch.bfloat16:
-        return t.contiguous().view(-1), True
-    return t.to(torch.float32).contiguous().view(-1), False
+    bf16 = t.dtype == torch.bfloat16
+    return _flat(t, bf16), bf16
+
+
+def _launch_pointwise(launcher, kind, bf16, device, *tensors):
+    """Launch ``launcher`` over the equally long flat ``tensors``, in as many
+    launches as FlyDSL's int32 tensor sizes need."""
+    n = tensors[0].numel()
+    for start, m in _batch_slices(n, 1):
+        parts = tensors if m == n else [t[start : start + m] for t in tensors]
+        _launch(launcher, (kind, bf16), device, *parts, m, -(-m // _ACT_BLOCK))
 
 
 def flydsl_activation_forward(x: torch.Tensor, kind: str) -> torch.Tensor:
@@ -178,19 +198,8 @@ def flydsl_activation_forward(x: torch.Tensor, kind: str) -> torch.Tensor:
     """
     xf, bf16 = _io_view(x)
     y = torch.empty_like(xf)
-    n = xf.numel()
-    if n:
-        _launch(
-            _launch_act_forward,
-            (kind, bf16),
-            xf,
-            y,
-            n,
-            -(-n // _ACT_BLOCK),
-            kind,
-            bf16,
-            torch.cuda.current_stream(x.device),
-        )
+    if xf.numel():
+        _launch_pointwise(_launch_act_forward, kind, bf16, x.device, xf, y)
     return y.view(x.shape).to(x.dtype)
 
 
@@ -199,22 +208,10 @@ def flydsl_activation_backward(
 ) -> torch.Tensor:
     """Gradient of :func:`flydsl_activation_forward` with respect to ``x``."""
     xf, bf16 = _io_view(x)
-    gyf = grad_y.to(xf.dtype).contiguous().view(-1)
+    gyf = _flat(grad_y, bf16)
     gx = torch.empty_like(xf)
-    n = xf.numel()
-    if n:
-        _launch(
-            _launch_act_backward,
-            (kind, bf16),
-            gyf,
-            xf,
-            gx,
-            n,
-            -(-n // _ACT_BLOCK),
-            kind,
-            bf16,
-            torch.cuda.current_stream(x.device),
-        )
+    if xf.numel():
+        _launch_pointwise(_launch_act_backward, kind, bf16, x.device, gyf, xf, gx)
     return gx.view(x.shape).to(x.dtype)
 
 
@@ -230,7 +227,14 @@ class _FlyDSLActivation(torch.autograd.Function):
     @staticmethod
     def backward(ctx: Any, grad_y: torch.Tensor) -> tuple[torch.Tensor, None]:  # type: ignore[override]
         (x,) = ctx.saved_tensors
-        return flydsl_activation_backward(grad_y, x, ctx.kind), None
+        (grad_x,) = _first_order_only(
+            (flydsl_activation_backward(grad_y, x, ctx.kind),),
+            (x, grad_y),
+            "FlyDSLActivation has no second derivatives, so its gradients "
+            "cannot be differentiated; use a torch.nn activation for "
+            "higher-order gradients",
+        )
+        return grad_x, None
 
 
 class FlyDSLActivation(nn.Module):

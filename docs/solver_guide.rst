@@ -32,7 +32,7 @@ Solver Overview
    * - ``flydsl``
      - AMD GPU
      - FlyDSL (AMD ROCm) fused kernels for ``pz``, ``rpz`` and ``real``. Unrolls ``reps`` at compile time and recovers backward states by un-applying gates, so no state checkpoints are stored. f32 or BF16 output.
-     - ROCm PyTorch, then ``pip install qkan[flydsl]``
+     - ROCm 7.x and a ROCm PyTorch, then ``pip install qkan[flydsl]``
    * - ``cutn``
      - GPU / CPU
      - cuQuantum tensor network contraction. Best for extremely large layers near OOM.
