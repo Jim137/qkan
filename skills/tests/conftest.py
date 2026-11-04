@@ -56,9 +56,11 @@ def preacts_for(out_dim, in_dim, reps, device="cuda"):
 def run_snippet():
     """Run a snippet against this checkout in a fresh interpreter."""
 
-    def _run(body, *, timeout=300):
+    def _run(body, *, timeout=300, preamble=PREAMBLE):
+        # preamble defaults to the CuTe launcher helpers; pass a minimal one
+        # for snippets that must not require the qkan._C extension.
         return subprocess.run(
-            [sys.executable, "-c", PREAMBLE + textwrap.dedent(body)],
+            [sys.executable, "-c", preamble + textwrap.dedent(body)],
             capture_output=True,
             text=True,
             # inherit the environment: snippets that JIT-compile a probe
