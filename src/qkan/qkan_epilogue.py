@@ -105,6 +105,10 @@ if _TRITON_AVAILABLE:
         pid_m = tl.program_id(0)
         pid_n = tl.program_id(1)
 
+        # Batch-scaled offsets (b * O*I into postacts) pass 2^31 elements at
+        # realistic sizes (#35).  As in fused_ops, offs_m stays int32 and only
+        # its products with a batch stride are widened; the backward kernel
+        # does the same with offs_b.
         offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)  # batch tile
         offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)  # out tile
 
@@ -120,7 +124,7 @@ if _TRITON_AVAILABLE:
             # postacts[b, o, i]: [BLOCK_M, BLOCK_N, BLOCK_I]
             p_ptrs = (
                 postacts_ptr
-                + offs_m[:, None, None] * sp_b
+                + offs_m[:, None, None].to(tl.int64) * sp_b
                 + offs_n[None, :, None] * sp_o
                 + offs_i[None, None, :] * sp_i
             )
@@ -143,7 +147,11 @@ if _TRITON_AVAILABLE:
                 term = postacts_tile * eff_pw_tile[None, :, :]
 
             # base_input[b, i]: [BLOCK_M, BLOCK_I]
-            bi_ptrs = base_input_ptr + offs_m[:, None] * sbi_b + offs_i[None, :] * sbi_i
+            bi_ptrs = (
+                base_input_ptr
+                + offs_m[:, None].to(tl.int64) * sbi_b
+                + offs_i[None, :] * sbi_i
+            )
             bi_mask = m_mask[:, None] & i_mask[None, :]
             base_input_tile = tl.load(bi_ptrs, mask=bi_mask, other=0.0).to(tl.float32)
 
@@ -160,7 +168,9 @@ if _TRITON_AVAILABLE:
             bs = tl.load(bias_sum_ptr + offs_n, mask=n_mask, other=0.0).to(tl.float32)
             acc += bs[None, :]
 
-        out_ptrs = out_ptr + offs_m[:, None] * so_b + offs_n[None, :] * so_o
+        out_ptrs = (
+            out_ptr + offs_m[:, None].to(tl.int64) * so_b + offs_n[None, :] * so_o
+        )
         out_mask = m_mask[:, None] & n_mask[None, :]
         tl.store(out_ptrs, acc.to(out_ptr.dtype.element_ty), mask=out_mask)
 
@@ -245,7 +255,11 @@ if _TRITON_AVAILABLE:
             b_mask = offs_b < B
 
             # grad_out[B, O] tile -> [BLOCK_B, BLOCK_N]
-            go_ptrs = grad_out_ptr + offs_b[:, None] * sgo_b + offs_n[None, :] * sgo_o
+            go_ptrs = (
+                grad_out_ptr
+                + offs_b[:, None].to(tl.int64) * sgo_b
+                + offs_n[None, :] * sgo_o
+            )
             go_mask = b_mask[:, None] & n_mask[None, :]
             go_tile = tl.load(go_ptrs, mask=go_mask, other=0.0).to(tl.float32)
 
@@ -253,7 +267,7 @@ if _TRITON_AVAILABLE:
                 # postacts[B, O, I] tile
                 p_ptrs = (
                     postacts_ptr
-                    + offs_b[:, None, None] * sp_b
+                    + offs_b[:, None, None].to(tl.int64) * sp_b
                     + offs_n[None, :, None] * sp_o
                     + offs_i[None, None, :] * sp_i
                 )
@@ -271,7 +285,7 @@ if _TRITON_AVAILABLE:
                 gp = go_tile[:, :, None] * pw_tile[None, :, :]
                 gp_ptrs = (
                     grad_postacts_ptr
-                    + offs_b[:, None, None] * sgp_b
+                    + offs_b[:, None, None].to(tl.int64) * sgp_b
                     + offs_n[None, :, None] * sgp_o
                     + offs_i[None, None, :] * sgp_i
                 )

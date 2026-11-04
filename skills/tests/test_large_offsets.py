@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Batch-scaled offsets past 2^31 elements (flash #31; CuTe #21/#22).
+"""Batch-scaled offsets past 2^31 elements (flash #31; CuTe #21/#22; #35).
 
 One launch past the limit has to agree with the same batch done in chunks that
 each stay far below it.  A match is not proof on its own: a wrapped store and
@@ -39,7 +39,7 @@ pytestmark = [
     pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA"),
     pytest.mark.skipif(
         os.environ.get("QKAN_LARGE_TESTS") != "1",
-        reason="allocates 3-5 GB; set QKAN_LARGE_TESTS=1",
+        reason="allocates up to 13 GB of GPU memory; set QKAN_LARGE_TESTS=1",
     ),
 ]
 
@@ -123,6 +123,143 @@ def test_flash_forward_output_past_int32(run_snippet):
             for start in range(0, len(x), 256):
                 part = forward(x[start : start + 256])
                 assert torch.equal(full[start : start + 256], part), start
+        print("OK")
+        """,
+        preamble="",
+        timeout=1800,
+    )
+    assert "OK" in result.stdout, (
+        f"stdout={result.stdout}\nstderr={result.stderr[-2000:]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# #35: the same int32 offsets outside the solver kernels.  Each kernel is
+# called directly, so the test needs only its own inputs, not a solver run.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _FLASH_AVAILABLE, reason="no triton")
+def test_fused_epilogue_past_int32(run_snippet):
+    # postacts is (B, O, I): its batch offset b * O*I passes 2^31 at the last
+    # row here.  The forward reads it, and the backward reads it for
+    # grad_eff_pw and writes grad_postacts the same way.
+    result = run_snippet(
+        """
+        import torch
+        from qkan.qkan_epilogue import QKANEpilogue
+
+        torch.manual_seed(0)
+        B, O, I = 32769, 256, 256  # B * O * I = 2^31 + 65536
+        dt = torch.bfloat16
+        postacts = torch.randn(B, O, I, device="cuda", dtype=dt)
+        eff_pw = torch.randn(O, I, device="cuda", dtype=dt, requires_grad=True)
+        base_input = torch.randn(B, I, device="cuda", dtype=dt)
+        base_w = torch.randn(O, I, device="cuda", dtype=dt)
+
+        def epilogue(rows):
+            p = postacts[rows].detach().requires_grad_()
+            y = QKANEpilogue.apply(p, eff_pw, None, base_input[rows], base_w)
+            grad_p, grad_pw = torch.autograd.grad(y.float().sum(), (p, eff_pw))
+            return y.detach(), grad_p, grad_pw
+
+        full_y, full_grad, grad_pw = epilogue(slice(None))  # one launch past 2^31
+        for start in range(0, B, 8192):  # each launch far below it
+            rows = slice(start, start + 8192)
+            y, grad, _ = epilogue(rows)
+            assert torch.equal(full_y[rows], y), ("forward", start)
+            assert torch.equal(full_grad[rows], grad), ("backward", start)
+        # grad_out is all ones, so grad_eff_pw is postacts summed over the
+        # batch, up to bf16 rounding of the result.
+        ref_pw = postacts.sum(0, dtype=torch.float32)
+        torch.testing.assert_close(grad_pw.float(), ref_pw, rtol=2**-8, atol=1e-3)
+        print("OK")
+        """,
+        preamble="",
+        timeout=1800,
+    )
+    assert "OK" in result.stdout, (
+        f"stdout={result.stdout}\nstderr={result.stderr[-2000:]}"
+    )
+
+
+@pytest.mark.parametrize(
+    "module, fn",
+    [
+        pytest.param(
+            "flash.triton_linear",
+            "triton_linear_forward",
+            marks=pytest.mark.skipif(not _FLASH_AVAILABLE, reason="no triton"),
+            id="triton",
+        ),
+        # Already passes before #35 (cuTile addresses tiles in 64 bits); it
+        # guards the cuTile twin of TritonLinear at the same sizes.
+        pytest.param(
+            "cutile.cutile_linear",
+            "cutile_linear_forward",
+            marks=pytest.mark.skipif(not _CUTILE_AVAILABLE, reason="no cuda-tile"),
+            id="cutile",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "m, k, n",
+    [
+        (2**19 + 1, 4096, 64),  # input offset m * K passes 2^31
+        (2**21 + 1, 16, 1024),  # output offset m * N passes 2^31
+    ],
+)
+def test_linear_past_int32(run_snippet, module, fn, m, k, n):
+    result = run_snippet(
+        f"""
+        import torch
+        import torch.nn.functional as F
+        from qkan.solver.{module} import {fn} as linear
+
+        torch.manual_seed(0)
+        x = torch.randn({m}, {k}, device="cuda", dtype=torch.bfloat16)
+        w = (torch.randn({n}, {k}, device="cuda") / {k} ** 0.5).to(torch.bfloat16)
+        y = linear(x, w, None)  # past 2^31 elements
+        # Compare in row blocks so assert_close's temporaries stay small.
+        for x_rows, y_rows in zip(x.split(2**18), y.split(2**18)):
+            ref = F.linear(x_rows, w)
+            torch.testing.assert_close(y_rows, ref, rtol=2e-2, atol=5e-2)
+        print("OK")
+        """,
+        preamble="",
+        timeout=1800,
+    )
+    assert "OK" in result.stdout, (
+        f"stdout={result.stdout}\nstderr={result.stderr[-2000:]}"
+    )
+
+
+@pytest.mark.skipif(not _CUTILE_AVAILABLE, reason="no cuda-tile")
+def test_cutile_activation_past_int32(run_snippet):
+    # The activations flatten their input into one 1-D array, and cuTile
+    # rejects an array past 2^31 elements ("shape is too big").
+    result = run_snippet(
+        """
+        import torch
+        from qkan.solver.cutile.cutile_activations import (
+            cutile_activation_backward,
+            cutile_activation_forward,
+        )
+
+        torch.manual_seed(0)
+        dt = torch.bfloat16
+        n, chunk = 2**31 + 4096, 2**29
+
+        def check(fn, *tensors):
+            full = fn(*tensors, "silu", dt)  # the whole tensor in one call
+            for start in range(0, n, chunk):
+                rows = slice(start, start + chunk)
+                part = fn(*(t[rows] for t in tensors), "silu", dt)
+                assert torch.equal(full[rows], part), (fn.__name__, start)
+
+        x = torch.randn(n, device="cuda", dtype=dt)
+        check(cutile_activation_forward, x)
+        check(cutile_activation_backward, x, x)  # x doubles as grad_y
         print("OK")
         """,
         preamble="",
