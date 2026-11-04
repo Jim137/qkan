@@ -1,0 +1,62 @@
+name: gpu-tests
+
+# Runs skills/tests on the self-hosted GPU runner (an RTX 5090).  Only code
+# pushed to this repository reaches it: there is deliberately no pull_request
+# trigger, so pull requests from forks never run on the runner.  Pull requests
+# from this repository's own branches still get the check from the push to
+# their branch.
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      large:
+        description: Also run the large-offset tests (up to 13 GB of GPU memory)
+        type: boolean
+        default: false
+
+concurrency:
+  group: gpu-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: [self-hosted, linux, gpu]
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Install dependencies
+        # A fresh environment per run; uv's cache on the runner keeps this to
+        # seconds.  uv's own CPython ships Python.h, which Triton and the
+        # extension build need.
+        run: |
+          uv venv --managed-python --python 3.12
+          uv pip install "torch==2.11.*" --index-url https://download.pytorch.org/whl/cu130
+          uv pip install cuda-tile pytest ninja setuptools tqdm matplotlib qiskit
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          echo "/usr/local/cuda/bin" >> "$GITHUB_PATH"
+
+      - name: Build the CuTe extension
+        env:
+          # The runner's CUDA 13.2 differs from torch's 13.0 in the minor version only.
+          QKAN_FORCE_BUILD: "TRUE"
+          CUTLASS_PATH: ${{ runner.tool_cache }}/cutlass
+        run: |
+          if [ ! -f "$CUTLASS_PATH/include/cute/tensor.hpp" ]; then
+            git clone --depth 1 --filter=blob:none --sparse https://github.com/NVIDIA/cutlass.git "$CUTLASS_PATH"
+            git -C "$CUTLASS_PATH" sparse-checkout set include/
+          fi
+          python setup.py build_ext --inplace
+
+      - name: Test
+        run: python -m pytest skills/tests -rs
+
+      - name: Large-offset tests
+        if: inputs.large
+        env:
+          QKAN_LARGE_TESTS: "1"
+        run: python -m pytest skills/tests/test_large_offsets.py -rs
