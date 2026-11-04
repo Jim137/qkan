@@ -41,7 +41,10 @@ _INV_SQRT_2PI = tl.constexpr(0.3989422804014327)  # 1/sqrt(2*pi)  (N(0,1) pdf co
 @triton.jit
 def _silu_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    # int64: tensors past 2^31 elements are reachable and tl.program_id is
+    # int32, so the wrapped offset would pass `offs < n` (#31).  Same in
+    # every kernel below.
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     y = x * tl.sigmoid(x)
@@ -51,7 +54,7 @@ def _silu_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
 @triton.jit
 def _gelu_exact_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     y = 0.5 * x * (1.0 + tl.erf(x * _INV_SQRT2))
@@ -61,7 +64,7 @@ def _gelu_exact_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
 @triton.jit
 def _gelu_tanh_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     inner = _GELU_TANH_K0 * (x + _GELU_TANH_K1 * x * x * x)
@@ -72,7 +75,7 @@ def _gelu_tanh_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
 @triton.jit
 def _relu_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     y = tl.where(x > 0.0, x, 0.0)
@@ -82,7 +85,7 @@ def _relu_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
 @triton.jit
 def _tanh_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     y = libdevice.tanh(x)
@@ -92,7 +95,7 @@ def _tanh_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
 @triton.jit
 def _sigmoid_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     y = tl.sigmoid(x)
@@ -105,7 +108,7 @@ def _sigmoid_fwd_kernel(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
 @triton.jit
 def _silu_bwd_kernel(x_ptr, gy_ptr, gx_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     gy = tl.load(gy_ptr + offs, mask=mask).to(tl.float32)
@@ -118,7 +121,7 @@ def _silu_bwd_kernel(x_ptr, gy_ptr, gx_ptr, n, BLOCK: tl.constexpr):
 @triton.jit
 def _gelu_exact_bwd_kernel(x_ptr, gy_ptr, gx_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     gy = tl.load(gy_ptr + offs, mask=mask).to(tl.float32)
@@ -132,7 +135,7 @@ def _gelu_exact_bwd_kernel(x_ptr, gy_ptr, gx_ptr, n, BLOCK: tl.constexpr):
 @triton.jit
 def _gelu_tanh_bwd_kernel(x_ptr, gy_ptr, gx_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     gy = tl.load(gy_ptr + offs, mask=mask).to(tl.float32)
@@ -149,7 +152,7 @@ def _gelu_tanh_bwd_kernel(x_ptr, gy_ptr, gx_ptr, n, BLOCK: tl.constexpr):
 @triton.jit
 def _relu_bwd_kernel(x_ptr, gy_ptr, gx_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     gy = tl.load(gy_ptr + offs, mask=mask).to(tl.float32)
@@ -160,7 +163,7 @@ def _relu_bwd_kernel(x_ptr, gy_ptr, gx_ptr, n, BLOCK: tl.constexpr):
 @triton.jit
 def _tanh_bwd_kernel(x_ptr, gy_ptr, gx_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     gy = tl.load(gy_ptr + offs, mask=mask).to(tl.float32)
@@ -172,7 +175,7 @@ def _tanh_bwd_kernel(x_ptr, gy_ptr, gx_ptr, n, BLOCK: tl.constexpr):
 @triton.jit
 def _sigmoid_bwd_kernel(x_ptr, gy_ptr, gx_ptr, n, BLOCK: tl.constexpr):
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid.to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
     gy = tl.load(gy_ptr + offs, mask=mask).to(tl.float32)
