@@ -188,7 +188,8 @@ __global__ void cute_act_fwd_kernel_vec(
     int64_t idx = (int64_t)blockIdx.x * BLOCK_B + threadIdx.x;
     if (idx >= n_vec) return;
 
-    // 128-bit aligned load (PyTorch CUDA allocations are 256-byte aligned).
+    // 128-bit load: launch_fwd only takes this path when every pointer is
+    // 16-byte aligned.
     const int4* xv4 = reinterpret_cast<const int4*>(x_ptr) + idx;
     int4*       yv4 = reinterpret_cast<int4*>(y_ptr)       + idx;
 
@@ -295,13 +296,18 @@ static inline ActKind to_act_kind(int kind_int) {
 // Python-facing launchers (bound from cute_kernels.cu's PYBIND11_MODULE)
 // ====================================================================
 
-// Launch vec kernel for the aligned prefix and a scalar tail kernel for the
-// remainder (if any). Both kernels are no-ops when their grid is 0.
+// Launch the vec kernel for the VEC-divisible prefix and the scalar tail kernel
+// for the remainder (if any).  The vec kernel moves 16 bytes per access, so it
+// needs every pointer 16-byte aligned: fresh allocations are, but a contiguous
+// *view* keeps its storage offset in data_ptr() -- x[1:], or a later chunk of
+// torch.chunk(x, k), can start at any element.  If any pointer is misaligned
+// the scalar kernel takes the whole range instead.  Both kernels are no-ops
+// when their grid is 0.
 template <typename IOT>
 static inline void launch_fwd(ActKind kind, const IOT* x, IOT* y, int64_t n,
                               cudaStream_t stream) {
     constexpr int VEC = vec_traits<IOT>::VEC;
-    int64_t n_vec = n / VEC;
+    int64_t n_vec = is_byte_aligned<16>(x) && is_byte_aligned<16>(y) ? n / VEC : 0;
     int64_t n_aligned = n_vec * VEC;
     // cudaGetLastError() returns the last error from ANY prior call on this
     // thread; consume a stale one so the launch checks below cannot blame
@@ -321,7 +327,9 @@ template <typename IOT>
 static inline void launch_bwd(ActKind kind, const IOT* x, const IOT* gy,
                               IOT* gx, int64_t n, cudaStream_t stream) {
     constexpr int VEC = vec_traits<IOT>::VEC;
-    int64_t n_vec = n / VEC;
+    int64_t n_vec =
+        is_byte_aligned<16>(x) && is_byte_aligned<16>(gy) && is_byte_aligned<16>(gx)
+        ? n / VEC : 0;
     int64_t n_aligned = n_vec * VEC;
     // cudaGetLastError() returns the last error from ANY prior call on this
     // thread; consume a stale one so the launch checks below cannot blame
@@ -368,6 +376,14 @@ torch::Tensor cute_activation_backward(torch::Tensor grad_y, torch::Tensor x, in
     TORCH_CHECK(x.is_cuda() && grad_y.is_cuda(), "tensors must be CUDA");
     TORCH_CHECK(x.scalar_type() == grad_y.scalar_type(),
                 "x and grad_y must have the same dtype");
+    TORCH_CHECK(grad_y.device() == x.device(),
+                "CuTe activation backward: grad_y is on ", grad_y.device(),
+                " but x is on ", x.device());
+    // The element count is taken from x, so a smaller grad_y would be read
+    // past its end.
+    TORCH_CHECK(grad_y.sizes() == x.sizes(),
+                "CuTe activation backward: grad_y shape ", grad_y.sizes(),
+                " must match x shape ", x.sizes());
     auto x_c  = x.is_contiguous() ? x : x.contiguous();
     auto gy_c = grad_y.is_contiguous() ? grad_y : grad_y.contiguous();
     int64_t n = x_c.numel();

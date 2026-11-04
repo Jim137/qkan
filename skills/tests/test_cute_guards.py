@@ -252,3 +252,72 @@ def test_smem_guard_bounds_pz_state_stride_below_int32(run_snippet):
         print("OK")
     """)
     assert "OK" in result.stdout, f"stdout={result.stdout}\nstderr={result.stderr}"
+
+
+# ---------------------------------------------------------------------------
+# The quantum launchers never checked where their inputs live, so a host
+# pointer went straight into a CUDA kernel.  On a driver with HMM that even
+# "works" (slowly, and with the right answer); anywhere else it is an illegal
+# memory access.  Either way it has to fail the same way everywhere (#24).
+# The asserts match the guard's own message: a bare "CUDA" would also match
+# "CUDA error: illegal memory access" and pass without the fix.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("x_dev, theta_dev", [("cpu", "cpu"), ("cuda", "cpu")])
+def test_forward_rejects_non_cuda_inputs(run_snippet, x_dev, theta_dev):
+    result = run_snippet(f"""
+        out_dim, in_dim, reps = 4, 3, 2
+        x = torch.randn(8, in_dim, device="{x_dev}")
+        theta = theta_for(out_dim, in_dim, reps, device="{theta_dev}")
+        pw, pb = preacts_for(out_dim, in_dim, reps, device="{x_dev}")
+        try:
+            C.pz_forward(x, theta, pw, pb, False, True, False)
+        except Exception as error:
+            print("RAISED:", type(error).__name__, str(error)[:200])
+        else:
+            print("NO ERROR")
+    """)
+    assert "must be a CUDA tensor" in result.stdout, (
+        f"stdout={result.stdout}\nstderr={result.stderr}"
+    )
+
+
+def test_backward_rejects_cpu_grad_output(run_snippet):
+    result = run_snippet("""
+        out_dim, in_dim, reps = 4, 3, 2
+        x = torch.randn(8, in_dim, device="cuda")
+        theta = theta_for(out_dim, in_dim, reps)
+        pw, pb = preacts_for(out_dim, in_dim, reps)
+        grad_out = torch.randn(8, out_dim, in_dim)  # left on the CPU
+        try:
+            C.pz_backward(x, theta, pw, pb, grad_out, False, True, 32)
+        except Exception as error:
+            print("RAISED:", type(error).__name__, str(error)[:200])
+        else:
+            print("NO ERROR")
+    """)
+    assert "grad_output must be" in result.stdout, (
+        f"stdout={result.stdout}\nstderr={result.stderr}"
+    )
+
+
+def test_backward_rejects_grad_output_shape_mismatch(run_snippet):
+    """The backward kernels view grad_output as (batch, out_dim, in_dim) built
+    from x and theta, so a smaller tensor is read past its end."""
+    result = run_snippet("""
+        out_dim, in_dim, reps = 4, 3, 2
+        x = torch.randn(8, in_dim, device="cuda")
+        theta = theta_for(out_dim, in_dim, reps)
+        pw, pb = preacts_for(out_dim, in_dim, reps)
+        grad_out = torch.randn(2, out_dim, in_dim, device="cuda")  # 2 rows, not 8
+        try:
+            C.pz_backward(x, theta, pw, pb, grad_out, False, True, 32)
+        except Exception as error:
+            print("RAISED:", type(error).__name__, str(error)[:200])
+        else:
+            print("NO ERROR")
+    """)
+    assert "grad_output shape" in result.stdout, (
+        f"stdout={result.stdout}\nstderr={result.stderr}"
+    )
