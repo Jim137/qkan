@@ -84,6 +84,8 @@ if _TRITON_AVAILABLE:
         pid_m = tl.program_id(0)
         pid_n = tl.program_id(1)
 
+        # Offsets are int32: triton_linear_forward launches in row chunks
+        # that keep M * K and M * N below 2^31 (#35).
         offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
         offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
         offs_k = tl.arange(0, BLOCK_K)
@@ -197,28 +199,39 @@ def triton_linear_forward(
         has_bias = False
 
     BLOCK_M, BLOCK_N, BLOCK_K = _select_blocks(M, N, K)
-    grid = (triton.cdiv(M, BLOCK_M), triton.cdiv(N, BLOCK_N))
-
-    _linear_forward_kernel[grid](
-        x_c,
-        w_c,
-        b_ptr,
-        y,
-        M,
-        N,
-        K,
-        x_c.stride(0),
-        x_c.stride(1),
-        w_c.stride(0),
-        w_c.stride(1),
-        y.stride(0),
-        y.stride(1),
-        HAS_BIAS=has_bias,
-        IS_F32=(x.dtype == torch.float32),
-        BLOCK_M=BLOCK_M,
-        BLOCK_N=BLOCK_N,
-        BLOCK_K=BLOCK_K,
-    )
+    # The kernel's offsets are int32, and M * K into x or M * N into y passes
+    # 2^31 at realistic token counts (#35).  Widening them in the kernel costs
+    # 96 -> 128 regs/thread on the bf16 path, so large inputs are launched in
+    # row chunks that keep both products below 2^31 instead.  Chunks are a
+    # multiple of BLOCK_M, so even masked tail rows stay in range; ordinary
+    # sizes still take a single launch on the tensors themselves.
+    rows = (2**31 - 1) // max(K, N) // BLOCK_M * BLOCK_M
+    for start in range(0, M, rows):
+        x_part, y_part = x_c, y
+        if M > rows:
+            x_part, y_part = x_c[start : start + rows], y[start : start + rows]
+        m = x_part.shape[0]
+        grid = (triton.cdiv(m, BLOCK_M), triton.cdiv(N, BLOCK_N))
+        _linear_forward_kernel[grid](
+            x_part,
+            w_c,
+            b_ptr,
+            y_part,
+            m,
+            N,
+            K,
+            x_part.stride(0),
+            x_part.stride(1),
+            w_c.stride(0),
+            w_c.stride(1),
+            y_part.stride(0),
+            y_part.stride(1),
+            HAS_BIAS=has_bias,
+            IS_F32=(x.dtype == torch.float32),
+            BLOCK_M=BLOCK_M,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K,
+        )
     return y
 
 
