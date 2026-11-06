@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Circuit Packing and Calibration-Aware Layouts &mdash; QKAN 0.2.3dev documentation</title>
+  <title>Circuit Packing and Calibration-Aware Layouts &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
@@ -14,7 +14,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/packing_guide.html" />
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=db1dea96"></script>
+      <script src="_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -131,7 +131,7 @@ qiskit’s transpiler already does this well at <code class="docutils literal no
 
 <span class="n">placed</span> <span class="o">=</span> <span class="n">pack_circuit</span><span class="p">(</span><span class="n">profile</span><span class="p">,</span> <span class="n">ghz20</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># one copy on the best-calibrated path</span>
 <span class="n">result</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">placed</span><span class="o">.</span><span class="n">kernel</span><span class="p">,</span> <span class="n">shots_count</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
-<span class="n">pairs</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;I&quot;</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="s2">&quot;ZZ&quot;</span> <span class="o">+</span> <span class="s2">&quot;I&quot;</span> <span class="o">*</span> <span class="p">(</span><span class="mi">18</span> <span class="o">-</span> <span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">19</span><span class="p">)]</span>
+<span class="n">pairs</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"I"</span> <span class="o">*</span> <span class="n">i</span> <span class="o">+</span> <span class="s2">"ZZ"</span> <span class="o">+</span> <span class="s2">"I"</span> <span class="o">*</span> <span class="p">(</span><span class="mi">18</span> <span class="o">-</span> <span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">19</span><span class="p">)]</span>
 <span class="n">zz</span> <span class="o">=</span> <span class="p">[</span><span class="n">placed</span><span class="o">.</span><span class="n">expectation</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">pair</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">pair</span> <span class="ow">in</span> <span class="n">pairs</span><span class="p">]</span>
 </pre></div>
 </div>
@@ -147,13 +147,13 @@ Packing pays off when the same circuit runs many times, in one of two ways.</p>
 <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit.circuit</span><span class="w"> </span><span class="kn">import</span> <span class="n">Parameter</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit_ibm_runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">EstimatorV2</span>
 
-<span class="n">theta</span> <span class="o">=</span> <span class="n">Parameter</span><span class="p">(</span><span class="s2">&quot;theta&quot;</span><span class="p">)</span>
+<span class="n">theta</span> <span class="o">=</span> <span class="n">Parameter</span><span class="p">(</span><span class="s2">"theta"</span><span class="p">)</span>
 <span class="n">vqc</span> <span class="o">=</span> <span class="n">QuantumCircuit</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
 <span class="n">vqc</span><span class="o">.</span><span class="n">ry</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
 <span class="n">vqc</span><span class="o">.</span><span class="n">cx</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
 
 <span class="n">packed</span> <span class="o">=</span> <span class="n">pack_circuit</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">vqc</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">max_readout_error</span><span class="o">=</span><span class="mf">0.05</span><span class="p">)</span>
-<span class="n">obs</span> <span class="o">=</span> <span class="n">packed</span><span class="o">.</span><span class="n">observable</span><span class="p">(</span><span class="s2">&quot;ZI&quot;</span><span class="p">)</span>                <span class="c1"># any Pauli/SparsePauliOp, mapped per tile</span>
+<span class="n">obs</span> <span class="o">=</span> <span class="n">packed</span><span class="o">.</span><span class="n">observable</span><span class="p">(</span><span class="s2">"ZI"</span><span class="p">)</span>                <span class="c1"># any Pauli/SparsePauliOp, mapped per tile</span>
 <span class="n">estimator</span> <span class="o">=</span> <span class="n">EstimatorV2</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="n">backend</span><span class="p">)</span>
 
 <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
@@ -165,7 +165,7 @@ Packing pays off when the same circuit runs many times, in one of two ways.</p>
 </div>
 <p>The second is shot reduction for a single circuit: pack <code class="docutils literal notranslate"><span class="pre">k</span></code> identical copies, run each job at <code class="docutils literal notranslate"><span class="pre">shots/k</span></code>, and pool the tiles with the averaged observable — same statistics, a <code class="docutils literal notranslate"><span class="pre">k</span></code>-fold shorter shot budget per job.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">packed</span> <span class="o">=</span> <span class="n">pack_circuit</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">bell</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
-<span class="n">pooled</span> <span class="o">=</span> <span class="n">packed</span><span class="o">.</span><span class="n">observable</span><span class="p">(</span><span class="s2">&quot;ZZ&quot;</span><span class="p">,</span> <span class="s2">&quot;mean&quot;</span><span class="p">)</span>     <span class="c1"># (1/8) * sum of the per-tile operators</span>
+<span class="n">pooled</span> <span class="o">=</span> <span class="n">packed</span><span class="o">.</span><span class="n">observable</span><span class="p">(</span><span class="s2">"ZZ"</span><span class="p">,</span> <span class="s2">"mean"</span><span class="p">)</span>     <span class="c1"># (1/8) * sum of the per-tile operators</span>
 <span class="n">value</span> <span class="o">=</span> <span class="n">estimator</span><span class="o">.</span><span class="n">run</span><span class="p">([(</span><span class="n">packed</span><span class="o">.</span><span class="n">isa</span><span class="p">,</span> <span class="n">pooled</span><span class="p">)])</span><span class="o">.</span><span class="n">result</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">evs</span>
 </pre></div>
 </div>
@@ -197,7 +197,7 @@ The same two repeated-use patterns apply.</p>
 
 <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
     <span class="n">result</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">packed</span><span class="o">.</span><span class="n">kernel</span><span class="p">,</span> <span class="n">shots_count</span><span class="o">=</span><span class="mi">2048</span><span class="p">)</span>
-    <span class="n">z0</span> <span class="o">=</span> <span class="n">packed</span><span class="o">.</span><span class="n">expectation</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">&quot;ZI&quot;</span><span class="p">)</span>   <span class="c1"># one value per tile</span>
+    <span class="n">z0</span> <span class="o">=</span> <span class="n">packed</span><span class="o">.</span><span class="n">expectation</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">"ZI"</span><span class="p">)</span>   <span class="c1"># one value per tile</span>
     <span class="n">packed</span> <span class="o">=</span> <span class="n">packed</span><span class="o">.</span><span class="n">rebind</span><span class="p">(</span><span class="n">optimizer</span><span class="o">.</span><span class="n">ask</span><span class="p">(</span><span class="mi">3</span><span class="p">))</span>
 </pre></div>
 </div>
@@ -210,10 +210,10 @@ The same two repeated-use patterns apply.</p>
 
 <span class="n">packed</span> <span class="o">=</span> <span class="n">pack_circuit</span><span class="p">(</span><span class="n">profile</span><span class="p">,</span> <span class="n">bell</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">max_readout_error</span><span class="o">=</span><span class="mf">0.05</span><span class="p">)</span>
 <span class="n">result</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">packed</span><span class="o">.</span><span class="n">kernel</span><span class="p">,</span> <span class="n">shots_count</span><span class="o">=</span><span class="mi">256</span><span class="p">)</span>      <span class="c1"># 8 x 256 = 2048 effective</span>
-<span class="n">zz</span> <span class="o">=</span> <span class="n">packed</span><span class="o">.</span><span class="n">expectation</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">&quot;ZZ&quot;</span><span class="p">,</span> <span class="s2">&quot;mean&quot;</span><span class="p">)</span>
+<span class="n">zz</span> <span class="o">=</span> <span class="n">packed</span><span class="o">.</span><span class="n">expectation</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">"ZZ"</span><span class="p">,</span> <span class="s2">"mean"</span><span class="p">)</span>
 
-<span class="n">xx_result</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">packed</span><span class="o">.</span><span class="n">basis_kernel</span><span class="p">(</span><span class="s2">&quot;XX&quot;</span><span class="p">),</span> <span class="n">shots_count</span><span class="o">=</span><span class="mi">256</span><span class="p">)</span>
-<span class="n">xx</span> <span class="o">=</span> <span class="n">packed</span><span class="o">.</span><span class="n">expectation</span><span class="p">(</span><span class="n">xx_result</span><span class="p">,</span> <span class="s2">&quot;XX&quot;</span><span class="p">,</span> <span class="s2">&quot;mean&quot;</span><span class="p">)</span>
+<span class="n">xx_result</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">packed</span><span class="o">.</span><span class="n">basis_kernel</span><span class="p">(</span><span class="s2">"XX"</span><span class="p">),</span> <span class="n">shots_count</span><span class="o">=</span><span class="mi">256</span><span class="p">)</span>
+<span class="n">xx</span> <span class="o">=</span> <span class="n">packed</span><span class="o">.</span><span class="n">expectation</span><span class="p">(</span><span class="n">xx_result</span><span class="p">,</span> <span class="s2">"XX"</span><span class="p">,</span> <span class="s2">"mean"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">packed.expectation(result,</span> <span class="pre">pauli,</span> <span class="pre">tile)</span></code> is the observable mapping: it reads <code class="docutils literal notranslate"><span class="pre">&lt;pauli&gt;</span></code> from a sample of the matching basis (the plain <code class="docutils literal notranslate"><span class="pre">kernel</span></code> for Z/I strings, <code class="docutils literal notranslate"><span class="pre">basis_kernel(pauli)</span></code> otherwise) — one <code class="docutils literal notranslate"><span class="pre">tile</span></code>, the list over copies (<code class="docutils literal notranslate"><span class="pre">None</span></code>), or the pooled <code class="docutils literal notranslate"><span class="pre">&quot;mean&quot;</span></code>.

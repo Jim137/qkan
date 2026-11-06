@@ -29,6 +29,10 @@ Solver Overview
      - GPU
      - cuTile (NVIDIA Tile Language) fused kernels. BF16/FP8 mixed-precision with coalesced state layout.
      - ``pip install cuda-tile``
+   * - ``flydsl``
+     - AMD GPU
+     - FlyDSL (AMD ROCm) fused kernels for ``pz``, ``rpz`` and ``real``. Unrolls ``reps`` at compile time and recovers backward states by un-applying gates, so no state checkpoints are stored. f32 or BF16 output.
+     - ROCm 7.x and a ROCm PyTorch, then ``pip install qkan[flydsl]``
    * - ``cutn``
      - GPU / CPU
      - cuQuantum tensor network contraction. Best for extremely large layers near OOM.

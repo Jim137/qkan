@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.solver._activation &mdash; QKAN 0.2.3dev documentation</title>
+  <title>qkan.solver._activation &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/_activation.html" />
       <script src="../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../../_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -80,31 +80,32 @@
   <h1>Source code for qkan.solver._activation</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
 <span class="c1">#</span>
-<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the "License");</span>
 <span class="c1"># you may not use this file except in compliance with the License.</span>
 <span class="c1"># You may obtain a copy of the License at</span>
 <span class="c1">#</span>
 <span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
 <span class="c1">#</span>
 <span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
-<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># distributed under the License is distributed on an "AS IS" BASIS,</span>
 <span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
 <span class="c1"># See the License for the specific language governing permissions and</span>
 <span class="c1"># limitations under the License.</span>
 
-<span class="sd">&quot;&quot;&quot;Resolve a string base-activation kind to a backend-matched ``nn.Module``.</span>
+<span class="sd">"""Resolve a string base-activation kind to a backend-matched ``nn.Module``.</span>
 
-<span class="sd">When QKANLayer&#39;s ``base_activation`` is a string (e.g. ``&quot;silu&quot;``), this</span>
+<span class="sd">When QKANLayer's ``base_activation`` is a string (e.g. ``"silu"``), this</span>
 <span class="sd">helper picks the activation kernel matching the chosen ``solver``:</span>
 
 <span class="sd">  cute   -&gt; qkan.solver.cute_activation.CuTeActivation</span>
 <span class="sd">  flash  -&gt; qkan.solver.triton_activation.TritonActivation</span>
 <span class="sd">  cutile -&gt; qkan.solver.cutile_activation.CuTileActivation</span>
+<span class="sd">  flydsl -&gt; qkan.solver.flydsl.flydsl_activation.FlyDSLActivation</span>
 <span class="sd">  other  -&gt; torch.nn equivalent (SiLU, GELU, ReLU, Tanh, Sigmoid)</span>
 
-<span class="sd">Backend imports are guarded; if the matching backend isn&#39;t installed we</span>
+<span class="sd">Backend imports are guarded; if the matching backend isn't installed we</span>
 <span class="sd">fall back to the torch.nn equivalent so the layer still works.</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
@@ -113,22 +114,22 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">nn</span>
 
 <span class="c1"># Canonical kinds — what the backend kernels actually implement.</span>
-<span class="n">_CANONICAL_KINDS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;silu&quot;</span><span class="p">,</span> <span class="s2">&quot;gelu_exact&quot;</span><span class="p">,</span> <span class="s2">&quot;gelu_tanh&quot;</span><span class="p">,</span> <span class="s2">&quot;relu&quot;</span><span class="p">,</span> <span class="s2">&quot;tanh&quot;</span><span class="p">,</span> <span class="s2">&quot;sigmoid&quot;</span><span class="p">}</span>
+<span class="n">_CANONICAL_KINDS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"silu"</span><span class="p">,</span> <span class="s2">"gelu_exact"</span><span class="p">,</span> <span class="s2">"gelu_tanh"</span><span class="p">,</span> <span class="s2">"relu"</span><span class="p">,</span> <span class="s2">"tanh"</span><span class="p">,</span> <span class="s2">"sigmoid"</span><span class="p">}</span>
 
-<span class="c1"># Aliases the user may pass.  ``&quot;gelu&quot;`` defaults to the EXACT (erf-based)</span>
-<span class="c1"># variant, matching ``torch.nn.functional.gelu(approximate=&quot;none&quot;)``.</span>
+<span class="c1"># Aliases the user may pass.  ``"gelu"`` defaults to the EXACT (erf-based)</span>
+<span class="c1"># variant, matching ``torch.nn.functional.gelu(approximate="none")``.</span>
 <span class="n">_KIND_ALIASES</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;swish&quot;</span><span class="p">:</span> <span class="s2">&quot;silu&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;gelu&quot;</span><span class="p">:</span> <span class="s2">&quot;gelu_exact&quot;</span><span class="p">,</span>
+    <span class="s2">"swish"</span><span class="p">:</span> <span class="s2">"silu"</span><span class="p">,</span>
+    <span class="s2">"gelu"</span><span class="p">:</span> <span class="s2">"gelu_exact"</span><span class="p">,</span>
 <span class="p">}</span>
 
 <span class="n">_TORCH_ACTIVATIONS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;silu&quot;</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">SiLU</span><span class="p">,</span>
-    <span class="s2">&quot;gelu_exact&quot;</span><span class="p">:</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(</span><span class="n">approximate</span><span class="o">=</span><span class="s2">&quot;none&quot;</span><span class="p">),</span>
-    <span class="s2">&quot;gelu_tanh&quot;</span><span class="p">:</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(</span><span class="n">approximate</span><span class="o">=</span><span class="s2">&quot;tanh&quot;</span><span class="p">),</span>
-    <span class="s2">&quot;relu&quot;</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">,</span>
-    <span class="s2">&quot;tanh&quot;</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Tanh</span><span class="p">,</span>
-    <span class="s2">&quot;sigmoid&quot;</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sigmoid</span><span class="p">,</span>
+    <span class="s2">"silu"</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">SiLU</span><span class="p">,</span>
+    <span class="s2">"gelu_exact"</span><span class="p">:</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(</span><span class="n">approximate</span><span class="o">=</span><span class="s2">"none"</span><span class="p">),</span>
+    <span class="s2">"gelu_tanh"</span><span class="p">:</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(</span><span class="n">approximate</span><span class="o">=</span><span class="s2">"tanh"</span><span class="p">),</span>
+    <span class="s2">"relu"</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">,</span>
+    <span class="s2">"tanh"</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Tanh</span><span class="p">,</span>
+    <span class="s2">"sigmoid"</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sigmoid</span><span class="p">,</span>
 <span class="p">}</span>
 
 
@@ -137,8 +138,8 @@
     <span class="n">k</span> <span class="o">=</span> <span class="n">_KIND_ALIASES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_CANONICAL_KINDS</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Unknown activation kind </span><span class="si">{</span><span class="n">kind</span><span class="si">!r}</span><span class="s2">. &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;Supported: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_CANONICAL_KINDS</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">_KIND_ALIASES</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">"Unknown activation kind </span><span class="si">{</span><span class="n">kind</span><span class="si">!r}</span><span class="s2">. "</span>
+            <span class="sa">f</span><span class="s2">"Supported: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_CANONICAL_KINDS</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">_KIND_ALIASES</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
     <span class="k">return</span> <span class="n">k</span>
 
@@ -146,28 +147,35 @@
 <div class="viewcode-block" id="make_base_activation">
 <a class="viewcode-back" href="../../../api.html#qkan.solver.make_base_activation">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">make_base_activation</span><span class="p">(</span><span class="n">kind</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">solver</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return an nn.Module computing the named activation, matched to the solver.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Return an nn.Module computing the named activation, matched to the solver."""</span>
     <span class="n">k</span> <span class="o">=</span> <span class="n">_normalize_kind</span><span class="p">(</span><span class="n">kind</span><span class="p">)</span>
 
-    <span class="k">if</span> <span class="n">solver</span> <span class="o">==</span> <span class="s2">&quot;cute&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">solver</span> <span class="o">==</span> <span class="s2">"cute"</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">from</span><span class="w"> </span><span class="nn">.cute.cute_activation</span><span class="w"> </span><span class="kn">import</span> <span class="n">CuTeActivation</span>
 
             <span class="k">return</span> <span class="n">CuTeActivation</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
             <span class="k">pass</span>
-    <span class="k">elif</span> <span class="n">solver</span> <span class="o">==</span> <span class="s2">&quot;flash&quot;</span><span class="p">:</span>
+    <span class="k">elif</span> <span class="n">solver</span> <span class="o">==</span> <span class="s2">"flash"</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">from</span><span class="w"> </span><span class="nn">.flash.triton_activation</span><span class="w"> </span><span class="kn">import</span> <span class="n">TritonActivation</span>
 
             <span class="k">return</span> <span class="n">TritonActivation</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
             <span class="k">pass</span>
-    <span class="k">elif</span> <span class="n">solver</span> <span class="o">==</span> <span class="s2">&quot;cutile&quot;</span><span class="p">:</span>
+    <span class="k">elif</span> <span class="n">solver</span> <span class="o">==</span> <span class="s2">"cutile"</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">from</span><span class="w"> </span><span class="nn">.cutile.cutile_activation</span><span class="w"> </span><span class="kn">import</span> <span class="n">CuTileActivation</span>
 
             <span class="k">return</span> <span class="n">CuTileActivation</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+            <span class="k">pass</span>
+    <span class="k">elif</span> <span class="n">solver</span> <span class="o">==</span> <span class="s2">"flydsl"</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">.flydsl.flydsl_activation</span><span class="w"> </span><span class="kn">import</span> <span class="n">FlyDSLActivation</span>
+
+            <span class="k">return</span> <span class="n">FlyDSLActivation</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
             <span class="k">pass</span>
 

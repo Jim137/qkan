@@ -1,0 +1,355 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qkan.solver.flydsl.flydsl &mdash; QKAN 0.2.4dev documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=9edc463e" />
+
+  
+    <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/flydsl/flydsl.html" />
+      <script src="../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../_static/documentation_options.js?v=a74f5ed0"></script>
+      <script src="../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            QKAN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../solver_guide.html">Solver Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../packing_guide.html">Circuit Packing and Calibration-Aware Layouts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../optim_guide.html">Optimizer Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../graph_guide.html">Inference and Training Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../examples.html">Examples &amp; Applications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../applications.html">Applications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">QKAN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">qkan.solver.flydsl.flydsl</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for qkan.solver.flydsl.flydsl</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang and the QKAN contributors. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the "License");</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an "AS IS" BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.._base</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKANSolver</span><span class="p">,</span> <span class="n">register</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..exact</span><span class="w"> </span><span class="kn">import</span> <span class="n">torch_exact_solver</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.flydsl_ops</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+        <span class="n">_FLYDSL_KERNELS_AVAILABLE</span><span class="p">,</span>
+        <span class="n">_first_order_only</span><span class="p">,</span>
+        <span class="n">flydsl_backward</span><span class="p">,</span>
+        <span class="n">flydsl_forward</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">_FLYDSL_AVAILABLE</span> <span class="o">=</span> <span class="n">_FLYDSL_KERNELS_AVAILABLE</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">_FLYDSL_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
+
+
+<span class="n">_SUPPORTED_FLYDSL_ANSATZES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">,</span> <span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">,</span> <span class="s2">"real"</span><span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_grad_like</span><span class="p">(</span><span class="n">grad</span><span class="p">,</span> <span class="n">ref</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Cast an f32 kernel gradient back to its input's dtype."""</span>
+    <span class="k">if</span> <span class="n">grad</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">grad</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">ref</span><span class="o">.</span><span class="n">dtype</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">grad</span>
+    <span class="k">return</span> <span class="n">grad</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">ref</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_FlyDSLFunction</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Custom autograd function: FlyDSL forward and backward.</span>
+
+<span class="sd">    The backward kernel recomputes the forward state per sample and walks the</span>
+<span class="sd">    circuit in reverse, so nothing but the inputs is saved for backward.</span>
+<span class="sd">    """</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span>
+        <span class="n">ctx</span><span class="p">,</span>
+        <span class="n">x</span><span class="p">,</span>
+        <span class="n">theta</span><span class="p">,</span>
+        <span class="n">preacts_w</span><span class="p">,</span>
+        <span class="n">preacts_b</span><span class="p">,</span>
+        <span class="n">reps</span><span class="p">,</span>
+        <span class="n">fast_measure</span><span class="p">,</span>
+        <span class="n">preacts_trainable</span><span class="p">,</span>
+        <span class="n">c_dtype</span><span class="p">,</span>
+        <span class="n">ansatz</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">)</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">reps</span> <span class="o">=</span> <span class="n">reps</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">fast_measure</span> <span class="o">=</span> <span class="n">fast_measure</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">preacts_trainable</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">ansatz</span> <span class="o">=</span> <span class="n">ansatz</span>
+        <span class="k">return</span> <span class="n">flydsl_forward</span><span class="p">(</span>
+            <span class="n">x</span><span class="p">,</span>
+            <span class="n">theta</span><span class="p">,</span>
+            <span class="n">preacts_w</span><span class="p">,</span>
+            <span class="n">preacts_b</span><span class="p">,</span>
+            <span class="n">reps</span><span class="p">,</span>
+            <span class="n">ansatz</span><span class="p">,</span>
+            <span class="n">preacts_trainable</span><span class="p">,</span>
+            <span class="n">fast_measure</span><span class="p">,</span>
+            <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">grad_output</span><span class="p">):</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
+        <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">flydsl_backward</span><span class="p">(</span>
+            <span class="n">x</span><span class="p">,</span>
+            <span class="n">theta</span><span class="p">,</span>
+            <span class="n">preacts_w</span><span class="p">,</span>
+            <span class="n">preacts_b</span><span class="p">,</span>
+            <span class="n">grad_output</span><span class="p">,</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">reps</span><span class="p">,</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">ansatz</span><span class="p">,</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">preacts_trainable</span><span class="p">,</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">grads</span> <span class="o">=</span> <span class="n">_first_order_only</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">_grad_like</span><span class="p">(</span><span class="n">grad_x</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span>
+                <span class="n">_grad_like</span><span class="p">(</span><span class="n">grad_theta</span><span class="p">,</span> <span class="n">theta</span><span class="p">),</span>
+                <span class="n">_grad_like</span><span class="p">(</span><span class="n">grad_pw</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">),</span>
+                <span class="n">_grad_like</span><span class="p">(</span><span class="n">grad_pb</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">),</span>
+            <span class="p">),</span>
+            <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">grad_output</span><span class="p">),</span>
+            <span class="s2">"the flydsl solver has no second derivatives, so its gradients "</span>
+            <span class="s2">"cannot be differentiated; use solver='exact' for higher-order "</span>
+            <span class="s2">"gradients"</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="o">*</span><span class="n">grads</span><span class="p">,</span>
+            <span class="kc">None</span><span class="p">,</span>  <span class="c1"># reps</span>
+            <span class="kc">None</span><span class="p">,</span>  <span class="c1"># fast_measure</span>
+            <span class="kc">None</span><span class="p">,</span>  <span class="c1"># preacts_trainable</span>
+            <span class="kc">None</span><span class="p">,</span>  <span class="c1"># c_dtype</span>
+            <span class="kc">None</span><span class="p">,</span>  <span class="c1"># ansatz</span>
+        <span class="p">)</span>
+
+
+<div class="viewcode-block" id="flydsl_exact_solver">
+<a class="viewcode-back" href="../../../../api.html#qkan.solver.flydsl_exact_solver">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">flydsl_exact_solver</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">preacts_weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">preacts_bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    FlyDSL-accelerated exact solver for AMD GPUs (ROCm).</span>
+
+<span class="sd">    Drop-in replacement for flash_exact_solver / cute_exact_solver. Uses fused</span>
+<span class="sd">    FlyDSL kernels for pz_encoding, rpz_encoding, and real ansatzes and falls</span>
+<span class="sd">    back to torch_exact_solver for the rest.</span>
+
+<span class="sd">    Key properties:</span>
+<span class="sd">      - ``reps`` is unrolled at compile time; theta trig is computed once per</span>
+<span class="sd">        thread and reused across its batch chunk</span>
+<span class="sd">      - Backward is state-free: gates are un-applied in reverse, so no</span>
+<span class="sd">        per-layer state checkpoints are written to memory</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        Same as torch_exact_solver.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        torch.Tensor, shape: (batch_size, out_dim, in_dim)</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_FLYDSL_AVAILABLE</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+            <span class="s2">"FlyDSL fused kernels not available. Install flydsl and a ROCm "</span>
+            <span class="s2">"build of PyTorch: pip install qkan[flydsl]"</span>
+        <span class="p">)</span>
+
+    <span class="n">ansatz</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ansatz"</span><span class="p">,</span> <span class="s2">"pz_encoding"</span><span class="p">)</span>
+    <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"preacts_trainable"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="n">fast_measure</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fast_measure"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+    <span class="n">out_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"out_dim"</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">c_dtype</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dtype"</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex64</span><span class="p">)</span>
+    <span class="n">batch</span><span class="p">,</span> <span class="n">in_dim</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+
+    <span class="c1"># Fallback for unsupported ansatzes</span>
+    <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_SUPPORTED_FLYDSL_ANSATZES</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch_exact_solver</span><span class="p">(</span>
+            <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">preacts_bias</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Broadcasting logic (mirrors torch_exact_solver)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">in_dim</span><span class="p">:</span>
+        <span class="n">repeat_out</span> <span class="o">=</span> <span class="n">out_dim</span>
+        <span class="n">repeat_in</span> <span class="o">=</span> <span class="n">in_dim</span> <span class="o">//</span> <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>
+
+    <span class="c1"># rpz always needs encoded_x; others only when preacts_trainable</span>
+    <span class="n">_needs_encoded_x</span> <span class="o">=</span> <span class="n">preacts_trainable</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">_needs_encoded_x</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">in_dim</span><span class="p">:</span>
+            <span class="n">repeat_out</span> <span class="o">=</span> <span class="n">out_dim</span>
+            <span class="n">repeat_in</span> <span class="o">=</span> <span class="n">in_dim</span> <span class="o">//</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span>
+                <span class="p">:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:</span>
+            <span class="p">]</span>
+            <span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:]</span>
+
+    <span class="c1"># Check if gradients are needed. Under torch.no_grad() / inference_mode,</span>
+    <span class="c1"># skip the autograd.Function wrapper to avoid its overhead even when</span>
+    <span class="c1"># parameter tensors still have requires_grad=True.</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_grad_enabled</span><span class="p">():</span>
+        <span class="n">needs_grad</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">needs_grad</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">requires_grad</span>
+        <span class="k">if</span> <span class="n">_needs_encoded_x</span><span class="p">:</span>
+            <span class="n">needs_grad</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">needs_grad</span> <span class="ow">or</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">requires_grad</span>
+            <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">needs_grad</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_FlyDSLFunction</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="n">x</span><span class="p">,</span>
+            <span class="n">theta</span><span class="p">,</span>
+            <span class="n">preacts_weight</span><span class="p">,</span>
+            <span class="n">preacts_bias</span><span class="p">,</span>
+            <span class="n">reps</span><span class="p">,</span>
+            <span class="n">fast_measure</span><span class="p">,</span>
+            <span class="n">preacts_trainable</span><span class="p">,</span>
+            <span class="n">c_dtype</span><span class="p">,</span>
+            <span class="n">ansatz</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">flydsl_forward</span><span class="p">(</span>
+        <span class="n">x</span><span class="p">,</span>
+        <span class="n">theta</span><span class="p">,</span>
+        <span class="n">preacts_weight</span><span class="p">,</span>
+        <span class="n">preacts_bias</span><span class="p">,</span>
+        <span class="n">reps</span><span class="p">,</span>
+        <span class="n">ansatz</span><span class="p">,</span>
+        <span class="n">preacts_trainable</span><span class="p">,</span>
+        <span class="n">fast_measure</span><span class="p">,</span>
+        <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">FlyDSLSolver</span><span class="p">(</span><span class="n">QKANSolver</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""FlyDSL ROCm solver (registered as ``"flydsl"``)."""</span>
+
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">"flydsl"</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">theta</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">preacts_weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">preacts_bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">flydsl_exact_solver</span><span class="p">(</span>
+            <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">preacts_bias</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+        <span class="p">)</span>
+
+
+<span class="n">register</span><span class="p">(</span><span class="n">FlyDSLSolver</span><span class="p">())</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jiun-Cheng Jiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

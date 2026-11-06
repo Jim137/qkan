@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Solver Guide &mdash; QKAN 0.2.3dev documentation</title>
+  <title>Solver Guide &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
@@ -14,7 +14,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/solver_guide.html" />
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=db1dea96"></script>
+      <script src="_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -137,22 +137,27 @@ Choose the right solver based on your hardware, model size, and deployment targe
 <td><p>cuTile (NVIDIA Tile Language) fused kernels. BF16/FP8 mixed-precision with coalesced state layout.</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">cuda-tile</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">cutn</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">flydsl</span></code></p></td>
+<td><p>AMD GPU</p></td>
+<td><p>FlyDSL (AMD ROCm) fused kernels for <code class="docutils literal notranslate"><span class="pre">pz</span></code>, <code class="docutils literal notranslate"><span class="pre">rpz</span></code> and <code class="docutils literal notranslate"><span class="pre">real</span></code>. Unrolls <code class="docutils literal notranslate"><span class="pre">reps</span></code> at compile time and recovers backward states by un-applying gates, so no state checkpoints are stored. f32 or BF16 output.</p></td>
+<td><p>ROCm 7.x and a ROCm PyTorch, then <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">qkan[flydsl]</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">cutn</span></code></p></td>
 <td><p>GPU / CPU</p></td>
 <td><p>cuQuantum tensor network contraction. Best for extremely large layers near OOM.</p></td>
 <td><p>GPU: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">cuquantum</span></code>, CPU: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">opt-einsum</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">qml</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">qml</span></code></p></td>
 <td><p>CPU</p></td>
 <td><p>PennyLane quantum circuits. For demonstration, not optimized.</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">pennylane</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">qiskit</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">qiskit</span></code></p></td>
 <td><p>IBM QPU</p></td>
 <td><p>IBM Quantum backends via Qiskit Runtime. For real quantum device inference.</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">qiskit</span> <span class="pre">qiskit-ibm-runtime</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">cudaq</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">cudaq</span></code></p></td>
 <td><p>QPU / GPU</p></td>
 <td><p>NVIDIA CUDA-Q. Supports AWS Braket QPUs, GPU simulators, and CPU simulators.</p></td>
 <td><p>See <a class="reference external" href="https://nvidia.github.io/cuda-quantum/">CUDA-Q installation</a></p></td>
@@ -172,7 +177,7 @@ Choose the right solver based on your hardware, model size, and deployment targe
 <section id="mixed-precision">
 <h2>Mixed Precision<a class="headerlink" href="#mixed-precision" title="Link to this heading"></a></h2>
 <p>The <code class="docutils literal notranslate"><span class="pre">flash</span></code> and <code class="docutils literal notranslate"><span class="pre">cutile</span></code> solvers support BF16 and FP8 compute via the <code class="docutils literal notranslate"><span class="pre">c_dtype</span></code> parameter:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qkan</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;flash&quot;</span><span class="p">,</span> <span class="n">c_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qkan</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">"flash"</span><span class="p">,</span> <span class="n">c_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">)</span>
 </pre></div>
 </div>
 <ul class="simple">
@@ -236,9 +241,9 @@ stashed for autograd, removing ~1/reps of the saved-for-backward memory.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qkan</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
     <span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span>
     <span class="n">reps</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
-    <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;exact&quot;</span><span class="p">,</span>
+    <span class="n">solver</span><span class="o">=</span><span class="s2">"exact"</span><span class="p">,</span>
     <span class="n">checkpoint_reps</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>   <span class="c1"># rep states recomputed on backward</span>
-    <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span>
+    <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span>
 <span class="p">)</span>
 </pre></div>
 </div>
@@ -260,7 +265,7 @@ the fused epilogue collapses it into a single Triton kernel
 (<code class="docutils literal notranslate"><span class="pre">qkan_epilogue_forward</span></code> / <code class="docutils literal notranslate"><span class="pre">qkan_epilogue_backward</span></code>), skipping two
 intermediate buffers and ~3 kernel launches per layer.</p>
 <p>Enable per layer:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qkan</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;flash&quot;</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qkan</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">"flash"</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">)</span>
 <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="n">qkan</span><span class="o">.</span><span class="n">qkan_layers</span><span class="p">:</span>
     <span class="n">layer</span><span class="o">.</span><span class="n">set_fused_epilogue</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
 </pre></div>
@@ -321,16 +326,16 @@ the full optimizer API.</p>
 <h3>IBM Quantum (Qiskit)<a class="headerlink" href="#ibm-quantum-qiskit" title="Link to this heading"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qiskit_ibm_runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">QiskitRuntimeService</span>
 
-<span class="n">service</span> <span class="o">=</span> <span class="n">QiskitRuntimeService</span><span class="p">(</span><span class="n">channel</span><span class="o">=</span><span class="s2">&quot;ibm_quantum_platform&quot;</span><span class="p">)</span>
+<span class="n">service</span> <span class="o">=</span> <span class="n">QiskitRuntimeService</span><span class="p">(</span><span class="n">channel</span><span class="o">=</span><span class="s2">"ibm_quantum_platform"</span><span class="p">)</span>
 <span class="n">backend</span> <span class="o">=</span> <span class="n">service</span><span class="o">.</span><span class="n">least_busy</span><span class="p">(</span><span class="n">operational</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">simulator</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
 <span class="n">ibm_model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
-    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;qiskit&quot;</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">"qiskit"</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
-        <span class="s2">&quot;backend&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
-        <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
-        <span class="s2">&quot;optimization_level&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
-        <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="o">.</span><span class="n">num_qubits</span><span class="p">,</span>
+        <span class="s2">"backend"</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
+        <span class="s2">"shots"</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
+        <span class="s2">"optimization_level"</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+        <span class="s2">"parallel_qubits"</span><span class="p">:</span> <span class="n">backend</span><span class="o">.</span><span class="n">num_qubits</span><span class="p">,</span>
     <span class="p">},</span>
 <span class="p">)</span>
 <span class="n">ibm_model</span><span class="o">.</span><span class="n">initialize_from_another_model</span><span class="p">(</span><span class="n">trained_model</span><span class="p">)</span>
@@ -340,13 +345,13 @@ the full optimizer API.</p>
 <section id="aws-braket-via-cuda-q">
 <h3>AWS Braket via CUDA-Q<a class="headerlink" href="#aws-braket-via-cuda-q" title="Link to this heading"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qpu_model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
-    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;cudaq&quot;</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">"cudaq"</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
-        <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="s2">&quot;braket&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;machine&quot;</span><span class="p">:</span> <span class="s2">&quot;arn:aws:braket:us-west-1::device/qpu/rigetti/Cepheus-1-108Q&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
-        <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
-        <span class="s2">&quot;initial_layout&quot;</span><span class="p">:</span> <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+        <span class="s2">"target"</span><span class="p">:</span> <span class="s2">"braket"</span><span class="p">,</span>
+        <span class="s2">"machine"</span><span class="p">:</span> <span class="s2">"arn:aws:braket:us-west-1::device/qpu/rigetti/Cepheus-1-108Q"</span><span class="p">,</span>
+        <span class="s2">"shots"</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
+        <span class="s2">"parallel_qubits"</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
+        <span class="s2">"initial_layout"</span><span class="p">:</span> <span class="s2">"auto"</span><span class="p">,</span>
     <span class="p">},</span>
 <span class="p">)</span>
 <span class="n">qpu_model</span><span class="o">.</span><span class="n">initialize_from_another_model</span><span class="p">(</span><span class="n">trained_model</span><span class="p">)</span>
@@ -363,14 +368,14 @@ Simulator and emulated targets ignore <code class="docutils literal notranslate"
 <p>CUDA-Q ships a built-in <code class="docutils literal notranslate"><span class="pre">quantum_machines</span></code> hardware target (contributed upstream by Quantum Machines) that lowers kernels to OpenQASM 2.0 and submits them to a QM <em>Qoperator</em> REST server — the gate-level entry point to OPX-controlled hardware, including DGX Quantum systems.
 qkan supports it directly:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qpu_model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
-    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;cudaq&quot;</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">"cudaq"</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
-        <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="s2">&quot;quantum_machines&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;url&quot;</span><span class="p">:</span> <span class="s2">&quot;http://qoperator-host:8080&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;executor&quot;</span><span class="p">:</span> <span class="s2">&quot;opx-1000&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;api_key&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span>          <span class="c1"># or QUANTUM_MACHINES_API_KEY env var</span>
-        <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
-        <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
+        <span class="s2">"target"</span><span class="p">:</span> <span class="s2">"quantum_machines"</span><span class="p">,</span>
+        <span class="s2">"url"</span><span class="p">:</span> <span class="s2">"http://qoperator-host:8080"</span><span class="p">,</span>
+        <span class="s2">"executor"</span><span class="p">:</span> <span class="s2">"opx-1000"</span><span class="p">,</span>
+        <span class="s2">"api_key"</span><span class="p">:</span> <span class="s2">"..."</span><span class="p">,</span>          <span class="c1"># or QUANTUM_MACHINES_API_KEY env var</span>
+        <span class="s2">"shots"</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
+        <span class="s2">"parallel_qubits"</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
     <span class="p">},</span>
 <span class="p">)</span>
 </pre></div>
@@ -404,33 +409,33 @@ When the transpiler maps a packed N-qubit circuit onto physical qubits <code cla
 <span class="n">layout</span> <span class="o">=</span> <span class="n">best_qubits</span><span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
-    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;qiskit&quot;</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">"qiskit"</span><span class="p">,</span> <span class="n">fast_measure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
-        <span class="s2">&quot;backend&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
-        <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
-        <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
-        <span class="s2">&quot;initial_layout&quot;</span><span class="p">:</span> <span class="n">layout</span><span class="p">,</span>
+        <span class="s2">"backend"</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
+        <span class="s2">"shots"</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
+        <span class="s2">"parallel_qubits"</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
+        <span class="s2">"initial_layout"</span><span class="p">:</span> <span class="n">layout</span><span class="p">,</span>
     <span class="p">},</span>
 <span class="p">)</span>
 </pre></div>
 </div>
 <p>Alternatively, pass <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> to let <code class="docutils literal notranslate"><span class="pre">qiskit_solver</span></code> compute the layout internally from the current backend calibration:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
-    <span class="s2">&quot;backend&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
-    <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
-    <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
-    <span class="s2">&quot;initial_layout&quot;</span><span class="p">:</span> <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+    <span class="s2">"backend"</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
+    <span class="s2">"shots"</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
+    <span class="s2">"parallel_qubits"</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
+    <span class="s2">"initial_layout"</span><span class="p">:</span> <span class="s2">"auto"</span><span class="p">,</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 <p>To exclude qubits above a single-qubit gate-error threshold, add <code class="docutils literal notranslate"><span class="pre">qubit_error_threshold</span></code>.
 For example, <code class="docutils literal notranslate"><span class="pre">0.001</span></code> keeps qubits whose IBM-native <code class="docutils literal notranslate"><span class="pre">sx</span></code> gate error is at or below 0.1%:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
-    <span class="s2">&quot;backend&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
-    <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
-    <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
-    <span class="s2">&quot;initial_layout&quot;</span><span class="p">:</span> <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;qubit_error_threshold&quot;</span><span class="p">:</span> <span class="mf">0.001</span><span class="p">,</span>
+    <span class="s2">"backend"</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
+    <span class="s2">"shots"</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span>
+    <span class="s2">"parallel_qubits"</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
+    <span class="s2">"initial_layout"</span><span class="p">:</span> <span class="s2">"auto"</span><span class="p">,</span>
+    <span class="s2">"qubit_error_threshold"</span><span class="p">:</span> <span class="mf">0.001</span><span class="p">,</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -484,13 +489,13 @@ If you add 2-qubit gates, you also need connectivity-aware routing.</p></li>
 <p>Real quantum hardware introduces gate errors, readout noise, and shot noise. QKAN provides
 framework-level error mitigation via the <code class="docutils literal notranslate"><span class="pre">mitigation</span></code> key in <code class="docutils literal notranslate"><span class="pre">solver_kwargs</span></code>:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
-    <span class="s2">&quot;backend&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
-    <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
-    <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="mi">127</span><span class="p">,</span>
-    <span class="s2">&quot;mitigation&quot;</span><span class="p">:</span> <span class="p">{</span>
-        <span class="s2">&quot;zne&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;scale_factors&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">]},</span>  <span class="c1"># Zero-Noise Extrapolation</span>
-        <span class="s2">&quot;n_repeats&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>                        <span class="c1"># Multi-shot averaging</span>
-        <span class="s2">&quot;clip_expvals&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>                  <span class="c1"># Clamp &lt;Z&gt; to [-1, 1]</span>
+    <span class="s2">"backend"</span><span class="p">:</span> <span class="n">backend</span><span class="p">,</span>
+    <span class="s2">"shots"</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
+    <span class="s2">"parallel_qubits"</span><span class="p">:</span> <span class="mi">127</span><span class="p">,</span>
+    <span class="s2">"mitigation"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"zne"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"scale_factors"</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">]},</span>  <span class="c1"># Zero-Noise Extrapolation</span>
+        <span class="s2">"n_repeats"</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>                        <span class="c1"># Multi-shot averaging</span>
+        <span class="s2">"clip_expvals"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>                  <span class="c1"># Clamp &lt;Z&gt; to [-1, 1]</span>
     <span class="p">},</span>
 <span class="p">}</span>
 </pre></div>
@@ -531,8 +536,8 @@ Prevents catastrophic outliers from ZNE extrapolation.</p>
 </table>
 <p>IBM-specific options (passed directly, not under <code class="docutils literal notranslate"><span class="pre">mitigation</span></code>):</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
-    <span class="s2">&quot;resilience_level&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>  <span class="c1"># Qiskit-native ZNE</span>
-    <span class="s2">&quot;twirling&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;enable_gates&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;enable_measure&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+    <span class="s2">"resilience_level"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>  <span class="c1"># Qiskit-native ZNE</span>
+    <span class="s2">"twirling"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"enable_gates"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">"enable_measure"</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
 <span class="p">}</span>
 </pre></div>
 </div>

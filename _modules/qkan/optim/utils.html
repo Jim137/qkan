@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.optim.utils &mdash; QKAN 0.2.3dev documentation</title>
+  <title>qkan.optim.utils &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/optim/utils.html" />
       <script src="../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../../_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -80,19 +80,19 @@
   <h1>Source code for qkan.optim.utils</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
 <span class="c1">#</span>
-<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the "License");</span>
 <span class="c1"># you may not use this file except in compliance with the License.</span>
 <span class="c1"># You may obtain a copy of the License at</span>
 <span class="c1">#</span>
 <span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
 <span class="c1">#</span>
 <span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
-<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># distributed under the License is distributed on an "AS IS" BASIS,</span>
 <span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
 <span class="c1"># See the License for the specific language governing permissions and</span>
 <span class="c1"># limitations under the License.</span>
 
-<span class="sd">&quot;&quot;&quot;Optimizer-side helpers for cross-``p_dim`` checkpoint portability.</span>
+<span class="sd">"""Optimizer-side helpers for cross-``p_dim`` checkpoint portability.</span>
 
 <span class="sd">The QKAN ``p_dim`` knob changes the *storage rank* of theta / preacts /</span>
 <span class="sd">(O,I) parameters. Model state dicts are auto-reshaped on load via the</span>
@@ -101,33 +101,33 @@
 <span class="sd">optimizer and follows the parameter shape at the time it was first seen.</span>
 
 <span class="sd">Call :func:`reshape_optimizer_state` immediately after</span>
-<span class="sd">``optimizer.load_state_dict(...)`` when the model&#39;s current ``p_dim``</span>
-<span class="sd">differs from the checkpoint&#39;s.</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">``optimizer.load_state_dict(...)`` when the model's current ``p_dim``</span>
+<span class="sd">differs from the checkpoint's.</span>
+<span class="sd">"""</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;reshape_optimizer_state&quot;</span><span class="p">]</span>
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"reshape_optimizer_state"</span><span class="p">]</span>
 
 
 <div class="viewcode-block" id="reshape_optimizer_state">
 <a class="viewcode-back" href="../../../api.html#qkan.reshape_optimizer_state">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">reshape_optimizer_state</span><span class="p">(</span><span class="n">optimizer</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Optimizer</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Reshape state tensors to match their parameters&#39; current shapes.</span>
+<span class="w">    </span><span class="sd">"""Reshape state tensors to match their parameters' current shapes.</span>
 
-<span class="sd">    Walks every per-parameter state entry and, when a tensor&#39;s stored</span>
-<span class="sd">    shape doesn&#39;t match its parameter&#39;s current shape but the element</span>
+<span class="sd">    Walks every per-parameter state entry and, when a tensor's stored</span>
+<span class="sd">    shape doesn't match its parameter's current shape but the element</span>
 <span class="sd">    count agrees, reshapes it in place. Mismatches with differing</span>
 <span class="sd">    ``numel`` are left untouched (the optimizer will raise on its next</span>
-<span class="sd">    step — that&#39;s the right behaviour for a genuine mismatch).</span>
+<span class="sd">    step — that's the right behaviour for a genuine mismatch).</span>
 
 <span class="sd">    Returns the number of tensors that were reshaped.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">reshaped</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">param_groups</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;params&quot;</span><span class="p">]:</span>
+        <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">group</span><span class="p">[</span><span class="s2">"params"</span><span class="p">]:</span>
             <span class="n">state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">param</span><span class="p">)</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">state</span><span class="p">:</span>
                 <span class="k">continue</span>

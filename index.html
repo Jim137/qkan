@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quantum-Inspired Kolmogorov-Arnold Network (QKAN) &mdash; QKAN 0.2.3dev documentation</title>
+  <title>Quantum-Inspired Kolmogorov-Arnold Network (QKAN) &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
@@ -14,7 +14,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/index.html" />
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=db1dea96"></script>
+      <script src="_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -113,7 +113,7 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">qkan</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKAN</span><span class="p">,</span> <span class="n">create_dataset</span>
 
-<span class="n">device</span> <span class="o">=</span> <span class="s2">&quot;cuda&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span>
+<span class="n">device</span> <span class="o">=</span> <span class="s2">"cuda"</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">"cpu"</span>
 
 <span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mi">20</span><span class="o">*</span><span class="n">x</span><span class="p">)</span><span class="o">/</span><span class="n">x</span><span class="o">/</span><span class="mi">20</span> <span class="c1"># J_0(20x)</span>
 <span class="n">dataset</span> <span class="o">=</span> <span class="n">create_dataset</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">n_var</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">ranges</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">train_num</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">test_num</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
@@ -136,7 +136,7 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
    <span class="n">dataset</span><span class="p">,</span>
    <span class="n">steps</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
    <span class="n">optimizer</span><span class="o">=</span><span class="n">optimizer</span><span class="p">,</span>
-   <span class="n">reg_metric</span><span class="o">=</span><span class="s2">&quot;edge_forward_dr_n&quot;</span><span class="p">,</span>
+   <span class="n">reg_metric</span><span class="o">=</span><span class="s2">"edge_forward_dr_n"</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="n">qkan</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">from_acts</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>

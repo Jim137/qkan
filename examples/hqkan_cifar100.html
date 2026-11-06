@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hybrid QKAN on CIFAR-100 &mdash; QKAN 0.2.3dev documentation</title>
+  <title>Hybrid QKAN on CIFAR-100 &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
@@ -15,7 +15,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/examples/hqkan_cifar100.html" />
       <script src="../_static/jquery.js?v=5d32c60e"></script>
       <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -115,8 +115,8 @@
 <span class="n">model_1</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">])</span>
 <span class="n">model_2</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">])</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Model 1 with shape [10, 10] has # of parameters:&quot;</span><span class="p">,</span> <span class="n">model_1</span><span class="o">.</span><span class="n">param_size</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Model 2 with shape [10, 100] has # of parameters:&quot;</span><span class="p">,</span> <span class="n">model_2</span><span class="o">.</span><span class="n">param_size</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Model 1 with shape [10, 10] has # of parameters:"</span><span class="p">,</span> <span class="n">model_1</span><span class="o">.</span><span class="n">param_size</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Model 2 with shape [10, 100] has # of parameters:"</span><span class="p">,</span> <span class="n">model_2</span><span class="o">.</span><span class="n">param_size</span><span class="p">)</span>
 <span class="k">del</span> <span class="n">model_1</span><span class="p">,</span> <span class="n">model_2</span>
 </pre></div>
 </div>
@@ -163,7 +163,7 @@ Model 2 with shape [10, 100] has # of parameters: 8000
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataLoader</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
 
-<span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+<span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">"cuda"</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">"cpu"</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -216,10 +216,10 @@ Model 2 with shape [10, 100] has # of parameters: 8000
     <span class="p">[</span><span class="n">transforms</span><span class="o">.</span><span class="n">ToTensor</span><span class="p">(),</span> <span class="n">transforms</span><span class="o">.</span><span class="n">Normalize</span><span class="p">((</span><span class="mf">0.5</span><span class="p">,),</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,))]</span>
 <span class="p">)</span>
 <span class="n">trainset</span> <span class="o">=</span> <span class="n">torchvision</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">CIFAR100</span><span class="p">(</span>
-    <span class="n">root</span><span class="o">=</span><span class="s2">&quot;./data&quot;</span><span class="p">,</span> <span class="n">train</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">download</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">transform</span>
+    <span class="n">root</span><span class="o">=</span><span class="s2">"./data"</span><span class="p">,</span> <span class="n">train</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">download</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">transform</span>
 <span class="p">)</span>
 <span class="n">testset</span> <span class="o">=</span> <span class="n">torchvision</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">CIFAR100</span><span class="p">(</span>
-    <span class="n">root</span><span class="o">=</span><span class="s2">&quot;./data&quot;</span><span class="p">,</span> <span class="n">train</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">download</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">transform</span>
+    <span class="n">root</span><span class="o">=</span><span class="s2">"./data"</span><span class="p">,</span> <span class="n">train</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">download</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">transform</span>
 <span class="p">)</span>
 <span class="n">trainloader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">trainset</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="n">testloader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">testset</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
@@ -282,7 +282,7 @@ Files already downloaded and verified
                 <span class="n">pbar</span><span class="o">.</span><span class="n">set_postfix</span><span class="p">(</span>
                     <span class="n">loss</span><span class="o">=</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
                     <span class="n">accuracy</span><span class="o">=</span><span class="n">accuracy</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
-                    <span class="n">lr</span><span class="o">=</span><span class="n">optimizer</span><span class="o">.</span><span class="n">param_groups</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;lr&quot;</span><span class="p">],</span>
+                    <span class="n">lr</span><span class="o">=</span><span class="n">optimizer</span><span class="o">.</span><span class="n">param_groups</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">"lr"</span><span class="p">],</span>
                 <span class="p">)</span>
 
         <span class="c1"># test</span>
@@ -304,7 +304,7 @@ Files already downloaded and verified
         <span class="n">test_accuracy</span> <span class="o">/=</span> <span class="nb">len</span><span class="p">(</span><span class="n">testloader</span><span class="p">)</span>
         <span class="n">test_top5_accuracy</span> <span class="o">/=</span> <span class="nb">len</span><span class="p">(</span><span class="n">testloader</span><span class="p">)</span>
 
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Epoch </span><span class="si">{</span><span class="n">epoch</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">, test Loss: </span><span class="si">{</span><span class="n">test_loss</span><span class="si">}</span><span class="s2">, test Accuracy: </span><span class="si">{</span><span class="n">test_accuracy</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Epoch </span><span class="si">{</span><span class="n">epoch</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">, test Loss: </span><span class="si">{</span><span class="n">test_loss</span><span class="si">}</span><span class="s2">, test Accuracy: </span><span class="si">{</span><span class="n">test_accuracy</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="n">test_accs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">test_accuracy</span><span class="p">)</span>
         <span class="n">test_losses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">test_loss</span><span class="p">)</span>
         <span class="n">test_top5_accs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">test_top5_accuracy</span><span class="p">)</span>
@@ -1123,15 +1123,15 @@ Epoch 50, test Loss: 3.1845874547958375, test Accuracy: 0.21320001184940338
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Top-1 Accuracy: &quot;</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_accs</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Top-5 Accuracy: &quot;</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_top5_accs</span><span class="p">))</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s2">"Top-1 Accuracy: "</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_accs</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Top-5 Accuracy: "</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_top5_accs</span><span class="p">))</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;CNN+HQKAN Model size:&quot;</span><span class="p">,</span> <span class="n">param</span><span class="o">:=</span><span class="nb">len</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">param</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span> <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">param</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">])))</span>
-<span class="n">cnn</span> <span class="o">=</span> <span class="n">CNet</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"CNN+HQKAN Model size:"</span><span class="p">,</span> <span class="n">param</span><span class="o">:=</span><span class="nb">len</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">param</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span> <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">param</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">])))</span>
+<span class="n">cnn</span> <span class="o">=</span> <span class="n">CNet</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="s2">"cpu"</span><span class="p">)</span>
 <span class="n">cnn_param</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">param</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span> <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">cnn</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">param</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">]))</span>
 <span class="k">del</span> <span class="n">cnn</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;CNN part size:&quot;</span><span class="p">,</span> <span class="n">cnn_param</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;HQKAN part size:&quot;</span><span class="p">,</span> <span class="n">param</span> <span class="o">-</span> <span class="n">cnn_param</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"CNN part size:"</span><span class="p">,</span> <span class="n">cnn_param</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"HQKAN part size:"</span><span class="p">,</span> <span class="n">param</span> <span class="o">-</span> <span class="n">cnn_param</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -1984,12 +1984,12 @@ Epoch 50, test Loss: 2.5304693937301637, test Accuracy: 0.35640001893043516
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Top-1 Accuracy: &quot;</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_accs</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Top-5 Accuracy: &quot;</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_top5_accs</span><span class="p">))</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s2">"Top-1 Accuracy: "</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_accs</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Top-5 Accuracy: "</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_top5_accs</span><span class="p">))</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;CNN+HQKAN-44 Model size:&quot;</span><span class="p">,</span> <span class="n">param</span><span class="o">:=</span><span class="nb">len</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">param</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span> <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">param</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">])))</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;CNN part size:&quot;</span><span class="p">,</span> <span class="n">cnn_param</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;HQKAN-44 part size:&quot;</span><span class="p">,</span> <span class="n">param</span> <span class="o">-</span> <span class="n">cnn_param</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"CNN+HQKAN-44 Model size:"</span><span class="p">,</span> <span class="n">param</span><span class="o">:=</span><span class="nb">len</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">param</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span> <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">param</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">])))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"CNN part size:"</span><span class="p">,</span> <span class="n">cnn_param</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"HQKAN-44 part size:"</span><span class="p">,</span> <span class="n">param</span> <span class="o">-</span> <span class="n">cnn_param</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -2855,12 +2855,12 @@ Epoch 50, test Loss: 2.515561318397522, test Accuracy: 0.3707000195980072
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Top-1 Accuracy: &quot;</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_accs</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Top-5 Accuracy: &quot;</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_top5_accs</span><span class="p">))</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s2">"Top-1 Accuracy: "</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_accs</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Top-5 Accuracy: "</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">test_top5_accs</span><span class="p">))</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;CNN+MLP Model size:&quot;</span><span class="p">,</span> <span class="n">param</span><span class="o">:=</span><span class="nb">len</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">param</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span> <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">param</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">])))</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;CNN part size:&quot;</span><span class="p">,</span> <span class="n">cnn_param</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;MLP part size:&quot;</span><span class="p">,</span> <span class="n">param</span> <span class="o">-</span> <span class="n">cnn_param</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"CNN+MLP Model size:"</span><span class="p">,</span> <span class="n">param</span><span class="o">:=</span><span class="nb">len</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">param</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span> <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">param</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">])))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"CNN part size:"</span><span class="p">,</span> <span class="n">cnn_param</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"MLP part size:"</span><span class="p">,</span> <span class="n">param</span> <span class="o">-</span> <span class="n">cnn_param</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>

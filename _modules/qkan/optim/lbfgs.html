@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.optim.lbfgs &mdash; QKAN 0.2.3dev documentation</title>
+  <title>qkan.optim.lbfgs &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/optim/lbfgs.html" />
       <script src="../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../../_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -80,19 +80,19 @@
   <h1>Source code for qkan.optim.lbfgs</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
 <span class="c1">#</span>
-<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the "License");</span>
 <span class="c1"># you may not use this file except in compliance with the License.</span>
 <span class="c1"># You may obtain a copy of the License at</span>
 <span class="c1">#</span>
 <span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
 <span class="c1">#</span>
 <span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
-<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># distributed under the License is distributed on an "AS IS" BASIS,</span>
 <span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
 <span class="c1"># See the License for the specific language governing permissions and</span>
 <span class="c1"># limitations under the License.</span>
 
-<span class="sd">&quot;&quot;&quot;Adam -&gt; L-BFGS finishing schedule.</span>
+<span class="sd">"""Adam -&gt; L-BFGS finishing schedule.</span>
 
 <span class="sd">The original KAN paper (Liu et al., arXiv:2404.19756) and pykan use a</span>
 <span class="sd">two-phase schedule for symbolic-regression style fits: first-order</span>
@@ -101,7 +101,7 @@
 <span class="sd">curvature once parameters are near a minimum and typically reduces final</span>
 <span class="sd">loss by 2-10x on KAN-style tasks.</span>
 
-<span class="sd">:class:`LBFGSFinisher` is a thin wrapper that holds an &quot;early&quot; optimizer</span>
+<span class="sd">:class:`LBFGSFinisher` is a thin wrapper that holds an "early" optimizer</span>
 <span class="sd">(any ``torch.optim.Optimizer``, including :class:`~qkan.QKANAdamMini`)</span>
 <span class="sd">for the first ``pct_early`` fraction of total steps, then auto-switches</span>
 <span class="sd">to ``torch.optim.LBFGS``. It exposes the standard ``step(closure)``</span>
@@ -111,7 +111,7 @@
 <span class="sd">gradients itself. The early optimizer phase also accepts and uses a</span>
 <span class="sd">closure (zero_grad / forward / backward) — so user code can be uniform</span>
 <span class="sd">across the swap point.</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
@@ -120,13 +120,13 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.optim.optimizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optimizer</span>
 
-<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;LBFGSFinisher&quot;</span><span class="p">,</span> <span class="s2">&quot;adam_then_lbfgs&quot;</span><span class="p">]</span>
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"LBFGSFinisher"</span><span class="p">,</span> <span class="s2">"adam_then_lbfgs"</span><span class="p">]</span>
 
 
 <div class="viewcode-block" id="LBFGSFinisher">
 <a class="viewcode-back" href="../../../api.html#qkan.LBFGSFinisher">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">LBFGSFinisher</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Composite optimizer: ``early`` for ``pct_early * total_steps``, then LBFGS.</span>
+<span class="w">    </span><span class="sd">"""Composite optimizer: ``early`` for ``pct_early * total_steps``, then LBFGS.</span>
 
 <span class="sd">    Use ``step(closure)`` exactly like a regular ``torch.optim.Optimizer``.</span>
 <span class="sd">    The closure must zero grads, run forward+backward, and return loss::</span>
@@ -157,15 +157,15 @@
 <span class="sd">    lbfgs_kwargs : dict, optional</span>
 <span class="sd">        Override defaults for ``torch.optim.LBFGS``. Sensible defaults</span>
 <span class="sd">        for KAN-style fits: ``lr=1.0, max_iter=20, history_size=100,</span>
-<span class="sd">        tolerance_grad=1e-7, line_search_fn=&#39;strong_wolfe&#39;``.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">        tolerance_grad=1e-7, line_search_fn='strong_wolfe'``.</span>
+<span class="sd">    """</span>
 
     <span class="n">_LBFGS_DEFAULTS</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
         <span class="n">lr</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
         <span class="n">max_iter</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span>
         <span class="n">history_size</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
         <span class="n">tolerance_grad</span><span class="o">=</span><span class="mf">1e-7</span><span class="p">,</span>
-        <span class="n">line_search_fn</span><span class="o">=</span><span class="s2">&quot;strong_wolfe&quot;</span><span class="p">,</span>
+        <span class="n">line_search_fn</span><span class="o">=</span><span class="s2">"strong_wolfe"</span><span class="p">,</span>
     <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
@@ -177,12 +177,12 @@
         <span class="n">lbfgs_kwargs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="mf">0.0</span> <span class="o">&lt;</span> <span class="n">pct_early</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;pct_early must be in (0, 1], got </span><span class="si">{</span><span class="n">pct_early</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"pct_early must be in (0, 1], got </span><span class="si">{</span><span class="n">pct_early</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">total_steps</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;total_steps must be positive, got </span><span class="si">{</span><span class="n">total_steps</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"total_steps must be positive, got </span><span class="si">{</span><span class="n">total_steps</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
         <span class="c1"># Materialise params so we can pass them to LBFGS later (generators</span>
-        <span class="c1"># would be exhausted by the early optimizer&#39;s constructor).</span>
+        <span class="c1"># would be exhausted by the early optimizer's constructor).</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_params</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">early</span> <span class="o">=</span> <span class="n">early</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">total_steps</span> <span class="o">=</span> <span class="n">total_steps</span>
@@ -198,12 +198,12 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">using_lbfgs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;True if the next ``step`` will use L-BFGS.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""True if the next ``step`` will use L-BFGS."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_count</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">switch_at</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">current</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optimizer</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;The optimizer that will handle the next ``step`` call.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""The optimizer that will handle the next ``step`` call."""</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">using_lbfgs</span><span class="p">:</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">LBFGS</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_params</span><span class="p">,</span> <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_kwargs</span><span class="p">)</span>  <span class="c1"># type: ignore[arg-type]</span>
@@ -213,23 +213,23 @@
 <div class="viewcode-block" id="LBFGSFinisher.zero_grad">
 <a class="viewcode-back" href="../../../api.html#qkan.LBFGSFinisher.zero_grad">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">zero_grad</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">set_to_none</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Zero gradients on the active optimizer.</span>
+<span class="w">        </span><span class="sd">"""Zero gradients on the active optimizer.</span>
 
-<span class="sd">        Most users won&#39;t call this directly — the closure does it. Provided</span>
+<span class="sd">        Most users won't call this directly — the closure does it. Provided</span>
 <span class="sd">        for parity with ``torch.optim.Optimizer``.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">current</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="n">set_to_none</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="LBFGSFinisher.step">
 <a class="viewcode-back" href="../../../api.html#qkan.LBFGSFinisher.step">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">closure</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run one optimization step. ``closure`` is required.</span>
+<span class="w">        </span><span class="sd">"""Run one optimization step. ``closure`` is required.</span>
 
 <span class="sd">        L-BFGS *requires* a closure that zeros grads, runs forward+backward,</span>
 <span class="sd">        and returns the loss tensor. The early optimizer is also driven via</span>
 <span class="sd">        the same closure so user code stays uniform across the swap.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">opt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current</span>
         <span class="c1"># Both LBFGS and Adam-family accept tensor-returning closures at</span>
         <span class="c1"># runtime; the typed stubs declare ``Callable[[], float]`` only.</span>
@@ -239,7 +239,7 @@
 
 
     <span class="c1"># ------------------------------------------------------------------</span>
-    <span class="c1"># state_dict / load_state_dict aren&#39;t strictly needed for the bench</span>
+    <span class="c1"># state_dict / load_state_dict aren't strictly needed for the bench</span>
     <span class="c1"># but keep the API surface plausible for future checkpoint use.</span>
     <span class="c1"># ------------------------------------------------------------------</span>
 
@@ -247,26 +247,26 @@
 <a class="viewcode-back" href="../../../api.html#qkan.LBFGSFinisher.state_dict">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">state_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
         <span class="k">return</span> <span class="p">{</span>
-            <span class="s2">&quot;step_count&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_count</span><span class="p">,</span>
-            <span class="s2">&quot;total_steps&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_steps</span><span class="p">,</span>
-            <span class="s2">&quot;pct_early&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">pct_early</span><span class="p">,</span>
-            <span class="s2">&quot;early&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">early</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
-            <span class="s2">&quot;lbfgs&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"step_count"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_step_count</span><span class="p">,</span>
+            <span class="s2">"total_steps"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_steps</span><span class="p">,</span>
+            <span class="s2">"pct_early"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">pct_early</span><span class="p">,</span>
+            <span class="s2">"early"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">early</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
+            <span class="s2">"lbfgs"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
         <span class="p">}</span></div>
 
 
 <div class="viewcode-block" id="LBFGSFinisher.load_state_dict">
 <a class="viewcode-back" href="../../../api.html#qkan.LBFGSFinisher.load_state_dict">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">load_state_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_step_count</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;step_count&quot;</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">total_steps</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;total_steps&quot;</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">pct_early</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;pct_early&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_step_count</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">"step_count"</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">total_steps</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">"total_steps"</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pct_early</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">"pct_early"</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">switch_at</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pct_early</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_steps</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">early</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;early&quot;</span><span class="p">])</span>
-        <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;lbfgs&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">early</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">"early"</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lbfgs"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="c1"># Materialise the LBFGS opt before loading.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">LBFGS</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_params</span><span class="p">,</span> <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs_kwargs</span><span class="p">)</span>  <span class="c1"># type: ignore[arg-type]</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;lbfgs&quot;</span><span class="p">])</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_lbfgs</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">"lbfgs"</span><span class="p">])</span></div>
 </div>
 
 
@@ -281,7 +281,7 @@
     <span class="n">use_adam_mini</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="n">lbfgs_kwargs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LBFGSFinisher</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convenience factory: build an Adam/AdamMini -&gt; LBFGS schedule.</span>
+<span class="w">    </span><span class="sd">"""Convenience factory: build an Adam/AdamMini -&gt; LBFGS schedule.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
@@ -305,7 +305,7 @@
 <span class="sd">    -------</span>
 <span class="sd">    LBFGSFinisher</span>
 <span class="sd">        Ready to drive with ``opt.step(closure)``.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="n">use_adam_mini</span><span class="p">:</span>
         <span class="c1"># Local import to avoid a hard cycle at module-load time.</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">.adamini</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKANAdamMini</span>

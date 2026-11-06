@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>First Glance at QKAN and DARUAN &mdash; QKAN 0.2.3dev documentation</title>
+  <title>First Glance at QKAN and DARUAN &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
@@ -15,7 +15,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/intro/qkan.html" />
       <script src="../_static/jquery.js?v=5d32c60e"></script>
       <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -108,12 +108,12 @@
 <p>Quantum-inspired Kolmogorov-Arnold Network (QKAN) is a novel approach to integrate the concept of Quantum Variational Activation Function (QVAF) into KANs. We use single qubit data reuploading circuit as a quantum-inspired activation function, DatA Re-Uploading ActivatioN (DARUAN), to enhance the expressivity of KANs.</p>
 <section id="DatA-Re-Uploading-ActivatioN-(DARUAN)">
 <h2>DatA Re-Uploading ActivatioN (DARUAN)<a class="headerlink" href="#DatA-Re-Uploading-ActivatioN-(DARUAN)" title="Link to this heading"></a></h2>
-<img alt="DARUAN" src="../_images/daruan.png" />
+<p><img alt="DARUAN" src="../_images/daruan.png" /></p>
 <p>While the word <strong>daruan</strong> may evoke the traditional Chinese string instrument, in our context, <strong>DARUAN</strong> refers to a <strong>quantum-inspired activation function</strong> derived from the concept of <strong>data re-uploading circuits</strong>.</p>
 <p>DARUAN leverages the architecture of data re-uploading to build a scalable and expressive <strong>quantum variational activation layer</strong>. Each block consists of fixed data encoding interleaved with <strong>trainable unitaries</strong>, forming a variational circuit capable of approximating both smooth <strong>periodic</strong> and <strong>non-periodic</strong> functions.</p>
 <p>The circuit outputs the <strong>expectation value of a Pauli observable</strong> (typically <span class="math notranslate nohighlight">\(\sigma_z\)</span>), which is used as the <strong>nonlinear transformation</strong> (activation) applied to the neuron’s input.</p>
 <p>In the figure below, DARUAN acts as a variational activation function (VAF) within a perceptron. Classical data is re-uploaded multiple times into the quantum circuit, and the final output is obtained via measurement:</p>
-<img alt="DARUAN in Perceptron" src="../_images/DARUAN-perceptron.png" />
+<p><img alt="DARUAN in Perceptron" src="../_images/DARUAN-perceptron.png" /></p>
 <section id="Layer-Extension-Mechanism">
 <h3>Layer Extension Mechanism<a class="headerlink" href="#Layer-Extension-Mechanism" title="Link to this heading"></a></h3>
 <p>A key feature of DARUAN is its architectural <strong>flexibility</strong> through what we call <strong>layer extension</strong>—a mechanism that progressively increases the number of re-uploading repetitions (or depth of the variational circuit). This enables the model to:</p>
@@ -149,7 +149,7 @@
 <hr class="docutils" />
 <section id="Architecture">
 <h3>Architecture<a class="headerlink" href="#Architecture" title="Link to this heading"></a></h3>
-<img alt="QKAN Architecture" src="../_images/qkan.png" />
+<p><img alt="QKAN Architecture" src="../_images/qkan.png" /></p>
 <p>Each layer in QKAN is a feedforward structure composed of <strong>independent DARUAN modules</strong>. For a layer <span class="math notranslate nohighlight">\(\ell\)</span> with <span class="math notranslate nohighlight">\(n_\ell\)</span> input nodes and <span class="math notranslate nohighlight">\(n_{\ell+1}\)</span> output nodes, the layer is defined as:</p>
 <div class="math notranslate nohighlight">
 \[\begin{split}\begin{align}
@@ -193,7 +193,7 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">qkan</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKAN</span><span class="p">,</span> <span class="n">create_dataset</span>
 
-<span class="n">device</span> <span class="o">=</span> <span class="s2">&quot;cuda&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span>
+<span class="n">device</span> <span class="o">=</span> <span class="s2">"cuda"</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">"cpu"</span>
 
 <span class="c1"># f(x,y) = exp(sin(pi*x)+y^2)</span>
 <span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="n">x</span><span class="p">[:,[</span><span class="mi">0</span><span class="p">]])</span> <span class="o">+</span> <span class="n">x</span><span class="p">[:,[</span><span class="mi">1</span><span class="p">]]</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
@@ -237,7 +237,7 @@
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">model</span><span class="o">.</span><span class="n">prune</span><span class="p">(</span><span class="n">node_th</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
-<span class="n">model</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">dataset</span><span class="p">[</span><span class="s2">&quot;train_input&quot;</span><span class="p">],</span> <span class="n">mask</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">model</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">dataset</span><span class="p">[</span><span class="s2">"train_input"</span><span class="p">],</span> <span class="n">mask</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -253,8 +253,8 @@
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">new_model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">prune</span><span class="p">(</span><span class="n">node_th</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
-<span class="n">new_model</span><span class="p">(</span><span class="n">dataset</span><span class="p">[</span><span class="s1">&#39;train_input&#39;</span><span class="p">])</span>
-<span class="n">new_model</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">from_acts</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">in_vars</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;$x$&quot;</span><span class="p">,</span> <span class="s2">&quot;$y$&quot;</span><span class="p">],</span> <span class="n">out_vars</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;$\exp(\sin(\pi x)+y^2)$&quot;</span><span class="p">])</span>
+<span class="n">new_model</span><span class="p">(</span><span class="n">dataset</span><span class="p">[</span><span class="s1">'train_input'</span><span class="p">])</span>
+<span class="n">new_model</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">from_acts</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">in_vars</span><span class="o">=</span><span class="p">[</span><span class="s2">"$x$"</span><span class="p">,</span> <span class="s2">"$y$"</span><span class="p">],</span> <span class="n">out_vars</span><span class="o">=</span><span class="p">[</span><span class="s2">"$\exp(\sin(\pi x)+y^2)$"</span><span class="p">])</span>
 </pre></div>
 </div>
 </div>

@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.solver.flash.flash &mdash; QKAN 0.2.3dev documentation</title>
+  <title>qkan.solver.flash.flash &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=9edc463e" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/flash/flash.html" />
       <script src="../../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../../../_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="../../../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -80,14 +80,14 @@
   <h1>Source code for qkan.solver.flash.flash</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
 <span class="c1">#</span>
-<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the "License");</span>
 <span class="c1"># you may not use this file except in compliance with the License.</span>
 <span class="c1"># You may obtain a copy of the License at</span>
 <span class="c1">#</span>
 <span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
 <span class="c1">#</span>
 <span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
-<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># distributed under the License is distributed on an "AS IS" BASIS,</span>
 <span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
 <span class="c1"># See the License for the specific language governing permissions and</span>
 <span class="c1"># limitations under the License.</span>
@@ -114,16 +114,16 @@
     <span class="n">_FLASH_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
 
 
-<span class="n">_SUPPORTED_FLASH_ANSATZES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">,</span> <span class="s2">&quot;real&quot;</span><span class="p">}</span>
+<span class="n">_SUPPORTED_FLASH_ANSATZES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">,</span> <span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">,</span> <span class="s2">"real"</span><span class="p">}</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">_FlashFunction</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Custom autograd function: Triton forward and backward.</span>
 
 <span class="sd">    Forward dispatches to the appropriate Triton kernel based on ansatz.</span>
 <span class="sd">    Backward uses direct Triton kernels with forward recomputation.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span>
@@ -147,7 +147,7 @@
         <span class="n">ctx</span><span class="o">.</span><span class="n">c_dtype</span> <span class="o">=</span> <span class="n">c_dtype</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">ansatz</span> <span class="o">=</span> <span class="n">ansatz</span>
 
-        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">):</span>
             <span class="k">return</span> <span class="n">triton_pz_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
@@ -157,7 +157,7 @@
                 <span class="n">fast_measure</span><span class="p">,</span>
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">):</span>
             <span class="k">return</span> <span class="n">triton_rpz_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
@@ -166,7 +166,7 @@
                 <span class="n">fast_measure</span><span class="p">,</span>
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">"real"</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">triton_real_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
@@ -177,14 +177,14 @@
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported ansatz for flash: </span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unsupported ansatz for flash: </span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">grad_output</span><span class="p">):</span>
         <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
         <span class="n">ansatz</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">ansatz</span>
 
-        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">):</span>
             <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">triton_pz_backward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
@@ -195,7 +195,7 @@
                 <span class="n">ctx</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">):</span>
             <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">triton_rpz_backward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
@@ -205,7 +205,7 @@
                 <span class="n">ctx</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">"real"</span><span class="p">:</span>
             <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">triton_real_backward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
@@ -217,7 +217,7 @@
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported ansatz for flash backward: </span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unsupported ansatz for flash backward: </span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">c_dtype</span> <span class="ow">in</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">float8_e4m3fn</span><span class="p">):</span>
             <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">_cast_grads_to_dtype</span><span class="p">(</span>
@@ -248,7 +248,7 @@
     <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Triton-accelerated exact solver. Drop-in replacement for torch_exact_solver.</span>
 
 <span class="sd">    Uses fused Triton kernels for pz_encoding, rpz_encoding, and real ansatzes.</span>
@@ -259,17 +259,17 @@
 
 <span class="sd">    Returns:</span>
 <span class="sd">        torch.Tensor, shape: (batch_size, out_dim, in_dim)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">_FLASH_AVAILABLE</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
-            <span class="s2">&quot;Triton fused kernels not available. Install triton to use flash solver.&quot;</span>
+            <span class="s2">"Triton fused kernels not available. Install triton to use flash solver."</span>
         <span class="p">)</span>
 
-    <span class="n">ansatz</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ansatz&quot;</span><span class="p">,</span> <span class="s2">&quot;pz_encoding&quot;</span><span class="p">)</span>
-    <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;preacts_trainable&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-    <span class="n">fast_measure</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;fast_measure&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
-    <span class="n">out_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;out_dim&quot;</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-    <span class="n">c_dtype</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;dtype&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex64</span><span class="p">)</span>
+    <span class="n">ansatz</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ansatz"</span><span class="p">,</span> <span class="s2">"pz_encoding"</span><span class="p">)</span>
+    <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"preacts_trainable"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="n">fast_measure</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fast_measure"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+    <span class="n">out_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"out_dim"</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">c_dtype</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dtype"</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex64</span><span class="p">)</span>
     <span class="n">batch</span><span class="p">,</span> <span class="n">in_dim</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
 
     <span class="c1"># Fallback for unsupported ansatzes</span>
@@ -287,7 +287,7 @@
         <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>
 
     <span class="c1"># rpz always needs encoded_x; others only when preacts_trainable</span>
-    <span class="n">_needs_encoded_x</span> <span class="o">=</span> <span class="n">preacts_trainable</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">)</span>
+    <span class="n">_needs_encoded_x</span> <span class="o">=</span> <span class="n">preacts_trainable</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">_needs_encoded_x</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
             <span class="n">preacts_weight</span> <span class="o">=</span> <span class="n">preacts_weight</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
@@ -326,7 +326,7 @@
             <span class="n">ansatz</span><span class="p">,</span>
         <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">):</span>
             <span class="k">return</span> <span class="n">triton_pz_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
@@ -336,7 +336,7 @@
                 <span class="n">fast_measure</span><span class="p">,</span>
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">):</span>
             <span class="k">return</span> <span class="n">triton_rpz_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
@@ -345,7 +345,7 @@
                 <span class="n">fast_measure</span><span class="p">,</span>
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">"real"</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">triton_real_forward</span><span class="p">(</span>
                 <span class="n">x</span><span class="p">,</span>
                 <span class="n">theta</span><span class="p">,</span>
@@ -364,13 +364,13 @@
 <span class="c1"># cuTile-accelerated solver</span>
 <span class="c1"># ---------------------------------------------------------------------------</span>
 
-<span class="n">_SUPPORTED_CUTILE_ANSATZES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">,</span> <span class="s2">&quot;real&quot;</span><span class="p">}</span>
+<span class="n">_SUPPORTED_CUTILE_ANSATZES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">,</span> <span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">,</span> <span class="s2">"real"</span><span class="p">}</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">FlashSolver</span><span class="p">(</span><span class="n">QKANSolver</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Triton-fused solver (registered as ``&quot;flash&quot;``).&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Triton-fused solver (registered as ``"flash"``)."""</span>
 
-    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;flash&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">"flash"</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -383,8 +383,8 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">_FLASH_AVAILABLE</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
-                <span class="s2">&quot;Triton is required for solver=&#39;flash&#39;. &quot;</span>
-                <span class="s2">&quot;Install with: pip install triton&quot;</span>
+                <span class="s2">"Triton is required for solver='flash'. "</span>
+                <span class="s2">"Install with: pip install triton"</span>
             <span class="p">)</span>
         <span class="k">return</span> <span class="n">flash_exact_solver</span><span class="p">(</span>
             <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">preacts_bias</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>

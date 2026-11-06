@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.info &mdash; QKAN 0.2.3dev documentation</title>
+  <title>qkan.info &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/info.html" />
       <script src="../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -83,7 +83,7 @@
 <span class="c1"># Copyright (c) 2025 Andrej Karpathy</span>
 
 <span class="c1"># Permission is hereby granted, free of charge, to any person obtaining a copy</span>
-<span class="c1"># of this software and associated documentation files (the &quot;Software&quot;), to deal</span>
+<span class="c1"># of this software and associated documentation files (the "Software"), to deal</span>
 <span class="c1"># in the Software without restriction, including without limitation the rights</span>
 <span class="c1"># to use, copy, modify, merge, publish, distribute, sublicense, and/or sell</span>
 <span class="c1"># copies of the Software, and to permit persons to whom the Software is</span>
@@ -92,7 +92,7 @@
 <span class="c1"># The above copyright notice and this permission notice shall be included in all</span>
 <span class="c1"># copies or substantial portions of the Software.</span>
 
-<span class="c1"># THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR</span>
+<span class="c1"># THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR</span>
 <span class="c1"># IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,</span>
 <span class="c1"># FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE</span>
 <span class="c1"># AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER</span>
@@ -100,10 +100,10 @@
 <span class="c1"># OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE</span>
 <span class="c1"># SOFTWARE.</span>
 
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">Helpful info functions for QKAN.</span>
 <span class="sd">Parts of codes are adapted from https://github.com/karpathy/nanochat.</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 
@@ -113,7 +113,7 @@
 <div class="viewcode-block" id="print0">
 <a class="viewcode-back" href="../../api.html#qkan.print0">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">print0</span><span class="p">(</span><span class="o">*</span><span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-    <span class="n">ddp_rank</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;RANK&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+    <span class="n">ddp_rank</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"RANK"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
     <span class="k">if</span> <span class="n">ddp_rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="o">*</span><span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
@@ -123,7 +123,7 @@
 <a class="viewcode-back" href="../../api.html#qkan.print_banner">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">print_banner</span><span class="p">():</span>
     <span class="c1"># Cool DOS Rebel font ASCII banner made with https://manytools.org/hacker-tools/ascii-banner/</span>
-    <span class="n">banner</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+    <span class="n">banner</span> <span class="o">=</span> <span class="s2">"""</span>
 <span class="s2">        ██████    █████   ████   █████████   ██████   █████</span>
 <span class="s2">      ███░░░░███ ░░███   ███░   ███░░░░░███ ░░██████ ░░███ </span>
 <span class="s2">     ███    ░░███ ░███  ███    ░███    ░███  ░███░███ ░███ </span>
@@ -132,7 +132,7 @@
 <span class="s2">    ░░███ ░░████  ░███ ░░███   ░███    ░███  ░███  ░░█████ </span>
 <span class="s2">     ░░░██████░██ █████ ░░████ █████   █████ █████  ░░█████</span>
 <span class="s2">       ░░░░░░ ░░ ░░░░░   ░░░░ ░░░░░   ░░░░░ ░░░░░    ░░░░░     </span>
-<span class="s2">    &quot;&quot;&quot;</span>
+<span class="s2">    """</span>
     <span class="n">print0</span><span class="p">(</span><span class="n">banner</span><span class="p">)</span></div>
 
 
@@ -141,24 +141,24 @@
 <a class="viewcode-back" href="../../api.html#qkan.print_version">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">print_version</span><span class="p">():</span>
     <span class="c1"># print the version and the banner</span>
-    <span class="n">print0</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
+    <span class="n">print0</span><span class="p">(</span><span class="s2">"="</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
     <span class="n">print_banner</span><span class="p">()</span>
-    <span class="n">print0</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;QKAN version: </span><span class="si">{</span><span class="n">__version__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">print0</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span></div>
+    <span class="n">print0</span><span class="p">(</span><span class="sa">f</span><span class="s2">"QKAN version: </span><span class="si">{</span><span class="n">__version__</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">print0</span><span class="p">(</span><span class="s2">"="</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span></div>
 
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">is_ddp</span><span class="p">():</span>
     <span class="c1"># TODO is there a proper way</span>
-    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;RANK&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"RANK"</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">get_dist_info</span><span class="p">():</span>
     <span class="k">if</span> <span class="n">is_ddp</span><span class="p">():</span>
-        <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="n">var</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span> <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;RANK&quot;</span><span class="p">,</span> <span class="s2">&quot;LOCAL_RANK&quot;</span><span class="p">,</span> <span class="s2">&quot;WORLD_SIZE&quot;</span><span class="p">])</span>
-        <span class="n">ddp_rank</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;RANK&quot;</span><span class="p">])</span>
-        <span class="n">ddp_local_rank</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;LOCAL_RANK&quot;</span><span class="p">])</span>
-        <span class="n">ddp_world_size</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;WORLD_SIZE&quot;</span><span class="p">])</span>
+        <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="n">var</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span> <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">"RANK"</span><span class="p">,</span> <span class="s2">"LOCAL_RANK"</span><span class="p">,</span> <span class="s2">"WORLD_SIZE"</span><span class="p">])</span>
+        <span class="n">ddp_rank</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"RANK"</span><span class="p">])</span>
+        <span class="n">ddp_local_rank</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"LOCAL_RANK"</span><span class="p">])</span>
+        <span class="n">ddp_world_size</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"WORLD_SIZE"</span><span class="p">])</span>
         <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">ddp_rank</span><span class="p">,</span> <span class="n">ddp_local_rank</span><span class="p">,</span> <span class="n">ddp_world_size</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span>

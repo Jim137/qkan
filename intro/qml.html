@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>QML 101 &mdash; QKAN 0.2.3dev documentation</title>
+  <title>QML 101 &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
@@ -15,7 +15,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/intro/qml.html" />
       <script src="../_static/jquery.js?v=5d32c60e"></script>
       <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -301,7 +301,7 @@ e^{-i\theta/2} &amp; 0 \\
 <span class="n">qc</span><span class="o">.</span><span class="n">cx</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
 
 <span class="c1"># Draw the circuit using matplotlib</span>
-<span class="n">qc</span><span class="o">.</span><span class="n">draw</span><span class="p">(</span><span class="s2">&quot;mpl&quot;</span><span class="p">)</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">draw</span><span class="p">(</span><span class="s2">"mpl"</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -358,7 +358,7 @@ e^{-i\theta/2} &amp; 0 \\
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">qc</span> <span class="o">=</span> <span class="n">QuantumCircuit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 <span class="n">qc</span><span class="o">.</span><span class="n">h</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
 <span class="n">qc</span><span class="o">.</span><span class="n">measure_all</span><span class="p">()</span>
-<span class="n">qc</span><span class="o">.</span><span class="n">draw</span><span class="p">(</span><span class="s2">&quot;mpl&quot;</span><span class="p">)</span>
+<span class="n">qc</span><span class="o">.</span><span class="n">draw</span><span class="p">(</span><span class="s2">"mpl"</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -426,7 +426,7 @@ e^{-i\theta/2} &amp; 0 \\
 <li><p><strong>Compute Kernel Matrix:</strong> For a dataset <span class="math notranslate nohighlight">\(\{x_i\}\)</span>, compute <span class="math notranslate nohighlight">\(k(x_i, x_j)\)</span> using quantum overlaps between states.</p></li>
 <li><p><strong>Classical Algorithm:</strong> Use a classical kernel method (e.g., SVM) with the quantum kernel matrix for classification or regression.</p></li>
 </ol>
-<img alt="quantum kernel method" src="../_images/qkm.png" />
+<p><img alt="quantum kernel method" src="../_images/qkm.png" /></p>
 </section>
 </section>
 <section id="Data-Re-Uploading-Circuits">
@@ -452,7 +452,7 @@ e^{-i\theta/2} &amp; 0 \\
 <li><p>Apply trainable gates (e.g., <span class="math notranslate nohighlight">\(R_y(\theta), R_z(\theta)\)</span>).</p></li>
 <li><p>Repeat steps 1 and 2 for multiple layers.</p></li>
 </ol>
-<img alt="data reuploading circuit" src="../_images/drc.png" />
+<p><img alt="data reuploading circuit" src="../_images/drc.png" /></p>
 <p>Further Reading</p>
 <p>To go further in our work, it suffices to understand that <strong>data re-uploading circuits</strong> enhance the expressivity of quantum models by repeatedly encoding classical inputs throughout the layers of a variational quantum circuit. This mechanism is fundamental to our design of <strong>Quantum Variational Activation Functions (QVAFs)</strong>, such as <strong>DARUAN</strong>, and underpins the architecture of <strong>Quantum-inspired Kolmogorov–Arnold Networks (QKANs)</strong>.</p>
 <p>If you’re interested in deepening your understanding of the theory and techniques that underpin our approach, we recommend the following resources:</p>

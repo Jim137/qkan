@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.solver.cudaq &mdash; QKAN 0.2.3dev documentation</title>
+  <title>qkan.solver.cudaq &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/solver/cudaq.html" />
       <script src="../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../../_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -81,22 +81,22 @@
 <span></span><span class="c1"># mypy: ignore-errors</span>
 <span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
 <span class="c1">#</span>
-<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the "License");</span>
 <span class="c1"># you may not use this file except in compliance with the License.</span>
 <span class="c1"># You may obtain a copy of the License at</span>
 <span class="c1">#</span>
 <span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
 <span class="c1">#</span>
 <span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
-<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># distributed under the License is distributed on an "AS IS" BASIS,</span>
 <span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
 <span class="c1"># See the License for the specific language governing permissions and</span>
 <span class="c1"># limitations under the License.</span>
 
 
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">QKAN solver for CUDA-Q GPU-accelerated simulation or QPU execution.</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
@@ -123,7 +123,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_pz_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded pz_encoding kernel for ZNE: U . (U_dag . U)^n.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a gate-folded pz_encoding kernel for ZNE: U . (U_dag . U)^n."""</span>
     <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
@@ -156,7 +156,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_pz_preact_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded pz_encoding preact kernel for ZNE.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a gate-folded pz_encoding preact kernel for ZNE."""</span>
     <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
@@ -189,7 +189,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_rpz_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded rpz_encoding kernel for ZNE.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a gate-folded rpz_encoding kernel for ZNE."""</span>
     <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
@@ -216,7 +216,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_real_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded real ansatz kernel for ZNE.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a gate-folded real ansatz kernel for ZNE."""</span>
     <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
@@ -246,7 +246,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_real_preact_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded real preact kernel for ZNE.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a gate-folded real preact kernel for ZNE."""</span>
     <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
@@ -281,7 +281,7 @@
     <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">layout</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded parallel pz kernel for ZNE.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a gate-folded parallel pz kernel for ZNE."""</span>
     <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
     <span class="n">width</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
 
@@ -324,7 +324,7 @@
     <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">layout</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded parallel real kernel for ZNE.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a gate-folded parallel real kernel for ZNE."""</span>
     <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
     <span class="n">width</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
 
@@ -363,7 +363,7 @@
     <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">layout</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a gate-folded parallel rpz kernel for ZNE.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a gate-folded parallel rpz kernel for ZNE."""</span>
     <span class="n">n_folds</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_factor</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
     <span class="n">width</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
 
@@ -401,7 +401,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_pz_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel for pz_encoding ansatz.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a CUDA-Q kernel for pz_encoding ansatz."""</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">x_val</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
@@ -418,7 +418,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_pz_preact_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel for pz_encoding with trainable preactivation.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a CUDA-Q kernel for pz_encoding with trainable preactivation."""</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
@@ -435,7 +435,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_rpz_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel for rpz_encoding ansatz.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a CUDA-Q kernel for rpz_encoding ansatz."""</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
@@ -450,7 +450,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_real_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel for real ansatz.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a CUDA-Q kernel for real ansatz."""</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">x_val</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
@@ -466,7 +466,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_cudaq_real_preact_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel for real ansatz with trainable preactivation.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a CUDA-Q kernel for real ansatz with trainable preactivation."""</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">encoded_x</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">thetas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]):</span>
@@ -488,11 +488,11 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_cudaq_kernel</span><span class="p">(</span>
     <span class="n">ansatz</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">preacts_trainable</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get or build a cached CUDA-Q kernel (optionally gate-folded for ZNE).&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Get or build a cached CUDA-Q kernel (optionally gate-folded for ZNE)."""</span>
     <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">ansatz</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">preacts_trainable</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">:</span>
         <span class="n">sf</span> <span class="o">=</span> <span class="n">scale_factor</span>
-        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">preacts_trainable</span><span class="p">:</span>
                 <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="n">_build_cudaq_pz_preact_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">,</span> <span class="n">sf</span><span class="p">)</span>
@@ -505,13 +505,13 @@
                     <span class="k">if</span> <span class="n">sf</span> <span class="o">&gt;</span> <span class="mi">1</span>
                     <span class="k">else</span> <span class="n">_build_cudaq_pz_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">)</span>
                 <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">):</span>
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">):</span>
             <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="n">_build_cudaq_rpz_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">,</span> <span class="n">sf</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">sf</span> <span class="o">&gt;</span> <span class="mi">1</span>
                 <span class="k">else</span> <span class="n">_build_cudaq_rpz_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">)</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">"real"</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">preacts_trainable</span><span class="p">:</span>
                 <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="n">_build_cudaq_real_preact_folded_kernel</span><span class="p">(</span><span class="n">reps</span><span class="p">,</span> <span class="n">sf</span><span class="p">)</span>
@@ -526,7 +526,7 @@
                 <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Ansatz &#39;</span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&#39; not supported by cudaq_solver&quot;</span>
+                <span class="sa">f</span><span class="s2">"Ansatz '</span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">' not supported by cudaq_solver"</span>
             <span class="p">)</span>
     <span class="k">return</span> <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
 
@@ -536,7 +536,7 @@
     <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">layout</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel that runs N independent pz circuits in parallel.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a CUDA-Q kernel that runs N independent pz circuits in parallel."""</span>
     <span class="n">width</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
@@ -562,7 +562,7 @@
     <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">layout</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel that runs N independent real circuits in parallel.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a CUDA-Q kernel that runs N independent real circuits in parallel."""</span>
     <span class="n">width</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
@@ -586,7 +586,7 @@
     <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">layout</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a CUDA-Q kernel that runs N independent rpz circuits in parallel.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Build a CUDA-Q kernel that runs N independent rpz circuits in parallel."""</span>
     <span class="n">width</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">layout</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
 
     <span class="nd">@cudaq</span><span class="o">.</span><span class="n">kernel</span>
@@ -607,13 +607,13 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_sample_z_marginals</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">shots_count</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Per-qubit &lt;Z&gt; from sampled bitstring counts at the given positions.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Per-qubit &lt;Z&gt; from sampled bitstring counts at the given positions."""</span>
     <span class="n">acc</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">positions</span><span class="p">)</span>
     <span class="n">total</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="k">for</span> <span class="n">bits</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="n">total</span> <span class="o">+=</span> <span class="n">count</span>
         <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">pos</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">positions</span><span class="p">):</span>
-            <span class="n">acc</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="n">count</span> <span class="k">if</span> <span class="n">bits</span><span class="p">[</span><span class="n">pos</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;0&quot;</span> <span class="k">else</span> <span class="o">-</span><span class="n">count</span>
+            <span class="n">acc</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="n">count</span> <span class="k">if</span> <span class="n">bits</span><span class="p">[</span><span class="n">pos</span><span class="p">]</span> <span class="o">==</span> <span class="s2">"0"</span> <span class="k">else</span> <span class="o">-</span><span class="n">count</span>
     <span class="n">total</span> <span class="o">=</span> <span class="n">total</span> <span class="ow">or</span> <span class="n">shots_count</span>
     <span class="k">return</span> <span class="p">[</span><span class="n">a</span> <span class="o">/</span> <span class="n">total</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">acc</span><span class="p">]</span>
 
@@ -629,7 +629,7 @@
     <span class="n">initial_layout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">expectation_via_sample</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Pack independent single-qubit circuits onto an N-qubit QPU.</span>
 
 <span class="sd">    Runs ceil(total / n_qubits) multi-qubit jobs instead of `total` single-qubit jobs.</span>
@@ -642,15 +642,15 @@
 <span class="sd">    qubits). A layout longer than `n_qubits` keeps its first (best-ranked)</span>
 <span class="sd">    entries; whether the physical indices are honored end-to-end depends on</span>
 <span class="sd">    the target (see the solver docs).</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_args</span><span class="p">)</span>
     <span class="n">expvals</span> <span class="o">=</span> <span class="p">[]</span>
 
     <span class="k">if</span> <span class="n">initial_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n_qubits</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;initial_layout has fewer qubits than the packing width: &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span><span class="si">}</span><span class="s2"> &lt; </span><span class="si">{</span><span class="n">n_qubits</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="s2">"initial_layout has fewer qubits than the packing width: "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span><span class="si">}</span><span class="s2"> &lt; </span><span class="si">{</span><span class="n">n_qubits</span><span class="si">}</span><span class="s2">"</span>
             <span class="p">)</span>
         <span class="c1"># Entries were validated (ints, distinct) at the solver boundary.</span>
         <span class="n">layout</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">[:</span><span class="n">n_qubits</span><span class="p">])</span>
@@ -667,7 +667,7 @@
     <span class="c1"># Build the kernel once per shape — construction recompiles MLIR, so</span>
     <span class="c1"># cache on the full shape key alongside the single-qubit kernels.</span>
     <span class="n">cache_key</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="s2">&quot;parallel&quot;</span><span class="p">,</span>
+        <span class="s2">"parallel"</span><span class="p">,</span>
         <span class="n">ansatz</span><span class="p">,</span>
         <span class="n">reps</span><span class="p">,</span>
         <span class="n">preacts_trainable</span><span class="p">,</span>
@@ -677,7 +677,7 @@
     <span class="n">par_kernel</span> <span class="o">=</span> <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">par_kernel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">pass</span>
-    <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+    <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">preacts_trainable</span><span class="p">:</span>
         <span class="n">par_kernel</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">_build_cudaq_parallel_pz_folded_kernel</span><span class="p">(</span>
                 <span class="n">n_slots</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">,</span> <span class="n">slot_layout</span>
@@ -685,7 +685,7 @@
             <span class="k">if</span> <span class="n">scale_factor</span> <span class="o">&gt;</span> <span class="mi">1</span>
             <span class="k">else</span> <span class="n">_build_cudaq_parallel_pz_kernel</span><span class="p">(</span><span class="n">n_slots</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">slot_layout</span><span class="p">)</span>
         <span class="p">)</span>
-    <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+    <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">"real"</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">preacts_trainable</span><span class="p">:</span>
         <span class="n">par_kernel</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">_build_cudaq_parallel_real_folded_kernel</span><span class="p">(</span>
                 <span class="n">n_slots</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">,</span> <span class="n">slot_layout</span>
@@ -693,7 +693,7 @@
             <span class="k">if</span> <span class="n">scale_factor</span> <span class="o">&gt;</span> <span class="mi">1</span>
             <span class="k">else</span> <span class="n">_build_cudaq_parallel_real_kernel</span><span class="p">(</span><span class="n">n_slots</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">slot_layout</span><span class="p">)</span>
         <span class="p">)</span>
-    <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+    <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">preacts_trainable</span><span class="p">:</span>
         <span class="n">par_kernel</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">_build_cudaq_parallel_rpz_folded_kernel</span><span class="p">(</span>
                 <span class="n">n_slots</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">,</span> <span class="n">slot_layout</span>
@@ -702,7 +702,7 @@
             <span class="k">else</span> <span class="n">_build_cudaq_parallel_rpz_kernel</span><span class="p">(</span><span class="n">n_slots</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">slot_layout</span><span class="p">)</span>
         <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Parallel not supported for ansatz &#39;</span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Parallel not supported for ansatz '</span><span class="si">{</span><span class="n">ansatz</span><span class="si">}</span><span class="s2">'"</span><span class="p">)</span>
     <span class="n">_CUDAQ_KERNEL_CACHE</span><span class="p">[</span><span class="n">cache_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">par_kernel</span>
 
     <span class="n">spin_sum</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">spin</span><span class="o">.</span><span class="n">z</span><span class="p">(</span><span class="n">layout</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
@@ -715,7 +715,7 @@
         <span class="n">chunk_size</span> <span class="o">=</span> <span class="n">end</span> <span class="o">-</span> <span class="n">start</span>
 
         <span class="c1"># Flatten args and pad to n_qubits</span>
-        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;pz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;pz&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">preacts_trainable</span><span class="p">:</span>
             <span class="n">x_vals</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">]</span>
             <span class="n">all_thetas</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">:</span>
@@ -727,7 +727,7 @@
                     <span class="n">all_thetas</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">pad_thetas</span><span class="p">)</span>
             <span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">x_vals</span><span class="p">,</span> <span class="n">all_thetas</span><span class="p">)</span>
 
-        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">&quot;real&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">preacts_trainable</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">"real"</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">preacts_trainable</span><span class="p">:</span>
             <span class="n">x_vals</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">]</span>
             <span class="n">all_thetas</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">:</span>
@@ -781,18 +781,18 @@
     <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Evaluate all circuits on CUDA-Q and return expectation values.</span>
 
 <span class="sd">    Returns shape: (batch_size, out_dim, in_dim)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">batch</span><span class="p">,</span> <span class="n">in_dim</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
-    <span class="n">ansatz</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;ansatz&quot;</span><span class="p">]</span>
-    <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;preacts_trainable&quot;</span><span class="p">]</span>
-    <span class="n">out_dim</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;out_dim&quot;</span><span class="p">]</span>
-    <span class="n">shots_count</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;shots&quot;</span><span class="p">]</span>
-    <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;parallel_qubits&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-    <span class="n">initial_layout</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;initial_layout&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">ansatz</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">"ansatz"</span><span class="p">]</span>
+    <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">"preacts_trainable"</span><span class="p">]</span>
+    <span class="n">out_dim</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">"out_dim"</span><span class="p">]</span>
+    <span class="n">shots_count</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">"shots"</span><span class="p">]</span>
+    <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"parallel_qubits"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">initial_layout</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"initial_layout"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
     <span class="c1"># Broadcasting (same as other solvers)</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
@@ -802,7 +802,7 @@
         <span class="n">repeat_in</span> <span class="o">=</span> <span class="n">in_dim</span> <span class="o">//</span> <span class="n">theta</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
         <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>
 
-    <span class="n">_needs_encoded_x</span> <span class="o">=</span> <span class="n">preacts_trainable</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;rpz_encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;rpz&quot;</span><span class="p">)</span>
+    <span class="n">_needs_encoded_x</span> <span class="o">=</span> <span class="n">preacts_trainable</span> <span class="ow">or</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">)</span>
     <span class="n">encoded_x</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="n">_needs_encoded_x</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
@@ -815,7 +815,7 @@
                 <span class="p">:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:</span>
             <span class="p">]</span>
             <span class="n">preacts_bias</span> <span class="o">=</span> <span class="n">preacts_bias</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">repeat_out</span><span class="p">,</span> <span class="n">repeat_in</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[:,</span> <span class="p">:</span><span class="n">in_dim</span><span class="p">,</span> <span class="p">:]</span>
-        <span class="n">encoded_x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;oir,bi-&gt;boir&quot;</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">preacts_bias</span><span class="p">)</span>
+        <span class="n">encoded_x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">"oir,bi-&gt;boir"</span><span class="p">,</span> <span class="n">preacts_weight</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">preacts_bias</span><span class="p">)</span>
 
     <span class="n">x_np</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
     <span class="n">theta_np</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
@@ -840,8 +840,8 @@
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">all_args</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">x_py</span><span class="p">[</span><span class="n">b</span><span class="p">][</span><span class="n">i</span><span class="p">],</span> <span class="n">t</span><span class="p">))</span>
 
-    <span class="n">mitigation</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mitigation&quot;</span><span class="p">,</span> <span class="p">{})</span>
-    <span class="n">expectation_via_sample</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;expectation_via_sample&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="n">mitigation</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mitigation"</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="n">expectation_via_sample</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expectation_via_sample"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_run_cudaq</span><span class="p">(</span><span class="n">scale_factor</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">parallel_qubits</span> <span class="ow">and</span> <span class="n">parallel_qubits</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
@@ -884,7 +884,7 @@
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">_CudaqParamShift</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Autograd function using parameter-shift rule for CUDA-Q circuits.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Autograd function using parameter-shift rule for CUDA-Q circuits."""</span>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
@@ -960,21 +960,21 @@
 
 
 <span class="c1"># Calibration snapshots fetched per machine ARN; cached for the process</span>
-<span class="c1"># lifetime so &#39;auto&#39; does not issue one AWS GetDevice call per forward pass.</span>
+<span class="c1"># lifetime so 'auto' does not issue one AWS GetDevice call per forward pass.</span>
 <span class="n">_BRAKET_PROFILE_CACHE</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_braket_device_profile</span><span class="p">(</span><span class="n">machine</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">DeviceProfile</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fetch a calibration profile for a Braket machine ARN (best effort).&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Fetch a calibration profile for a Braket machine ARN (best effort)."""</span>
     <span class="k">if</span> <span class="n">machine</span> <span class="ow">in</span> <span class="n">_BRAKET_PROFILE_CACHE</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">_BRAKET_PROFILE_CACHE</span><span class="p">[</span><span class="n">machine</span><span class="p">]</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">braket.aws</span><span class="w"> </span><span class="kn">import</span> <span class="n">AwsDevice</span>  <span class="c1"># type: ignore</span>
     <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
         <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;initial_layout=&#39;auto&#39; on the braket target needs &quot;</span>
-            <span class="s2">&quot;amazon-braket-sdk for calibration data; proceeding without a &quot;</span>
-            <span class="s2">&quot;layout.&quot;</span><span class="p">,</span>
+            <span class="s2">"initial_layout='auto' on the braket target needs "</span>
+            <span class="s2">"amazon-braket-sdk for calibration data; proceeding without a "</span>
+            <span class="s2">"layout."</span><span class="p">,</span>
             <span class="n">stacklevel</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span>
@@ -984,8 +984,8 @@
         <span class="k">return</span> <span class="n">profile</span>
     <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
         <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;could not fetch Braket calibration for </span><span class="si">{</span><span class="n">machine</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">; &quot;</span>
-            <span class="s2">&quot;proceeding without a layout.&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">"could not fetch Braket calibration for </span><span class="si">{</span><span class="n">machine</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">; "</span>
+            <span class="s2">"proceeding without a layout."</span><span class="p">,</span>
             <span class="n">stacklevel</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span>
@@ -1001,10 +1001,10 @@
     <span class="n">reps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Execute QKAN circuits via NVIDIA CUDA-Q.</span>
 
-<span class="sd">    Drop-in replacement for torch_exact_solver using CUDA-Q&#39;s GPU-accelerated</span>
+<span class="sd">    Drop-in replacement for torch_exact_solver using CUDA-Q's GPU-accelerated</span>
 <span class="sd">    quantum simulation or QPU backends. Circuits are built as CUDA-Q kernels</span>
 <span class="sd">    and expectation values are computed via cudaq.observe().</span>
 
@@ -1022,16 +1022,16 @@
 <span class="sd">            shape: (\\*group, reps)</span>
 <span class="sd">        reps : int</span>
 <span class="sd">        ansatz : str</span>
-<span class="sd">            &quot;pz_encoding&quot;, &quot;pz&quot;, &quot;rpz_encoding&quot;, &quot;rpz&quot;, or &quot;real&quot;</span>
+<span class="sd">            "pz_encoding", "pz", "rpz_encoding", "rpz", or "real"</span>
 <span class="sd">        preacts_trainable : bool</span>
 <span class="sd">        out_dim : int</span>
 <span class="sd">        target : str, optional</span>
-<span class="sd">            CUDA-Q target (e.g., &quot;nvidia&quot;, &quot;nvidia-mqpu&quot;, &quot;qpp-cpu&quot;,</span>
-<span class="sd">            &quot;braket&quot;, &quot;iqm&quot;, &quot;quantum_machines&quot;).</span>
+<span class="sd">            CUDA-Q target (e.g., "nvidia", "nvidia-mqpu", "qpp-cpu",</span>
+<span class="sd">            "braket", "iqm", "quantum_machines").</span>
 <span class="sd">            Set before calling via cudaq.set_target().</span>
 <span class="sd">        url / executor / api_key : optional</span>
 <span class="sd">            Forwarded to cudaq.set_target for REST hardware targets. For</span>
-<span class="sd">            &quot;quantum_machines&quot; these select the Qoperator server URL, the</span>
+<span class="sd">            "quantum_machines" these select the Qoperator server URL, the</span>
 <span class="sd">            executor name, and the X-API-Key credential (the</span>
 <span class="sd">            QUANTUM_MACHINES_API_KEY env var also works).</span>
 <span class="sd">        shots : int, optional</span>
@@ -1042,115 +1042,115 @@
 <span class="sd">            cudaq.observe. Defaults to True on the quantum_machines target,</span>
 <span class="sd">            whose REST helper mis-handles multi-term observe.</span>
 <span class="sd">        initial_layout : optional</span>
-<span class="sd">            None (default), &quot;auto&quot;, or a list of physical qubit indices for</span>
-<span class="sd">            the packed `parallel_qubits` path on hardware targets. &quot;auto&quot;</span>
+<span class="sd">            None (default), "auto", or a list of physical qubit indices for</span>
+<span class="sd">            the packed `parallel_qubits` path on hardware targets. "auto"</span>
 <span class="sd">            ranks qubits from calibration data: pass `device_profile` (a</span>
 <span class="sd">            qkan.solver.layout.DeviceProfile) or use the braket target with</span>
 <span class="sd">            a machine ARN and amazon-braket-sdk installed. Applied by</span>
 <span class="sd">            construction (circuit slot j runs on register index layout[j]);</span>
 <span class="sd">            native iqm/oqc/anyon targets preserve these indices, while</span>
-<span class="sd">            Braket&#39;s vendor compiler may remap them.</span>
+<span class="sd">            Braket's vendor compiler may remap them.</span>
 <span class="sd">        device_profile : DeviceProfile, optional</span>
-<span class="sd">            Calibration snapshot used by initial_layout=&quot;auto&quot; and for</span>
+<span class="sd">            Calibration snapshot used by initial_layout="auto" and for</span>
 <span class="sd">            layout bounds checking (see qkan.solver.layout).</span>
 <span class="sd">        max_readout_error / qubit_error_threshold : float, optional</span>
-<span class="sd">            Calibration thresholds forwarded to the &quot;auto&quot; qubit ranking.</span>
+<span class="sd">            Calibration thresholds forwarded to the "auto" qubit ranking.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">        torch.Tensor</span>
 <span class="sd">            shape: (batch_size, out_dim, in_dim)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">_CUDAQ_AVAILABLE</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
-            <span class="s2">&quot;CUDA-Q is required for cudaq_solver. &quot;</span>
-            <span class="s2">&quot;Install from: https://nvidia.github.io/cuda-quantum/&quot;</span>
+            <span class="s2">"CUDA-Q is required for cudaq_solver. "</span>
+            <span class="s2">"Install from: https://nvidia.github.io/cuda-quantum/"</span>
         <span class="p">)</span>
 
-    <span class="n">ansatz</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ansatz&quot;</span><span class="p">,</span> <span class="s2">&quot;pz_encoding&quot;</span><span class="p">)</span>
-    <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;preacts_trainable&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-    <span class="n">out_dim</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;out_dim&quot;</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-    <span class="n">shots</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;shots&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-    <span class="n">target</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;target&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-    <span class="n">machine</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;machine&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-    <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;parallel_qubits&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">ansatz</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ansatz"</span><span class="p">,</span> <span class="s2">"pz_encoding"</span><span class="p">)</span>
+    <span class="n">preacts_trainable</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"preacts_trainable"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="n">out_dim</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"out_dim"</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">shots</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"shots"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">target</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"target"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">machine</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"machine"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"parallel_qubits"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="n">target</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">target_kwargs</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="c1"># Forward the target options CUDA-Q hardware backends accept:</span>
         <span class="c1"># machine (braket/ionq/...), url/executor/api_key (quantum_machines).</span>
-        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;machine&quot;</span><span class="p">,</span> <span class="s2">&quot;url&quot;</span><span class="p">,</span> <span class="s2">&quot;executor&quot;</span><span class="p">,</span> <span class="s2">&quot;api_key&quot;</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"machine"</span><span class="p">,</span> <span class="s2">"url"</span><span class="p">,</span> <span class="s2">"executor"</span><span class="p">,</span> <span class="s2">"api_key"</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">target_kwargs</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">kwargs</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
         <span class="n">cudaq</span><span class="o">.</span><span class="n">set_target</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="o">**</span><span class="n">target_kwargs</span><span class="p">)</span>
 
     <span class="c1"># Resolve initial_layout (device-independent):</span>
     <span class="c1">#   None (default) -&gt; default placement</span>
-    <span class="c1">#   &quot;auto&quot;         -&gt; rank qubits from a DeviceProfile calibration snapshot</span>
+    <span class="c1">#   "auto"         -&gt; rank qubits from a DeviceProfile calibration snapshot</span>
     <span class="c1">#   list[int]      -&gt; caller-supplied physical qubit indices</span>
-    <span class="n">initial_layout</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;initial_layout&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-    <span class="n">device_profile</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;device_profile&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">initial_layout</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"initial_layout"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">device_profile</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"device_profile"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
         <span class="n">initial_layout</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span>
-    <span class="k">elif</span> <span class="n">initial_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="s2">&quot;tolist&quot;</span><span class="p">):</span>
+    <span class="k">elif</span> <span class="n">initial_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="s2">"tolist"</span><span class="p">):</span>
         <span class="c1"># Normalize numpy arrays / torch tensors to a plain list.</span>
         <span class="n">initial_layout</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">initial_layout</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">initial_layout</span><span class="p">:</span>
         <span class="n">initial_layout</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">initial_layout</span> <span class="o">!=</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">initial_layout</span> <span class="o">!=</span> <span class="s2">"auto"</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="s2">&quot;initial_layout must be None, &#39;auto&#39;, or a list of physical &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;qubit indices; got </span><span class="si">{</span><span class="n">initial_layout</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="s2">"initial_layout must be None, 'auto', or a list of physical "</span>
+            <span class="sa">f</span><span class="s2">"qubit indices; got </span><span class="si">{</span><span class="n">initial_layout</span><span class="si">!r}</span><span class="s2">"</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
         <span class="n">entries</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">initial_layout</span><span class="p">:</span>
             <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">q</span><span class="p">)</span> <span class="o">!=</span> <span class="n">q</span> <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">q</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;initial_layout entries must be non-negative integers; got </span><span class="si">{</span><span class="n">q</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                    <span class="sa">f</span><span class="s2">"initial_layout entries must be non-negative integers; got </span><span class="si">{</span><span class="n">q</span><span class="si">!r}</span><span class="s2">"</span>
                 <span class="p">)</span>
             <span class="n">entries</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">q</span><span class="p">))</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">entries</span><span class="p">))</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;initial_layout assigns the same physical qubit twice&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"initial_layout assigns the same physical qubit twice"</span><span class="p">)</span>
         <span class="n">initial_layout</span> <span class="o">=</span> <span class="n">entries</span>
-    <span class="k">if</span> <span class="n">parallel_qubits</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">parallel_qubits</span> <span class="o">==</span> <span class="s2">"auto"</span><span class="p">:</span>
         <span class="c1"># CUDA-Q exposes no device qubit count; resolve from the profile.</span>
         <span class="k">if</span> <span class="n">device_profile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;parallel_qubits=&#39;auto&#39; with the cudaq solver requires &quot;</span>
-                <span class="s2">&quot;device_profile=DeviceProfile(...) to know the device size.&quot;</span>
+                <span class="s2">"parallel_qubits='auto' with the cudaq solver requires "</span>
+                <span class="s2">"device_profile=DeviceProfile(...) to know the device size."</span>
             <span class="p">)</span>
         <span class="n">parallel_qubits</span> <span class="o">=</span> <span class="n">device_profile</span><span class="o">.</span><span class="n">num_qubits</span>
     <span class="k">if</span> <span class="n">initial_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span>
         <span class="nb">isinstance</span><span class="p">(</span><span class="n">parallel_qubits</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">and</span> <span class="n">parallel_qubits</span> <span class="o">&gt;</span> <span class="mi">1</span>
     <span class="p">):</span>
         <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;the cudaq solver applies initial_layout only on the &quot;</span>
-            <span class="s2">&quot;parallel_qubits packing path; ignoring it.&quot;</span><span class="p">,</span>
+            <span class="s2">"the cudaq solver applies initial_layout only on the "</span>
+            <span class="s2">"parallel_qubits packing path; ignoring it."</span><span class="p">,</span>
             <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">initial_layout</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="n">initial_layout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">current</span> <span class="o">=</span> <span class="n">cudaq</span><span class="o">.</span><span class="n">get_target</span><span class="p">()</span>
-        <span class="n">braket_simulator</span> <span class="o">=</span> <span class="n">machine</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="s2">&quot;/quantum-simulator/&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">machine</span><span class="p">)</span>
+        <span class="n">braket_simulator</span> <span class="o">=</span> <span class="n">machine</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="s2">"/quantum-simulator/"</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">machine</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">current</span><span class="o">.</span><span class="n">is_remote</span><span class="p">()</span> <span class="ow">or</span> <span class="n">current</span><span class="o">.</span><span class="n">is_emulated</span><span class="p">()</span> <span class="ow">or</span> <span class="n">braket_simulator</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s2">&quot;initial_layout has no effect on simulator or emulated cudaq &quot;</span>
-                <span class="s2">&quot;targets; ignoring it.&quot;</span><span class="p">,</span>
+                <span class="s2">"initial_layout has no effect on simulator or emulated cudaq "</span>
+                <span class="s2">"targets; ignoring it."</span><span class="p">,</span>
                 <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="n">initial_layout</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
         <span class="n">profile</span> <span class="o">=</span> <span class="n">device_profile</span>
-        <span class="k">if</span> <span class="n">profile</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">&quot;braket&quot;</span> <span class="ow">and</span> <span class="n">machine</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">profile</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">"braket"</span> <span class="ow">and</span> <span class="n">machine</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">profile</span> <span class="o">=</span> <span class="n">_braket_device_profile</span><span class="p">(</span><span class="n">machine</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">profile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;initial_layout=&#39;auto&#39; for the cudaq solver needs calibration &quot;</span>
-                <span class="s2">&quot;data: pass device_profile=DeviceProfile(...) (see &quot;</span>
-                <span class="s2">&quot;qkan.solver.layout) — required when the target was &quot;</span>
-                <span class="s2">&quot;configured globally — or use the braket target with a &quot;</span>
-                <span class="s2">&quot;machine ARN and amazon-braket-sdk installed.&quot;</span>
+                <span class="s2">"initial_layout='auto' for the cudaq solver needs calibration "</span>
+                <span class="s2">"data: pass device_profile=DeviceProfile(...) (see "</span>
+                <span class="s2">"qkan.solver.layout) — required when the target was "</span>
+                <span class="s2">"configured globally — or use the braket target with a "</span>
+                <span class="s2">"machine ARN and amazon-braket-sdk installed."</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">profile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="c1"># Braket fetch failed; a warning was already emitted.</span>
@@ -1159,13 +1159,13 @@
             <span class="n">initial_layout</span> <span class="o">=</span> <span class="n">rank_qubits</span><span class="p">(</span>
                 <span class="n">profile</span><span class="p">,</span>
                 <span class="n">parallel_qubits</span><span class="p">,</span>
-                <span class="n">max_readout_error</span><span class="o">=</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_readout_error&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
-                <span class="n">qubit_error_threshold</span><span class="o">=</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;qubit_error_threshold&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+                <span class="n">max_readout_error</span><span class="o">=</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_readout_error"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+                <span class="n">qubit_error_threshold</span><span class="o">=</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"qubit_error_threshold"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
             <span class="p">)</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">initial_layout</span><span class="p">:</span>
                 <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                    <span class="s2">&quot;initial_layout=&#39;auto&#39;: profile carries no calibration &quot;</span>
-                    <span class="s2">&quot;data; falling back to the default placement.&quot;</span><span class="p">,</span>
+                    <span class="s2">"initial_layout='auto': profile carries no calibration "</span>
+                    <span class="s2">"data; falling back to the default placement."</span><span class="p">,</span>
                     <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
                 <span class="p">)</span>
                 <span class="n">initial_layout</span> <span class="o">=</span> <span class="kc">None</span>
@@ -1176,23 +1176,23 @@
             <span class="ow">and</span> <span class="nb">max</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">device_profile</span><span class="o">.</span><span class="n">num_qubits</span>
         <span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;initial_layout index </span><span class="si">{</span><span class="nb">max</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span><span class="si">}</span><span class="s2"> exceeds the &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;device&#39;s </span><span class="si">{</span><span class="n">device_profile</span><span class="o">.</span><span class="n">num_qubits</span><span class="si">}</span><span class="s2"> qubits&quot;</span>
+                <span class="sa">f</span><span class="s2">"initial_layout index </span><span class="si">{</span><span class="nb">max</span><span class="p">(</span><span class="n">initial_layout</span><span class="p">)</span><span class="si">}</span><span class="s2"> exceeds the "</span>
+                <span class="sa">f</span><span class="s2">"device's </span><span class="si">{</span><span class="n">device_profile</span><span class="o">.</span><span class="n">num_qubits</span><span class="si">}</span><span class="s2"> qubits"</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">&quot;braket&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">"braket"</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s2">&quot;CUDA-Q does not disable Braket&#39;s qubit rewiring: the vendor &quot;</span>
-                <span class="s2">&quot;compiler may remap the requested layout on braket targets &quot;</span>
-                <span class="s2">&quot;(verified on Rigetti). Native iqm/oqc/anyon targets &quot;</span>
-                <span class="s2">&quot;preserve it.&quot;</span><span class="p">,</span>
+                <span class="s2">"CUDA-Q does not disable Braket's qubit rewiring: the vendor "</span>
+                <span class="s2">"compiler may remap the requested layout on braket targets "</span>
+                <span class="s2">"(verified on Rigetti). Native iqm/oqc/anyon targets "</span>
+                <span class="s2">"preserve it."</span><span class="p">,</span>
                 <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">&quot;quantum_machines&quot;</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">"quantum_machines"</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s2">&quot;the requested physical indices are baked into the submitted &quot;</span>
-                <span class="s2">&quot;OpenQASM, but qubit mapping on quantum_machines is decided &quot;</span>
-                <span class="s2">&quot;by the Qoperator server; verify with your operator &quot;</span>
-                <span class="s2">&quot;configuration.&quot;</span><span class="p">,</span>
+                <span class="s2">"the requested physical indices are baked into the submitted "</span>
+                <span class="s2">"OpenQASM, but qubit mapping on quantum_machines is decided "</span>
+                <span class="s2">"by the Qoperator server; verify with your operator "</span>
+                <span class="s2">"configuration."</span><span class="p">,</span>
                 <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
             <span class="p">)</span>
 
@@ -1200,23 +1200,23 @@
     <span class="c1"># mis-handles multi-term observe (first Z term returns full-register</span>
     <span class="c1"># parity); route expectations through sample() marginals instead.</span>
     <span class="n">expectation_via_sample</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-        <span class="s2">&quot;expectation_via_sample&quot;</span><span class="p">,</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">&quot;quantum_machines&quot;</span>
+        <span class="s2">"expectation_via_sample"</span><span class="p">,</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">"quantum_machines"</span>
     <span class="p">)</span>
-    <span class="k">if</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">&quot;quantum_machines&quot;</span> <span class="ow">and</span> <span class="n">shots</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">"quantum_machines"</span> <span class="ow">and</span> <span class="n">shots</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="s2">&quot;the quantum_machines target requires explicit shots (results &quot;</span>
-            <span class="s2">&quot;come from physical sampling); pass shots=... in solver_kwargs.&quot;</span>
+            <span class="s2">"the quantum_machines target requires explicit shots (results "</span>
+            <span class="s2">"come from physical sampling); pass shots=... in solver_kwargs."</span>
         <span class="p">)</span>
 
     <span class="n">config</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;ansatz&quot;</span><span class="p">:</span> <span class="n">ansatz</span><span class="p">,</span>
-        <span class="s2">&quot;preacts_trainable&quot;</span><span class="p">:</span> <span class="n">preacts_trainable</span><span class="p">,</span>
-        <span class="s2">&quot;out_dim&quot;</span><span class="p">:</span> <span class="n">out_dim</span><span class="p">,</span>
-        <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="n">shots</span><span class="p">,</span>
-        <span class="s2">&quot;parallel_qubits&quot;</span><span class="p">:</span> <span class="n">parallel_qubits</span><span class="p">,</span>
-        <span class="s2">&quot;initial_layout&quot;</span><span class="p">:</span> <span class="n">initial_layout</span><span class="p">,</span>
-        <span class="s2">&quot;expectation_via_sample&quot;</span><span class="p">:</span> <span class="n">expectation_via_sample</span><span class="p">,</span>
-        <span class="s2">&quot;mitigation&quot;</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mitigation&quot;</span><span class="p">,</span> <span class="p">{}),</span>
+        <span class="s2">"ansatz"</span><span class="p">:</span> <span class="n">ansatz</span><span class="p">,</span>
+        <span class="s2">"preacts_trainable"</span><span class="p">:</span> <span class="n">preacts_trainable</span><span class="p">,</span>
+        <span class="s2">"out_dim"</span><span class="p">:</span> <span class="n">out_dim</span><span class="p">,</span>
+        <span class="s2">"shots"</span><span class="p">:</span> <span class="n">shots</span><span class="p">,</span>
+        <span class="s2">"parallel_qubits"</span><span class="p">:</span> <span class="n">parallel_qubits</span><span class="p">,</span>
+        <span class="s2">"initial_layout"</span><span class="p">:</span> <span class="n">initial_layout</span><span class="p">,</span>
+        <span class="s2">"expectation_via_sample"</span><span class="p">:</span> <span class="n">expectation_via_sample</span><span class="p">,</span>
+        <span class="s2">"mitigation"</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mitigation"</span><span class="p">,</span> <span class="p">{}),</span>
     <span class="p">}</span>
 
     <span class="n">needs_grad</span> <span class="o">=</span> <span class="n">theta</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">requires_grad</span>
@@ -1235,9 +1235,9 @@
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">CudaqSolver</span><span class="p">(</span><span class="n">QKANSolver</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;NVIDIA CUDA-Q solver (registered as ``&quot;cudaq&quot;``).&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""NVIDIA CUDA-Q solver (registered as ``"cudaq"``)."""</span>
 
-    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;cudaq&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">"cudaq"</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>

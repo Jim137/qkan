@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>qkan.optim.triton_adabelief &mdash; QKAN 0.2.3dev documentation</title>
+  <title>qkan.optim.triton_adabelief &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
 
@@ -13,7 +13,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/_modules/qkan/optim/triton_adabelief.html" />
       <script src="../../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../../_static/documentation_options.js?v=db1dea96"></script>
+      <script src="../../../_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -80,21 +80,21 @@
   <h1>Source code for qkan.optim.triton_adabelief</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) 2026, Jiun-Cheng Jiang. All rights reserved.</span>
 <span class="c1">#</span>
-<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the "License");</span>
 <span class="c1"># you may not use this file except in compliance with the License.</span>
 <span class="c1"># You may obtain a copy of the License at</span>
 <span class="c1">#</span>
 <span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
 <span class="c1">#</span>
 <span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
-<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># distributed under the License is distributed on an "AS IS" BASIS,</span>
 <span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
 <span class="c1"># See the License for the specific language governing permissions and</span>
 <span class="c1"># limitations under the License.</span>
 
-<span class="sd">&quot;&quot;&quot;``TritonAdaBelief`` — single-kernel AdaBelief step via Triton.</span>
+<span class="sd">"""``TritonAdaBelief`` — single-kernel AdaBelief step via Triton.</span>
 
-<span class="sd">PyTorch&#39;s ``AdamW(fused=True)`` is ~2x faster than eager AdamW because</span>
+<span class="sd">PyTorch's ``AdamW(fused=True)`` is ~2x faster than eager AdamW because</span>
 <span class="sd">``_fused_adam_`` collapses the m/v update + bias-correction + addcdiv</span>
 <span class="sd">into a single CUDA kernel. There is no analogous ``_fused_adabelief_``</span>
 <span class="sd">in PyTorch — this module provides one via Triton.</span>
@@ -104,7 +104,7 @@
 <span class="sd">kernel-launch count drops by ~7x, which is the dominant cost for many</span>
 <span class="sd">small parameter tensors on GPU.</span>
 
-<span class="sd">CPU and non-Triton fallback: when ``p`` is on CPU or Triton isn&#39;t</span>
+<span class="sd">CPU and non-Triton fallback: when ``p`` is on CPU or Triton isn't</span>
 <span class="sd">available, the optimizer transparently falls back to the eager</span>
 <span class="sd">AdaBelief path (same algorithm, just per-op).</span>
 
@@ -117,7 +117,7 @@
 <span class="sd">    TritonAdaBelief bf16    :  ~2.0 ms/step   (-58% vs eager, +50% memory savings)</span>
 
 <span class="sd">Same algorithm as ``qkan.optim.AdaBelief`` — drop-in.</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
@@ -137,7 +137,7 @@
 <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
     <span class="n">_TRITON_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
 
-<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;TritonAdaBelief&quot;</span><span class="p">]</span>
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"TritonAdaBelief"</span><span class="p">]</span>
 
 
 <span class="k">if</span> <span class="n">_TRITON_AVAILABLE</span><span class="p">:</span>
@@ -221,7 +221,7 @@
 <div class="viewcode-block" id="TritonAdaBelief">
 <a class="viewcode-back" href="../../../api.html#qkan.TritonAdaBelief">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">TritonAdaBelief</span><span class="p">(</span><span class="n">Optimizer</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Single-kernel AdaBelief step via Triton — same algorithm as ``AdaBelief``.</span>
+<span class="w">    </span><span class="sd">"""Single-kernel AdaBelief step via Triton — same algorithm as ``AdaBelief``.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        params: iterable of parameters.</span>
@@ -236,7 +236,7 @@
 <span class="sd">            are bf16 and ``state_dtype=None``, ``s`` will accumulate</span>
 <span class="sd">            squared residuals in bf16 and may underflow on long runs —</span>
 <span class="sd">            pass ``state_dtype=torch.float32`` explicitly to be safe.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -248,13 +248,13 @@
         <span class="n">state_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">lr</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid learning rate: </span><span class="si">{</span><span class="n">lr</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Invalid learning rate: </span><span class="si">{</span><span class="n">lr</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">eps</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid eps: </span><span class="si">{</span><span class="n">eps</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Invalid eps: </span><span class="si">{</span><span class="n">eps</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">betas</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mf">1.0</span> <span class="ow">and</span> <span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">betas</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mf">1.0</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid betas: </span><span class="si">{</span><span class="n">betas</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Invalid betas: </span><span class="si">{</span><span class="n">betas</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">weight_decay</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid weight_decay: </span><span class="si">{</span><span class="n">weight_decay</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Invalid weight_decay: </span><span class="si">{</span><span class="n">weight_decay</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
             <span class="n">params</span><span class="p">,</span>
             <span class="nb">dict</span><span class="p">(</span>
@@ -278,38 +278,38 @@
                 <span class="n">loss</span> <span class="o">=</span> <span class="n">closure</span><span class="p">()</span>
 
         <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_groups</span><span class="p">:</span>
-            <span class="n">lr</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;lr&quot;</span><span class="p">]</span>
-            <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;betas&quot;</span><span class="p">]</span>
-            <span class="n">eps</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;eps&quot;</span><span class="p">]</span>
-            <span class="n">wd</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;weight_decay&quot;</span><span class="p">]</span>
-            <span class="n">state_dtype</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;state_dtype&quot;</span><span class="p">]</span>
+            <span class="n">lr</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">"lr"</span><span class="p">]</span>
+            <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">"betas"</span><span class="p">]</span>
+            <span class="n">eps</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">"eps"</span><span class="p">]</span>
+            <span class="n">wd</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">"weight_decay"</span><span class="p">]</span>
+            <span class="n">state_dtype</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">"state_dtype"</span><span class="p">]</span>
             <span class="c1"># Group-level step counter — bc1/sqrt_bc2 shared across params.</span>
-            <span class="n">group</span><span class="p">[</span><span class="s2">&quot;_step&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">group</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_step&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
-            <span class="n">step</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;_step&quot;</span><span class="p">]</span>
+            <span class="n">group</span><span class="p">[</span><span class="s2">"_step"</span><span class="p">]</span> <span class="o">=</span> <span class="n">group</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_step"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="n">step</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">"_step"</span><span class="p">]</span>
             <span class="n">bc1</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">b1</span><span class="o">**</span><span class="n">step</span>
             <span class="n">sqrt_bc2</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">b2</span><span class="o">**</span><span class="n">step</span><span class="p">)</span>
             <span class="n">lr_eff</span> <span class="o">=</span> <span class="o">-</span><span class="n">lr</span> <span class="o">*</span> <span class="n">sqrt_bc2</span> <span class="o">/</span> <span class="n">bc1</span>
             <span class="n">eps_sb</span> <span class="o">=</span> <span class="n">eps</span> <span class="o">*</span> <span class="n">sqrt_bc2</span>
             <span class="n">wd_factor</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">wd</span>
 
-            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;params&quot;</span><span class="p">]:</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">group</span><span class="p">[</span><span class="s2">"params"</span><span class="p">]:</span>
                 <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="k">continue</span>
                 <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">is_sparse</span><span class="p">:</span>
-                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;TritonAdaBelief does not support sparse grads&quot;</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"TritonAdaBelief does not support sparse grads"</span><span class="p">)</span>
 
                 <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="p">[</span><span class="n">p</span><span class="p">]</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="n">state</span><span class="p">:</span>
                     <span class="n">sd</span> <span class="o">=</span> <span class="n">state_dtype</span> <span class="k">if</span> <span class="n">state_dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">p</span><span class="o">.</span><span class="n">dtype</span>
-                    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;m&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span>
+                    <span class="n">state</span><span class="p">[</span><span class="s2">"m"</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span>
                         <span class="n">p</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">sd</span><span class="p">,</span> <span class="n">memory_format</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">preserve_format</span>
                     <span class="p">)</span>
-                    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;s&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span>
+                    <span class="n">state</span><span class="p">[</span><span class="s2">"s"</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span>
                         <span class="n">p</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">sd</span><span class="p">,</span> <span class="n">memory_format</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">preserve_format</span>
                     <span class="p">)</span>
 
-                <span class="n">m</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;m&quot;</span><span class="p">]</span>
-                <span class="n">s</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;s&quot;</span><span class="p">]</span>
+                <span class="n">m</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">"m"</span><span class="p">]</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">"s"</span><span class="p">]</span>
                 <span class="k">if</span> <span class="n">_TRITON_AVAILABLE</span> <span class="ow">and</span> <span class="n">p</span><span class="o">.</span><span class="n">is_cuda</span><span class="p">:</span>
                     <span class="n">_adabelief_kernel_launch</span><span class="p">(</span>
                         <span class="n">p</span><span class="p">,</span>

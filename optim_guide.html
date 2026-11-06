@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Optimizer Guide &mdash; QKAN 0.2.3dev documentation</title>
+  <title>Optimizer Guide &mdash; QKAN 0.2.4dev documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
@@ -14,7 +14,7 @@
     <link rel="canonical" href="https://qkan.jimq.cc/optim_guide.html" />
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=db1dea96"></script>
+      <script src="_static/documentation_options.js?v=a74f5ed0"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -315,7 +315,7 @@ floor on the curvature estimate.</p>
 
 <span class="c1"># Inspect the block partition before training:</span>
 <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="n">block_ndim</span><span class="p">,</span> <span class="n">n_blocks</span> <span class="ow">in</span> <span class="n">opt</span><span class="o">.</span><span class="n">describe_layout</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">: shape=</span><span class="si">{</span><span class="n">shape</span><span class="si">}</span><span class="s2">  block_ndim=</span><span class="si">{</span><span class="n">block_ndim</span><span class="si">}</span><span class="s2">  n_blocks=</span><span class="si">{</span><span class="n">n_blocks</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">: shape=</span><span class="si">{</span><span class="n">shape</span><span class="si">}</span><span class="s2">  block_ndim=</span><span class="si">{</span><span class="n">block_ndim</span><span class="si">}</span><span class="s2">  n_blocks=</span><span class="si">{</span><span class="n">n_blocks</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>State cost is <code class="docutils literal notranslate"><span class="pre">m</span></code> (per-parameter, like Adam) plus <code class="docutils literal notranslate"><span class="pre">c</span></code> (also
@@ -394,7 +394,7 @@ closure.</p>
     <span class="n">pct_early</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span>
     <span class="n">lbfgs_kwargs</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">max_iter</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">history_size</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
                       <span class="n">tolerance_grad</span><span class="o">=</span><span class="mf">1e-7</span><span class="p">,</span>
-                      <span class="n">line_search_fn</span><span class="o">=</span><span class="s2">&quot;strong_wolfe&quot;</span><span class="p">),</span>
+                      <span class="n">line_search_fn</span><span class="o">=</span><span class="s2">"strong_wolfe"</span><span class="p">),</span>
 <span class="p">)</span>
 </pre></div>
 </div>
@@ -412,9 +412,9 @@ optimizer.</p>
 differs from the checkpoint’s:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qkan.optim</span><span class="w"> </span><span class="kn">import</span> <span class="n">reshape_optimizer_state</span>
 
-<span class="n">opt</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">[</span><span class="s2">&quot;optimizer&quot;</span><span class="p">])</span>
+<span class="n">opt</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">[</span><span class="s2">"optimizer"</span><span class="p">])</span>
 <span class="n">n_reshaped</span> <span class="o">=</span> <span class="n">reshape_optimizer_state</span><span class="p">(</span><span class="n">opt</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;reshaped </span><span class="si">{</span><span class="n">n_reshaped</span><span class="si">}</span><span class="s2"> optimizer tensors to current p_dim&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"reshaped </span><span class="si">{</span><span class="n">n_reshaped</span><span class="si">}</span><span class="s2"> optimizer tensors to current p_dim"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>State tensors whose <code class="docutils literal notranslate"><span class="pre">numel</span></code> matches the new parameter are reshaped in
