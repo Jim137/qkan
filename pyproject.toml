@@ -33,6 +33,15 @@ cutile = [
     "cuda-tile",
 ]
 
+# AMD ROCm only. FlyDSL needs a ROCm build of torch, which pip cannot select
+# through an extra; install it first from the PyTorch ROCm index. pip then
+# treats "torch>=2.0" as satisfied and leaves the ROCm build in place.
+# 0.3.4.1 is the oldest FlyDSL the solver has been tested with.
+flydsl = [
+    "flydsl>=0.3.4.1",
+    "numpy",
+]
+
 cutn-cu12 = [
     "cuquantum-cu12",
 ]

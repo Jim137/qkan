@@ -123,6 +123,7 @@ class QKANLayer(nn.Module):
                 "tn",
                 "cute",
                 "cutile",
+                "flydsl",
                 "qiskit",
                 "cudaq",
             ],
@@ -158,7 +159,7 @@ class QKANLayer(nn.Module):
         self.checkpoint_reps = checkpoint_reps
         # If base_activation is a string ("silu", "gelu", ...), pick the
         # backend implementation matching the chosen solver — cute/flash/
-        # cutile get their fused kernel, others fall back to torch.nn.
+        # cutile/flydsl get their fused kernel, others fall back to torch.nn.
         # ``"gelu"`` resolves to gelu_exact (matches torch's default).
         if isinstance(base_activation, str):
             base_activation = make_base_activation(base_activation, solver)
@@ -188,6 +189,7 @@ class QKANLayer(nn.Module):
                 "tn",
                 "cute",
                 "cutile",
+                "flydsl",
                 "qiskit",
                 "cudaq",
             ],
@@ -201,12 +203,16 @@ class QKANLayer(nn.Module):
         self.is_batchnorm = is_batchnorm
         self.fast_measure = fast_measure
         self.seed = seed
-        # Flash / cutile / cute solvers use real-valued Triton/CUDA kernels and
+        # Flash / cutile / cute / flydsl solvers use real-valued GPU kernels and
         # cannot operate on complex dtypes.  Transparently map complex → real so
         # users can keep the default ``c_dtype=torch.complex64`` without error.
-        if solver in ("flash", "cutile", "cute") and c_dtype in (
-            torch.complex64,
-            torch.complex128,
+        # Only for ansatzes the fused kernels implement: the rest fall back to
+        # torch_exact_solver, whose Rz/Rx gates need the complex dtype.
+        if (
+            solver in ("flash", "cutile", "cute", "flydsl")
+            and isinstance(ansatz, str)
+            and ansatz in ("pz_encoding", "pz", "rpz_encoding", "rpz", "real")
+            and c_dtype in (torch.complex64, torch.complex128)
         ):
             _complex_to_real = {
                 torch.complex64: torch.float32,
@@ -585,9 +591,6 @@ class QKANLayer(nn.Module):
         # Param storage may have moved — rebuild cached views over the new
         # storage. No-op under p_dim=4.
         self._init_view_caches()
-        # p_dtype may have changed — refresh the cached dtype-cast flag so
-        # solver outputs are cast to the live parameter dtype.
-        self._needs_dtype_cast = self.c_dtype != self.p_dtype
         return ret
 
     def train(self, mode: bool = True):
@@ -660,11 +663,8 @@ class QKANLayer(nn.Module):
     # Solver dispatch (shared by both routes)
     # ------------------------------------------------------------------
     def _resolve_solver_fn(self) -> None:
-        """Pre-resolve the solver callable + dtype-cast need.
-
-        Skips per-forward registry lookups and a no-op ``.to(p_dtype)``
-        cast when ``c_dtype == p_dtype``.
-        """
+        """Pre-resolve the solver callable, skipping per-forward registry
+        lookups."""
         fn: Optional[Callable] = None
         if self.solver == "qml":
             fn = None  # qml has its own loop in _run_solver
@@ -673,9 +673,6 @@ class QKANLayer(nn.Module):
         elif callable(self.solver):
             fn = self.solver
         self._solver_fn: Optional[Callable] = fn
-        # Cast is a no-op when dtypes match — skip the `.to()` Python call.
-        # (Also refreshed by ``to()`` when a dtype move changes p_dtype.)
-        self._needs_dtype_cast = self.c_dtype != self.p_dtype
 
     def _run_solver(
         self,
@@ -719,7 +716,11 @@ class QKANLayer(nn.Module):
                 checkpoint_reps=self.checkpoint_reps,
                 **self.solver_kwargs,
             )
-            return postacts.to(self.p_dtype) if self._needs_dtype_cast else postacts
+            # The fused kernels write float32 or bf16 postacts whatever c_dtype
+            # is, so cast on the actual dtype rather than on c_dtype.
+            if postacts.dtype == self.p_dtype:
+                return postacts
+            return postacts.to(self.p_dtype)
         return fn(
             x,
             theta_v,
@@ -1051,6 +1052,7 @@ class QKAN(nn.Module):
                 "tn",
                 "cute",
                 "cutile",
+                "flydsl",
                 "qiskit",
                 "cudaq",
             ],
@@ -1152,6 +1154,7 @@ class QKAN(nn.Module):
                 "tn",
                 "cute",
                 "cutile",
+                "flydsl",
                 "qiskit",
                 "cudaq",
             ],

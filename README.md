@@ -78,6 +78,19 @@ pip install qkan[cute] --extra-index-url https://qkan.jimq.cc/whl/cu13/
 pip install --no-build-isolation qkan[cute]
 ```
 
+To use the FlyDSL solver (`solver="flydsl"`) on AMD GPUs you need ROCm 7.x installed on the system: FlyDSL is built against the HIP 7 runtime (`libamdhip64.so.7`) and compiles kernels with the ROCm toolchain under `/opt/rocm`. Install a ROCm 7 build of PyTorch **first**, then the `flydsl` extra:
+
+```bash
+# 1. ROCm PyTorch (pick the index matching your ROCm 7.x version)
+pip install torch --index-url https://download.pytorch.org/whl/rocm7.1
+# 2. QKAN with FlyDSL; pip keeps the ROCm torch from step 1
+pip install qkan[flydsl]
+# 3. Check: should print a HIP version, not None
+python -c "import torch; print(torch.version.hip)"
+```
+
+The order matters: if torch is not installed yet, `pip install qkan[flydsl]` pulls the default (CUDA/CPU) torch from PyPI, and the FlyDSL solver will refuse to run.
+
 <!-- To install QKAN from source, you can use the following command:
 
 ```bash
@@ -141,6 +154,7 @@ You can find more examples in the [examples](https://jim137.github.io/qkan/examp
 | Most training workloads (medium → large models) / inference               | GPU          | `flash`               | Best overall speed / memory tradeoff, widest compatibility      | Good first choice for practical GPU training.                                    |
 | BF16/FP8 maximum throughput with CUTLASS                                  | GPU          | `cute`                | CuTe smem trig caching + __sincosf + FP8 prescaled states      | **1.95x** on GPT-2 HQKANsformer. Requires CUTLASS headers.                      |
 | BF16/FP8 mixed-precision training (alternative)                           | GPU          | `cutile`              | cuTile fused kernels with BF16/FP8 + coalesced state layout     | Best with `real` ansatz. Requires CUDA Toolkit 13.1+.                            |
+| AMD GPUs (ROCm)                                                           | AMD GPU      | `flydsl`              | FlyDSL fused kernels; state-free reversible backward            | Needs ROCm 7.x, ROCm PyTorch and `pip install qkan[flydsl]`. f32/BF16 output.      |
 | Extremely large / memory-bound runs (near OOM, very large layers/batches) | GPU (or CPU) | `cutn`                | Best scaling and peak-memory reduction in the extreme benchmark | Use when size/memory dominates. Or CPU case better than `exact`. |
 
 **Ansatz choice (`pz` vs `real`)**

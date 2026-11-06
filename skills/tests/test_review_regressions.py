@@ -96,12 +96,13 @@ def test_adam_then_lbfgs_through_train_():
     assert len(results["train_loss"]) == 4  # crossed the LBFGS switch
 
 
-def test_dtype_cast_flag_refreshes_on_to():
+def test_postacts_follow_the_parameter_dtype_after_to():
     layer = QKANLayer(2, 2, reps=2, solver="exact", seed=0)
-    assert layer._needs_dtype_cast is (layer.c_dtype != layer.p_dtype)
     layer.to(dtype=torch.bfloat16)  # keyword path
     assert layer.p_dtype == torch.bfloat16
-    assert layer._needs_dtype_cast is (layer.c_dtype != torch.bfloat16)
+    # Solver outputs are cast to the live parameter dtype; float32 postacts
+    # would promote the output to float32.
+    assert layer(torch.randn(3, 2, dtype=torch.bfloat16)).dtype == torch.bfloat16
 
 
 def test_adabelief_eager_fallback_mixed_state_dtype():
@@ -147,3 +148,16 @@ def test_graphed_param_swap_migrates_optimizer_names():
         p.grad = torch.full_like(p, 0.1)
     opt.step()
     assert not torch.equal(before, model.fc.weight.detach())
+
+
+@pytest.mark.parametrize("solver", ["flash", "cute", "cutile", "flydsl"])
+def test_complex_c_dtype_kept_for_exact_fallback(solver):
+    # Kernel-backed ansatzes run in real f32; the rest fall back to
+    # torch_exact_solver, whose Rz/Rx gates fail on a real dtype.
+    def c_dtype(ansatz):
+        return QKANLayer(2, 2, reps=2, solver=solver, ansatz=ansatz).c_dtype
+
+    assert c_dtype("pz") == torch.float32
+    assert c_dtype("rpz") == torch.float32
+    assert c_dtype("mix") == torch.complex64
+    assert c_dtype("px") == torch.complex64
