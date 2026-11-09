@@ -58,6 +58,7 @@ class _FlashFunction(torch.autograd.Function):
         out_dim,
         c_dtype,
         ansatz,
+        pz_launch_policy,
     ):
         ctx.save_for_backward(x, theta, preacts_w, preacts_b)
         ctx.reps = reps
@@ -66,6 +67,7 @@ class _FlashFunction(torch.autograd.Function):
         ctx.out_dim = out_dim
         ctx.c_dtype = c_dtype
         ctx.ansatz = ansatz
+        ctx.pz_launch_policy = pz_launch_policy
 
         if ansatz in ("pz_encoding", "pz"):
             return triton_pz_forward(
@@ -114,6 +116,7 @@ class _FlashFunction(torch.autograd.Function):
                 ctx.preacts_trainable,
                 ctx.fast_measure,
                 c_dtype=ctx.c_dtype,
+                policy_name=ctx.pz_launch_policy,
             )
         elif ansatz in ("rpz_encoding", "rpz"):
             grad_x, grad_theta, grad_pw, grad_pb = triton_rpz_backward(
@@ -155,6 +158,7 @@ class _FlashFunction(torch.autograd.Function):
             None,  # out_dim
             None,  # c_dtype
             None,  # ansatz
+            None,  # pz_launch_policy
         )
 
 
@@ -188,7 +192,11 @@ def flash_exact_solver(
     fast_measure = kwargs.get("fast_measure", True)
     out_dim: int = kwargs.get("out_dim", x.shape[1])
     c_dtype = kwargs.get("dtype", torch.complex64)
+    pz_launch_policy = kwargs.get("pz_launch_policy")
     batch, in_dim = x.shape
+
+    if pz_launch_policy is not None and ansatz not in ("pz_encoding", "pz"):
+        raise ValueError("pz_launch_policy is only valid for the PZ ansatz")
 
     # Fallback for unsupported ansatzes
     if ansatz not in _SUPPORTED_FLASH_ANSATZES:
@@ -242,6 +250,7 @@ def flash_exact_solver(
             out_dim,
             c_dtype,
             ansatz,
+            pz_launch_policy,
         )
     else:
         if ansatz in ("pz_encoding", "pz"):

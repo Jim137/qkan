@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "name": "pz-gfx942-n256-batch4096-r3-fixed-preacts-fast-v1",
+  "operation": "pz_backward",
+  "architecture": {
+    "kind": "exact",
+    "value": "gfx942"
+  },
+  "match": {
+    "kind": "exact",
+    "n_oi": 256,
+    "batch": 4096,
+    "reps": 3,
+    "preacts_trainable": false,
+    "fast_measure": true
+  },
+  "block_selector": {
+    "kind": "fixed",
+    "block_b": 512
+  },
+  "precisions": {
+    "fp32": {
+      "num_warps": 2,
+      "waves_per_eu": 1,
+      "num_stages": 2
+    },
+    "bf16": {
+      "num_warps": 2,
+      "waves_per_eu": 1,
+      "num_stages": 2
+    },
+    "fp8": {
+      "num_warps": 2,
+      "waves_per_eu": 1,
+      "num_stages": 2
+    }
+  },
+  "description": "PZ backward launch for the exact n_oi=256, batch=4096 fixed-preacts fast-measure shape."
+}
