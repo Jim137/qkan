@@ -17,8 +17,8 @@
 The states buffer is the largest allocation in a CuTe backward, and choosing
 a narrower checkpoint dtype exists to shrink it.  cute_real_backward had no
 bf16 allocation arm, so bf16 states were written into an fp32-sized buffer
-and the saving never happened — on the default path, since QKANLayer always
-runs the real ansatz with c_dtype=bfloat16 (#25).
+and the saving never happened — on the default path, since QKANLayer runs
+the real ansatz with c_dtype=bfloat16 by default (#25).
 
 Each launcher still picks the buffer dtype and the kernel's state type in two
 separate if/else chains, so every (ansatz, precision) pair is checked here

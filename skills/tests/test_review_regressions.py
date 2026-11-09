@@ -159,5 +159,6 @@ def test_complex_c_dtype_kept_for_exact_fallback(solver):
 
     assert c_dtype("pz") == torch.float32
     assert c_dtype("rpz") == torch.float32
+    assert c_dtype("real") == torch.bfloat16  # its default; see test_real_c_dtype
     assert c_dtype("mix") == torch.complex64
     assert c_dtype("px") == torch.complex64
