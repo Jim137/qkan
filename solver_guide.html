@@ -57,6 +57,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#activation-checkpointing-the-rep-loop">Activation Checkpointing the Rep Loop</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#fused-triton-epilogue">Fused Triton Epilogue</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#bf16-optimizer-mini-state">BF16 Optimizer Mini-State</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#flash-pz-backward-launch-policies">Flash PZ Backward Launch Policies</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#real-quantum-device-deployment">Real Quantum Device Deployment</a><ul>
@@ -312,6 +313,73 @@ params are themselves bf16 and you pass <code class="docutils literal notranslat
 squared residuals in bf16 and may underflow on long runs — pass
 <code class="docutils literal notranslate"><span class="pre">state_dtype=torch.float32</span></code> explicitly to be safe. See <a class="reference internal" href="optim_guide.html"><span class="doc">Optimizer Guide</span></a> for
 the full optimizer API.</p>
+</section>
+<section id="flash-pz-backward-launch-policies">
+<h3>Flash PZ Backward Launch Policies<a class="headerlink" href="#flash-pz-backward-launch-policies" title="Link to this heading"></a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">flash</span></code> solver’s PZ backward kernel picks its batch tile with a built-in
+heuristic and leaves the other launch options to Triton. A <em>launch policy</em>
+replaces that launch with one measured to be faster on one GPU architecture
+for one layer shape. Name it in <code class="docutils literal notranslate"><span class="pre">solver_kwargs</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qkan</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">(</span>
+    <span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">],</span>
+    <span class="n">solver</span><span class="o">=</span><span class="s2">"flash"</span><span class="p">,</span>
+    <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span>
+    <span class="n">solver_kwargs</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">"pz_launch_policy"</span><span class="p">:</span> <span class="s2">"pz-gfx942-n256-batch512-r3-fixed-preacts-fast-v1"</span>
+    <span class="p">},</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>A policy changes how the kernel is launched, not the gradients. It applies to
+backward calls that match its architecture, <code class="docutils literal notranslate"><span class="pre">n_oi</span> <span class="pre">=</span> <span class="pre">out_dim</span> <span class="pre">*</span> <span class="pre">in_dim</span></code>, batch
+size, <code class="docutils literal notranslate"><span class="pre">reps</span></code>, <code class="docutils literal notranslate"><span class="pre">preacts_trainable=False</span></code> and <code class="docutils literal notranslate"><span class="pre">fast_measure=True</span></code>, in fp32,
+bf16 or fp8. Every other call, such as another layer or the short last batch
+of an epoch, keeps the default launch, and the first one emits a warning. A
+policy for a different architecture raises <code class="docutils literal notranslate"><span class="pre">LaunchPolicyMismatchError</span></code>.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 58.0%" />
+<col style="width: 22.0%" />
+<col style="width: 20.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Policy</p></th>
+<th class="head"><p>Architecture</p></th>
+<th class="head"><p><code class="docutils literal notranslate"><span class="pre">n_oi</span></code>, batch</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">pz-gfx942-n256-batch512-r3-fixed-preacts-fast-v1</span></code></p></td>
+<td><p>gfx942 (MI300X)</p></td>
+<td><p>256, 512</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">pz-gfx942-n256-batch4096-r3-fixed-preacts-fast-v1</span></code></p></td>
+<td><p>gfx942 (MI300X)</p></td>
+<td><p>256, 4096</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">pz-gfx942-n10000-batch1000-r3-fixed-preacts-fast-v1</span></code></p></td>
+<td><p>gfx942 (MI300X)</p></td>
+<td><p>10000, 1000</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">pz-sm120-n256-batch4096-r3-fixed-preacts-fast-v1</span></code></p></td>
+<td><p>sm120 (RTX 5090)</p></td>
+<td><p>256, 4096</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">pz-sm120-n10000-batch1000-r3-fixed-preacts-fast-v1</span></code></p></td>
+<td><p>sm120 (RTX 5090)</p></td>
+<td><p>10000, 1000</p></td>
+</tr>
+</tbody>
+</table>
+<p>On an RTX 5090 the sm120 policies speed up the bf16 backward by 20% and 8%,
+and the fp8 backward by 27% and 30%, for the two shapes; fp32 keeps the
+built-in launch, which no tuned launch beat by 5%. The gfx942 policies set
+<code class="docutils literal notranslate"><span class="pre">waves_per_eu</span></code>, whose meaning Triton changed in 3.6, so they need Triton 3.6
+or newer. Under <code class="docutils literal notranslate"><span class="pre">torch.compile</span></code> a named policy is
+resolved outside the graph, which adds a graph break per layer; without a
+policy the backward compiles into one graph. To tune another shape or GPU, run
+<code class="docutils literal notranslate"><span class="pre">scripts/tune_pz_launch_policy.py</span></code> on an otherwise idle GPU and add the JSON
+document it prints to <code class="docutils literal notranslate"><span class="pre">src/qkan/solver/flash/policies/</span></code>.</p>
 </section>
 </section>
 <section id="real-quantum-device-deployment">

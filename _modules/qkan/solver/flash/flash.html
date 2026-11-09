@@ -98,9 +98,11 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">.._base</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKANSolver</span><span class="p">,</span> <span class="n">register</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.._utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">_cast_grads_to_dtype</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">..exact</span><span class="w"> </span><span class="kn">import</span> <span class="n">torch_exact_solver</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.launch_policy</span><span class="w"> </span><span class="kn">import</span> <span class="n">DEFAULT_POLICY_NAME</span>
 
 <span class="k">try</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">.fused_ops</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+        <span class="n">resolve_pz_launch</span><span class="p">,</span>
         <span class="n">triton_pz_backward</span><span class="p">,</span>
         <span class="n">triton_pz_forward</span><span class="p">,</span>
         <span class="n">triton_real_backward</span><span class="p">,</span>
@@ -138,6 +140,7 @@
         <span class="n">out_dim</span><span class="p">,</span>
         <span class="n">c_dtype</span><span class="p">,</span>
         <span class="n">ansatz</span><span class="p">,</span>
+        <span class="n">pz_launch</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">preacts_w</span><span class="p">,</span> <span class="n">preacts_b</span><span class="p">)</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">reps</span> <span class="o">=</span> <span class="n">reps</span>
@@ -146,6 +149,7 @@
         <span class="n">ctx</span><span class="o">.</span><span class="n">out_dim</span> <span class="o">=</span> <span class="n">out_dim</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">c_dtype</span> <span class="o">=</span> <span class="n">c_dtype</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">ansatz</span> <span class="o">=</span> <span class="n">ansatz</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">pz_launch</span> <span class="o">=</span> <span class="n">pz_launch</span>
 
         <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">):</span>
             <span class="k">return</span> <span class="n">triton_pz_forward</span><span class="p">(</span>
@@ -194,6 +198,7 @@
                 <span class="n">ctx</span><span class="o">.</span><span class="n">preacts_trainable</span><span class="p">,</span>
                 <span class="n">ctx</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
                 <span class="n">c_dtype</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
+                <span class="n">launch</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">pz_launch</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"rpz_encoding"</span><span class="p">,</span> <span class="s2">"rpz"</span><span class="p">):</span>
             <span class="n">grad_x</span><span class="p">,</span> <span class="n">grad_theta</span><span class="p">,</span> <span class="n">grad_pw</span><span class="p">,</span> <span class="n">grad_pb</span> <span class="o">=</span> <span class="n">triton_rpz_backward</span><span class="p">(</span>
@@ -235,6 +240,7 @@
             <span class="kc">None</span><span class="p">,</span>  <span class="c1"># out_dim</span>
             <span class="kc">None</span><span class="p">,</span>  <span class="c1"># c_dtype</span>
             <span class="kc">None</span><span class="p">,</span>  <span class="c1"># ansatz</span>
+            <span class="kc">None</span><span class="p">,</span>  <span class="c1"># pz_launch</span>
         <span class="p">)</span>
 
 
@@ -270,7 +276,14 @@
     <span class="n">fast_measure</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fast_measure"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
     <span class="n">out_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"out_dim"</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
     <span class="n">c_dtype</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dtype"</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex64</span><span class="p">)</span>
+    <span class="n">pz_launch_policy</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pz_launch_policy"</span><span class="p">)</span>
     <span class="n">batch</span><span class="p">,</span> <span class="n">in_dim</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+
+    <span class="c1"># "default" (or None) is the built-in launch, valid for every ansatz.  A</span>
+    <span class="c1"># named policy only tunes the PZ backward launch.</span>
+    <span class="n">named_policy</span> <span class="o">=</span> <span class="n">pz_launch_policy</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">DEFAULT_POLICY_NAME</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">named_policy</span> <span class="ow">and</span> <span class="n">ansatz</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"pz_launch_policy is only valid for the PZ ansatz"</span><span class="p">)</span>
 
     <span class="c1"># Fallback for unsupported ansatzes</span>
     <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_SUPPORTED_FLASH_ANSATZES</span><span class="p">:</span>
@@ -313,6 +326,20 @@
             <span class="p">)</span>
 
     <span class="k">if</span> <span class="n">needs_grad</span><span class="p">:</span>
+        <span class="c1"># Resolve the policy here rather than in backward: the backward then</span>
+        <span class="c1"># receives plain constants, which torch.compile can trace.</span>
+        <span class="n">pz_launch</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">named_policy</span><span class="p">:</span>
+            <span class="n">pz_launch</span> <span class="o">=</span> <span class="n">resolve_pz_launch</span><span class="p">(</span>
+                <span class="n">pz_launch_policy</span><span class="p">,</span>
+                <span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+                <span class="n">n_oi</span><span class="o">=</span><span class="n">out_dim</span> <span class="o">*</span> <span class="n">in_dim</span><span class="p">,</span>
+                <span class="n">batch</span><span class="o">=</span><span class="n">batch</span><span class="p">,</span>
+                <span class="n">reps</span><span class="o">=</span><span class="n">reps</span><span class="p">,</span>
+                <span class="n">c_dtype</span><span class="o">=</span><span class="n">c_dtype</span><span class="p">,</span>
+                <span class="n">preacts_trainable</span><span class="o">=</span><span class="n">preacts_trainable</span><span class="p">,</span>
+                <span class="n">fast_measure</span><span class="o">=</span><span class="n">fast_measure</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="n">_FlashFunction</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
             <span class="n">x</span><span class="p">,</span>
             <span class="n">theta</span><span class="p">,</span>
@@ -324,6 +351,7 @@
             <span class="n">out_dim</span><span class="p">,</span>
             <span class="n">c_dtype</span><span class="p">,</span>
             <span class="n">ansatz</span><span class="p">,</span>
+            <span class="n">pz_launch</span><span class="p">,</span>
         <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">ansatz</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"pz_encoding"</span><span class="p">,</span> <span class="s2">"pz"</span><span class="p">):</span>
