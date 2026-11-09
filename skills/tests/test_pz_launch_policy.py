@@ -44,11 +44,15 @@ from qkan.solver.flash.launch_policy import (
 POLICY_N256 = "pz-gfx942-n256-batch4096-r3-fixed-preacts-fast-v1"
 POLICY_N256_B512 = "pz-gfx942-n256-batch512-r3-fixed-preacts-fast-v1"
 POLICY_N10000 = "pz-gfx942-n10000-batch1000-r3-fixed-preacts-fast-v1"
+POLICY_SM120_N256 = "pz-sm120-n256-batch4096-r3-fixed-preacts-fast-v1"
+POLICY_SM120_N10000 = "pz-sm120-n10000-batch1000-r3-fixed-preacts-fast-v1"
 POLICY_DEFAULT = "default"
 PACKAGED_POLICIES = {
     POLICY_N256: (256, 4096),
     POLICY_N256_B512: (256, 512),
     POLICY_N10000: (10000, 1000),
+    POLICY_SM120_N256: (256, 4096),
+    POLICY_SM120_N10000: (10000, 1000),
 }
 
 
@@ -267,6 +271,38 @@ class PackagedPolicyTests(unittest.TestCase):
                         architecture=architecture,
                         policy_name=POLICY_N256,
                     )
+
+    def test_sm120_policies_have_dtype_specific_exact_configs(self) -> None:
+        """RTX 5090 tunings: fp32 keeps the built-in launch, which no
+        candidate beat by 5%; bf16 and fp8 take larger batch tiles."""
+
+        expected = {
+            POLICY_SM120_N256: {
+                PrecisionKind.FP32: LaunchConfig(128, 4, 0, 3),
+                PrecisionKind.BF16: LaunchConfig(512, 8, 0, 1),
+                PrecisionKind.FP8: LaunchConfig(1024, 8, 0, 3),
+            },
+            POLICY_SM120_N10000: {
+                PrecisionKind.FP32: LaunchConfig(128, 4, 0, 3),
+                PrecisionKind.BF16: LaunchConfig(256, 4, 0, 3),
+                PrecisionKind.FP8: LaunchConfig(512, 4, 0, 1),
+            },
+        }
+        for policy_name, configs in expected.items():
+            n_oi, batch = PACKAGED_POLICIES[policy_name]
+            for precision, config in configs.items():
+                with self.subTest(policy=policy_name, precision=precision.value):
+                    policy = select(
+                        n_oi=n_oi,
+                        batch=batch,
+                        precision=precision,
+                        architecture="sm120",
+                        policy_name=policy_name,
+                    )
+                    self.assertEqual(policy.launch, config)
+        # The fp32 entries are exactly what the built-in launch does.
+        for n_oi, batch in ((256, 4096), (10000, 1000)):
+            self.assertEqual(_select_block_b(n_oi, batch), 128)
 
     def test_packaged_policies_only_match_their_own_architecture(self) -> None:
         """A tuning never silently applies on another vendor or generation."""

@@ -204,6 +204,65 @@ squared residuals in bf16 and may underflow on long runs — pass
 ``state_dtype=torch.float32`` explicitly to be safe. See :doc:`optim_guide` for
 the full optimizer API.
 
+Flash PZ Backward Launch Policies
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``flash`` solver's PZ backward kernel picks its batch tile with a built-in
+heuristic and leaves the other launch options to Triton. A *launch policy*
+replaces that launch with one measured to be faster on one GPU architecture
+for one layer shape. Name it in ``solver_kwargs``:
+
+.. code-block:: python
+
+   qkan = QKAN(
+       [16, 16],
+       solver="flash",
+       device="cuda",
+       solver_kwargs={
+           "pz_launch_policy": "pz-gfx942-n256-batch512-r3-fixed-preacts-fast-v1"
+       },
+   )
+
+A policy changes how the kernel is launched, not the gradients. It applies to
+backward calls that match its architecture, ``n_oi = out_dim * in_dim``, batch
+size, ``reps``, ``preacts_trainable=False`` and ``fast_measure=True``, in fp32,
+bf16 or fp8. Every other call, such as another layer or the short last batch
+of an epoch, keeps the default launch, and the first one emits a warning. A
+policy for a different architecture raises ``LaunchPolicyMismatchError``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 58 22 20
+
+   * - Policy
+     - Architecture
+     - ``n_oi``, batch
+   * - ``pz-gfx942-n256-batch512-r3-fixed-preacts-fast-v1``
+     - gfx942 (MI300X)
+     - 256, 512
+   * - ``pz-gfx942-n256-batch4096-r3-fixed-preacts-fast-v1``
+     - gfx942 (MI300X)
+     - 256, 4096
+   * - ``pz-gfx942-n10000-batch1000-r3-fixed-preacts-fast-v1``
+     - gfx942 (MI300X)
+     - 10000, 1000
+   * - ``pz-sm120-n256-batch4096-r3-fixed-preacts-fast-v1``
+     - sm120 (RTX 5090)
+     - 256, 4096
+   * - ``pz-sm120-n10000-batch1000-r3-fixed-preacts-fast-v1``
+     - sm120 (RTX 5090)
+     - 10000, 1000
+
+On an RTX 5090 the sm120 policies speed up the bf16 backward by 20% and 8%,
+and the fp8 backward by 27% and 30%, for the two shapes; fp32 keeps the
+built-in launch, which no tuned launch beat by 5%. The gfx942 policies set
+``waves_per_eu``, whose meaning Triton changed in 3.6, so they need Triton 3.6
+or newer. Under ``torch.compile`` a named policy is
+resolved outside the graph, which adds a graph break per layer; without a
+policy the backward compiles into one graph. To tune another shape or GPU, run
+``scripts/tune_pz_launch_policy.py`` on an otherwise idle GPU and add the JSON
+document it prints to ``src/qkan/solver/flash/policies/``.
+
 
 Real Quantum Device Deployment
 ------------------------------

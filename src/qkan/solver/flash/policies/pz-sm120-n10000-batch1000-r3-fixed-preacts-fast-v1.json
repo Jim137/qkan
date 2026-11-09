@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "name": "pz-sm120-n10000-batch1000-r3-fixed-preacts-fast-v1",
+  "operation": "pz_backward",
+  "architecture": {
+    "kind": "exact",
+    "value": "sm120"
+  },
+  "match": {
+    "kind": "exact",
+    "n_oi": 10000,
+    "batch": 1000,
+    "reps": 3,
+    "preacts_trainable": false,
+    "fast_measure": true
+  },
+  "block_selector": {
+    "kind": "per_precision"
+  },
+  "precisions": {
+    "fp32": {
+      "block_b": 128,
+      "num_warps": 4,
+      "waves_per_eu": 0,
+      "num_stages": 3
+    },
+    "bf16": {
+      "block_b": 256,
+      "num_warps": 4,
+      "waves_per_eu": 0,
+      "num_stages": 3
+    },
+    "fp8": {
+      "block_b": 512,
+      "num_warps": 4,
+      "waves_per_eu": 0,
+      "num_stages": 1
+    }
+  },
+  "description": "PZ backward launch for the exact n_oi=10000, batch=1000 fixed-preacts fast-measure shape on sm120."
+}
