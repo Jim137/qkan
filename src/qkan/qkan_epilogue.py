@@ -340,6 +340,16 @@ def _select_blocks(B: int, O: int, I: int) -> tuple[int, int, int]:
     return block_m, block_n, block_i
 
 
+def _output_dtype(dtype: torch.dtype) -> torch.dtype:
+    """The dtype ``F.linear`` returns for ``dtype`` operands: the CUDA autocast
+    dtype under autocast, which leaves float64 alone (#33)."""
+    if dtype == torch.float64 or not torch.is_autocast_enabled():
+        return dtype
+    if hasattr(torch, "get_autocast_dtype"):  # torch >= 2.4
+        return torch.get_autocast_dtype("cuda")
+    return torch.get_autocast_gpu_dtype()
+
+
 def qkan_epilogue_forward(
     postacts: torch.Tensor,  # (B, O, I)
     eff_pw: torch.Tensor,  # (O, I)
@@ -351,7 +361,8 @@ def qkan_epilogue_forward(
     """Fused (B, O, I) epilogue forward returning (B, O).
 
     All tensors must be CUDA + contiguous in their natural layout (the kernel
-    reads via strides, but contiguity gives the best throughput).
+    reads via strides, but contiguity gives the best throughput).  The output
+    follows CUDA autocast, as the eager route's ``F.linear`` does.
     """
     if not _TRITON_AVAILABLE:
         raise ImportError("Triton is required for qkan_epilogue_forward.")
@@ -366,7 +377,7 @@ def qkan_epilogue_forward(
     if bias_sum is not None:
         assert bias_sum.shape == (O,)
 
-    out_dtype = postacts.dtype
+    out_dtype = _output_dtype(postacts.dtype)
     out = torch.empty((B, O), device=postacts.device, dtype=out_dtype)
 
     block_m, block_n, block_i = _select_blocks(B, O, I)
@@ -500,6 +511,11 @@ def qkan_epilogue_backward(
     grad_base_w)`` — each ``None`` when ``needs`` says it isn't required.
     """
     need_p, need_pw, need_pb, need_bi, need_bw = needs
+    # Under autocast the forward returns, and the next layer passes on, the
+    # autocast dtype while the weights keep theirs (#33); the matmuls below
+    # need one dtype.
+    grad_out = grad_out.to(base_w.dtype)
+    base_input = base_input.to(base_w.dtype)
 
     if not (_TRITON_AVAILABLE and grad_out.is_cuda):
         return _qkan_epilogue_backward_eager(

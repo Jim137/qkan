@@ -101,8 +101,7 @@ class QKANLayer(nn.Module):
             Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.
             The output dtype follows the layer's base ``F.linear`` term, as for
             ``nn.Linear``: ``p_dtype`` normally, the autocast dtype under
-            ``torch.autocast``. The opt-in fused epilogue does not follow
-            autocast yet and returns the solver output's dtype (#33).
+            ``torch.autocast``.
         _x0 : Optional[torch.Tensor]
             Leave for ResQKANLayer
     """
