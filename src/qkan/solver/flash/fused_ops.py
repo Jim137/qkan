@@ -19,9 +19,10 @@ Implements pz_encoding, rpz_encoding, and real ansatz forward passes as fused
 Triton kernels, avoiding materialization of intermediate complex state vectors.
 """
 
+import re
 import warnings
-from dataclasses import dataclass
 from functools import lru_cache
+from typing import NamedTuple
 
 import torch
 import triton  # type: ignore
@@ -32,76 +33,59 @@ from triton.runtime import driver  # type: ignore
 from qkan._kernel_utils import _select_block_b
 from qkan.solver.flash.launch_policy import (
     LaunchConfig,
+    LaunchPolicyMismatchError,
     PrecisionKind,
-    PzBackwardPolicy,
     normalized_architecture,
     select_pz_backward_policy,
 )
 
+# Dtypes a launch policy can carry a tuned entry for.  Every other c_dtype
+# (float64, float16) keeps the built-in launch.
+_PRECISION_KINDS = {
+    torch.float32: PrecisionKind.FP32,
+    torch.bfloat16: PrecisionKind.BF16,
+    torch.float8_e4m3fn: PrecisionKind.FP8,
+}
 
-@dataclass(frozen=True)
-class _DeviceLaunchContext:
-    device_type: str
-    device_index: int
-    architecture: str
-    multi_processor_count: int
+# From Triton 3.6 the HIP backend emits waves_per_eu=N as
+# amdgpu-waves-per-eu="N, N", pinning occupancy, with 0 meaning no limit.
+# Before 3.6 it emitted "N", a minimum only, defaulting to 1.
+_WAVES_PER_EU_PINS_OCCUPANCY = (3, 6)
+
+
+class PzLaunch(NamedTuple):
+    """A PZ backward launch resolved from a policy, as plain constants.
+
+    ``options`` holds the Triton launch keywords as sorted (name, value)
+    pairs, so the whole launch is hashable and can travel through
+    ``torch.compile`` as a constant.
+    """
+
+    block_b: int
+    options: tuple[tuple[str, int], ...]
 
 
 @lru_cache(maxsize=None)
-def _device_properties_snapshot(device_type: str, device_index: int) -> tuple[str, int]:
+def _device_architecture(device_type: str, device_index: int) -> str:
+    """The architecture name launch policies match: ``gfx942``, ``sm120``.
+
+    CUDA builds of torch fill ``gcnArchName`` with the product name (for
+    example "NVIDIA GeForce RTX 5090"), so it is read only on ROCm, and CUDA
+    devices are named by compute capability instead.
+    """
+
     if device_type != "cuda":
-        return "unknown", 1
+        return "unknown"
     properties = torch.cuda.get_device_properties(device_index)
-    architecture = getattr(properties, "gcnArchName", None) or getattr(
-        properties, "gcn_arch_name", None
-    )
-    if architecture is None:
-        major = getattr(properties, "major", None)
-        minor = getattr(properties, "minor", None)
-        if type(major) is int and type(minor) is int:
-            architecture = f"sm{major}{minor}"
-    return normalized_architecture(architecture), int(properties.multi_processor_count)
+    if torch.version.hip is not None:
+        return normalized_architecture(getattr(properties, "gcnArchName", None))
+    return f"sm{properties.major}{properties.minor}"
 
 
 @lru_cache(maxsize=None)
-def _device_launch_context_from_snapshot(
-    device_type: str,
-    device_index: int,
-    architecture: str,
-    multi_processor_count: int,
-) -> _DeviceLaunchContext:
-    return _DeviceLaunchContext(
-        device_type=device_type,
-        device_index=device_index,
-        architecture=architecture,
-        multi_processor_count=multi_processor_count,
-    )
-
-
-def _device_launch_context(device: torch.device) -> _DeviceLaunchContext:
-    index = device.index
-    if index is None:
-        index = torch.cuda.current_device() if device.type == "cuda" else 0
-    architecture, count = _device_properties_snapshot(device.type, index)
-    return _device_launch_context_from_snapshot(device.type, index, architecture, count)
-
-
-def _precision_kind(c_dtype: torch.dtype) -> PrecisionKind:
-    if c_dtype == torch.float8_e4m3fn:
-        return PrecisionKind.FP8
-    if c_dtype == torch.bfloat16:
-        return PrecisionKind.BF16
-    if c_dtype == torch.float32:
-        return PrecisionKind.FP32
-    raise ValueError(f"unsupported PZ backward dtype: {c_dtype}")
-
-
-def _torch_dtype(name: str) -> torch.dtype:
-    return {
-        "float32": torch.float32,
-        "bfloat16": torch.bfloat16,
-        "float8_e4m3fn": torch.float8_e4m3fn,
-    }[name]
+def _triton_version() -> tuple[int, int]:
+    match = re.match(r"(\d+)\.(\d+)", triton.__version__)
+    return (int(match.group(1)), int(match.group(2))) if match else (0, 0)
 
 
 @lru_cache(maxsize=None)
@@ -140,18 +124,95 @@ def _warn_waves_per_eu_dropped(waves_per_eu: int) -> None:
 def _launch_options(launch: LaunchConfig) -> dict[str, int]:
     """Build the Triton launch keywords a policy asks for on this backend.
 
-    ``num_warps`` and ``num_stages`` are portable. ``waves_per_eu`` is passed
-    through verbatim where it is accepted, including 0, which the HIP backend
-    treats as "no occupancy limit" and is also its default. Elsewhere it is
-    dropped, and only a non-zero request diverges from the tuned policy.
+    ``num_warps`` and ``num_stages`` are portable.  ``waves_per_eu`` follows
+    the Triton 3.6 contract, under which the packaged policies were measured:
+    N pins occupancy at N waves per EU and 0 sets no limit.  Older Triton only
+    takes N as a minimum, so a non-zero value cannot be reproduced there and
+    the policy is refused; 0 is simply omitted.  Backends without the option
+    drop it, and only a non-zero request diverges from the tuned policy.
     """
 
     options = {"num_warps": launch.num_warps, "num_stages": launch.num_stages}
-    if _supports_waves_per_eu():
+    if not _supports_waves_per_eu():
+        if launch.waves_per_eu:
+            _warn_waves_per_eu_dropped(launch.waves_per_eu)
+        return options
+    if _triton_version() >= _WAVES_PER_EU_PINS_OCCUPANCY:
         options["waves_per_eu"] = launch.waves_per_eu
     elif launch.waves_per_eu:
-        _warn_waves_per_eu_dropped(launch.waves_per_eu)
+        installed = ".".join(map(str, _triton_version()))
+        raise LaunchPolicyMismatchError(
+            f"launch policy sets waves_per_eu={launch.waves_per_eu}, which pins "
+            f"occupancy only from Triton 3.6; Triton {installed} treats it as a "
+            "minimum, so the tuned launch cannot be reproduced"
+        )
     return options
+
+
+@lru_cache(maxsize=None)
+def _resolve_pz_launch(
+    policy_name: str,
+    device_type: str,
+    device_index: int,
+    n_oi: int,
+    batch: int,
+    reps: int,
+    c_dtype: torch.dtype,
+    preacts_trainable: bool,
+    fast_measure: bool,
+) -> PzLaunch | None:
+    policy = select_pz_backward_policy(
+        n_oi=n_oi,
+        batch=batch,
+        architecture=_device_architecture(device_type, device_index),
+        precision=_PRECISION_KINDS.get(c_dtype),
+        reps=reps,
+        preacts_trainable=preacts_trainable,
+        fast_measure=fast_measure,
+        policy_name=policy_name,
+    )
+    if policy is None:
+        return None
+    options = tuple(sorted(_launch_options(policy.launch).items()))
+    return PzLaunch(policy.launch.block_b, options)
+
+
+@torch.compiler.disable
+def resolve_pz_launch(
+    policy_name: str,
+    device: torch.device,
+    *,
+    n_oi: int,
+    batch: int,
+    reps: int,
+    c_dtype: torch.dtype,
+    preacts_trainable: bool,
+    fast_measure: bool,
+) -> PzLaunch | None:
+    """Resolve a named policy for one PZ backward call, or ``None``.
+
+    ``None`` keeps the built-in launch (see ``select_pz_backward_policy``).
+    Results are cached per call shape, so steady-state training pays one
+    dictionary lookup per forward.  Policy documents are file reads that
+    ``torch.compile`` cannot trace, so this runs eagerly; only named policies
+    reach it, and the default launch compiles as one graph.
+    """
+
+    if device.type == "cuda":
+        index = torch.cuda.current_device() if device.index is None else device.index
+    else:
+        index = 0
+    return _resolve_pz_launch(
+        policy_name,
+        device.type,
+        index,
+        n_oi,
+        batch,
+        reps,
+        c_dtype,
+        preacts_trainable,
+        fast_measure,
+    )
 
 
 @triton.jit
@@ -2017,37 +2078,40 @@ def triton_pz_backward(
     preacts_trainable,
     fast_measure,
     c_dtype=torch.float32,
-    policy_name: str | None = None,
+    launch: PzLaunch | None = None,
 ):
-    """Launch pz_encoding backward kernel. Returns (grad_x, grad_theta, grad_pw, grad_pb)."""
+    """Launch pz_encoding backward kernel. Returns (grad_x, grad_theta, grad_pw, grad_pb).
+
+    ``launch=None`` is the built-in launch: ``_select_block_b`` picks BLOCK_B
+    and the backend picks every launch option.  A ``PzLaunch`` from
+    ``resolve_pz_launch`` overrides both.
+    """
     batch, in_dim = x.shape
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    precision_kind = _precision_kind(c_dtype)
-    architecture = _device_launch_context(x.device).architecture
-    policy: PzBackwardPolicy = select_pz_backward_policy(
-        n_oi=out_dim * in_dim,
-        batch=batch,
-        architecture=architecture,
-        precision=precision_kind,
-        reps=reps,
-        preacts_trainable=preacts_trainable,
-        fast_measure=fast_measure,
-        policy_name=policy_name,
-    )
-    io_dtype = _torch_dtype(policy.precision.io_dtype_name)
+    compute_fp8 = c_dtype == torch.float8_e4m3fn
+    io_dtype = torch.bfloat16 if compute_fp8 else c_dtype
     x = x.to(io_dtype).contiguous()
     theta = theta.to(io_dtype).contiguous()
     grad_output = grad_output.contiguous()
 
     n_oi = out_dim * in_dim
-    BLOCK_B = policy.launch.block_b
-    launch_options = _launch_options(policy.launch)
+    if launch is None:
+        BLOCK_B = _select_block_b(n_oi, batch)
+        launch_options: dict[str, int] = {}
+    else:
+        BLOCK_B = launch.block_b
+        launch_options = dict(launch.options)
     n_states = 3 * reps + 3  # H state + 3 per layer + after final Rz
-    n_b_blocks = policy.selection.n_b_blocks
+    n_b_blocks = triton.cdiv(batch, BLOCK_B)
     n_programs = n_oi * n_b_blocks
-    states_dtype = _torch_dtype(policy.precision.state_dtype_name)
+    if compute_fp8:
+        states_dtype = torch.float8_e4m3fn
+    elif c_dtype == torch.bfloat16:
+        states_dtype = torch.bfloat16
+    else:
+        states_dtype = torch.float32
     states = torch.empty(
         n_programs, n_states, 4, BLOCK_B, device=x.device, dtype=states_dtype
     )
@@ -2113,7 +2177,7 @@ def triton_pz_backward(
         *gpb_strides,
         PREACTS_TRAINABLE=preacts_trainable,
         FAST_MEASURE=fast_measure,
-        FP8_PRESCALE=policy.precision.fp8_prescale,
+        FP8_PRESCALE=224.0 if compute_fp8 else 1.0,
         BLOCK_B=BLOCK_B,
         **launch_options,
     )

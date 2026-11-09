@@ -1,27 +1,55 @@
-"""Select and load PZ backward launch policies.
+# Copyright (c) 2026, Jiun-Cheng Jiang and the QKAN contributors. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-Public callers select a policy with
-``flash_exact_solver(..., pz_launch_policy=None)``; ``None`` and ``"default"``
-are equivalent. The packaged ``flash/policies/default.json`` retains the
-original ``_select_block_b`` selector and its default launch metadata.
+"""Named launch policies for the flash PZ backward kernel.
 
-Pass a tuned package-resource name without ``.json``, for example::
+With no policy named (``pz_launch_policy=None`` or ``"default"``) the solver
+launches the kernel as it always has: ``_select_block_b`` picks the batch tile
+and the Triton backend's defaults pick everything else.  Nothing in this
+module runs on that path, and it needs no data files.
 
-    policy = "pz-gfx942-n256-batch4096-r3-fixed-preacts-fast-v1"
-    flash_exact_solver(..., pz_launch_policy=policy)
+A named policy is a JSON document, ``flash/policies/<name>.json``, that is
+strictly validated and cached.  It records a launch measured to be faster on
+one architecture for one PZ shape (``n_oi = out_dim * in_dim`` and the batch)
+and mode (``reps``, ``preacts_trainable``, ``fast_measure``)::
 
-An explicit named policy is loaded from ``flash/policies/<name>.json``,
-strictly validated, and cached. Its architecture, shape, repetitions, and mode
-(``preacts_trainable`` and ``fast_measure``) must match the runtime; a mismatch
-raises an error instead of silently falling back. To add a future tuning, add
-its JSON resource and pass its name. The benchmark CLI accepts the same name
-through ``benchmark_qkan_solver.py --pz-launch-policy <name>``.
+    QKAN(
+        ...,
+        solver="flash",
+        solver_kwargs={
+            "pz_launch_policy": "pz-gfx942-n256-batch4096-r3-fixed-preacts-fast-v1"
+        },
+    )
+
+The policy is resolved in the forward pass and applied to the backward launch.
+QKAN hands one ``solver_kwargs`` dict to every layer, so a policy meets calls
+it was not tuned for: other layers, the short last batch of an epoch, dtypes
+it has no entry for.  Those calls keep the default launch, and the first one
+warns.  A policy for another architecture is a configuration error and raises
+``LaunchPolicyMismatchError`` on the first forward that will run a backward.
+
+Architectures are named ``gfx942`` style on ROCm and ``sm<major><minor>`` on
+CUDA (``sm120`` for an RTX 5090).  To add a tuning, run
+``scripts/tune_pz_launch_policy.py`` on an otherwise idle GPU of that
+architecture and add the JSON document it prints.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
@@ -32,6 +60,7 @@ from typing import Any
 
 from qkan._kernel_utils import _select_block_b
 
+DEFAULT_POLICY_NAME = "default"
 _POLICY_PACKAGE = "qkan.solver.flash.policies"
 _POLICY_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 _PRECISION_NAMES = frozenset(("fp32", "bf16", "fp8"))
@@ -52,18 +81,6 @@ class BlockSelectorKind(str, Enum):
     ORIGINAL = "original"
     FIXED = "fixed"
     PER_PRECISION = "per_precision"
-
-
-@dataclass(frozen=True)
-class PrecisionPlan:
-    """Current observable precision behavior plus its launch-table key."""
-
-    kind: PrecisionKind
-    io_dtype_name: str
-    state_dtype_name: str
-    state_itemsize: int
-    fp8_prescale: float
-    launch_precision_key: str
 
 
 @dataclass(frozen=True)
@@ -130,7 +147,7 @@ class LoadedLaunchPolicy:
 @dataclass(frozen=True)
 class PzBackwardPolicy:
     architecture: str
-    precision: PrecisionPlan
+    precision: PrecisionKind
     selection: ShapeSelection
     launch: LaunchConfig
     policy_name: str
@@ -151,35 +168,6 @@ class LaunchPolicyValidationError(LaunchPolicyError):
 class LaunchPolicyMismatchError(LaunchPolicyError):
     pass
 
-
-PRECISION_PLANS: Mapping[PrecisionKind, PrecisionPlan] = MappingProxyType(
-    {
-        PrecisionKind.FP32: PrecisionPlan(
-            kind=PrecisionKind.FP32,
-            io_dtype_name="float32",
-            state_dtype_name="float32",
-            state_itemsize=4,
-            fp8_prescale=1.0,
-            launch_precision_key="fp32",
-        ),
-        PrecisionKind.BF16: PrecisionPlan(
-            kind=PrecisionKind.BF16,
-            io_dtype_name="bfloat16",
-            state_dtype_name="bfloat16",
-            state_itemsize=2,
-            fp8_prescale=1.0,
-            launch_precision_key="bf16",
-        ),
-        PrecisionKind.FP8: PrecisionPlan(
-            kind=PrecisionKind.FP8,
-            io_dtype_name="bfloat16",
-            state_dtype_name="float8_e4m3fn",
-            state_itemsize=1,
-            fp8_prescale=224.0,
-            launch_precision_key="fp8",
-        ),
-    }
-)
 
 _ROOT_REQUIRED_KEYS = frozenset(
     (
@@ -260,9 +248,11 @@ def _validate_policy_name(policy_name: object) -> str:
 
 
 def normalize_policy_name(policy_name: str | None) -> str:
-    """Map the omitted public value to its packaged policy name."""
+    """Map the omitted public value to ``"default"``, the built-in launch."""
 
-    return "default" if policy_name is None else _validate_policy_name(policy_name)
+    if policy_name is None:
+        return DEFAULT_POLICY_NAME
+    return _validate_policy_name(policy_name)
 
 
 def _parse_launch_metadata(
@@ -453,6 +443,8 @@ def validate_launch_policy_document(
     """Validate one already-decoded package policy document."""
 
     policy_name = _validate_policy_name(policy_name)
+    if policy_name == DEFAULT_POLICY_NAME:
+        raise _policy_error(policy_name, "the name is reserved for the built-in launch")
     root = _require_object(document, policy_name, "document")
     _require_exact_keys(
         root,
@@ -495,6 +487,15 @@ def validate_launch_policy_document(
             for precision_name in sorted(_PRECISION_NAMES)
         }
     )
+    if architecture.kind is MatchKind.ANY and any(
+        metadata.waves_per_eu for metadata in launch_metadata.values()
+    ):
+        # Only HIP accepts waves_per_eu; CUDA drops it, so a policy that can
+        # apply anywhere would launch differently from what was measured.
+        raise _policy_error(
+            policy_name,
+            "a policy for any architecture cannot set waves_per_eu",
+        )
     description = root.get("description")
     if description is not None:
         description = _require_string(description, policy_name, "description")
@@ -510,11 +511,32 @@ def validate_launch_policy_document(
     )
 
 
+class _DuplicateKeyError(ValueError):
+    def __init__(self, key: str) -> None:
+        super().__init__(key)
+        self.key = key
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    # json.loads keeps the last of two equal keys, which would let a stale
+    # block silently override the one the validator is meant to check.
+    document: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in document:
+            raise _DuplicateKeyError(key)
+        document[key] = value
+    return document
+
+
 @lru_cache(maxsize=None)
 def load_launch_policy(policy_name: str) -> LoadedLaunchPolicy:
     """Load and validate one named policy from package resources."""
 
     policy_name = _validate_policy_name(policy_name)
+    if policy_name == DEFAULT_POLICY_NAME:
+        raise LaunchPolicyNotFoundError(
+            "'default' is the solver's built-in launch, not a policy document"
+        )
     filename = f"{policy_name}.json"
     try:
         text = (
@@ -531,7 +553,11 @@ def load_launch_policy(policy_name: str) -> LoadedLaunchPolicy:
             f"failed to read launch policy {policy_name!r}: {error}"
         ) from error
     try:
-        document = json.loads(text)
+        document = json.loads(text, object_pairs_hook=_reject_duplicate_keys)
+    except _DuplicateKeyError as error:
+        raise LaunchPolicyValidationError(
+            f"launch policy {policy_name!r} is invalid: duplicate key {error.key!r}"
+        ) from error
     except json.JSONDecodeError as error:
         raise LaunchPolicyValidationError(
             f"launch policy {policy_name!r} contains invalid JSON: {error.msg}"
@@ -545,10 +571,6 @@ def _ceil_div(value: int, divisor: int) -> int:
 
 def padded_rows(batch: int, block_b: int) -> int:
     return _ceil_div(batch, block_b) * block_b
-
-
-def precision_plan(kind: PrecisionKind) -> PrecisionPlan:
-    return PRECISION_PLANS[kind]
 
 
 def normalized_architecture(architecture: str | None) -> str:
@@ -569,47 +591,62 @@ def _shape_selection(n_oi: int, batch: int, selected_block: int) -> ShapeSelecti
     )
 
 
-def _validate_runtime_match(
+def _require_architecture(policy: LoadedLaunchPolicy, architecture: str) -> None:
+    expected = policy.architecture.value
+    if policy.architecture.kind is MatchKind.EXACT and expected != architecture:
+        raise LaunchPolicyMismatchError(
+            f"launch policy {policy.name!r} is for architecture {expected!r}, "
+            f"but this device is {architecture!r}"
+        )
+
+
+def _matches_call(
     policy: LoadedLaunchPolicy,
     *,
-    architecture: str,
     n_oi: int,
     batch: int,
+    precision: PrecisionKind | None,
     reps: int,
     preacts_trainable: bool,
     fast_measure: bool,
-) -> None:
-    runtime_values = {
-        "architecture": architecture,
-        "n_oi": n_oi,
-        "batch": batch,
-        "reps": reps,
-        "preacts_trainable": preacts_trainable,
-        "fast_measure": fast_measure,
-    }
-    expected_values: dict[str, object] = {}
-    if policy.architecture.kind is MatchKind.EXACT:
-        expected_values["architecture"] = policy.architecture.value
-    if policy.match.kind is MatchKind.EXACT:
-        expected_values.update(
-            {
-                "n_oi": policy.match.n_oi,
-                "batch": policy.match.batch,
-                "reps": policy.match.reps,
-                "preacts_trainable": policy.match.preacts_trainable,
-                "fast_measure": policy.match.fast_measure,
-            }
+) -> bool:
+    # Degenerate calls (empty batch, no outputs, reps=0) stay on the built-in
+    # launch, which handles them.
+    if n_oi <= 0 or batch <= 0 or reps <= 0:
+        return False
+    if precision is None or precision not in policy.launch_metadata:
+        return False
+    match = policy.match
+    if match.kind is MatchKind.ANY:
+        return True
+    return (n_oi, batch, reps, preacts_trainable, fast_measure) == (
+        match.n_oi,
+        match.batch,
+        match.reps,
+        match.preacts_trainable,
+        match.fast_measure,
+    )
+
+
+@lru_cache(maxsize=None)
+def _warn_policy_fallback(policy_name: str) -> None:
+    """Warn once per policy that some calls keep the default launch."""
+
+    match = load_launch_policy(policy_name).match
+    if match.kind is MatchKind.EXACT:
+        tuned_for = (
+            f"n_oi={match.n_oi}, batch={match.batch}, reps={match.reps}, "
+            f"preacts_trainable={match.preacts_trainable}, "
+            f"fast_measure={match.fast_measure}"
         )
-    mismatches = [
-        f"{field} expected {expected_values[field]!r}, got {runtime_values[field]!r}"
-        for field in expected_values
-        if expected_values[field] != runtime_values[field]
-    ]
-    if mismatches:
-        raise LaunchPolicyMismatchError(
-            f"launch policy {policy.name!r} does not match runtime: "
-            + "; ".join(mismatches)
-        )
+    else:
+        tuned_for = "any shape"
+    warnings.warn(
+        f"launch policy {policy_name!r} is tuned for {tuned_for} in fp32, bf16 "
+        "or fp8; PZ backward calls outside that keep the default launch",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 
 def _select_policy_block(
@@ -640,27 +677,42 @@ def select_pz_backward_policy(
     n_oi: int,
     batch: int,
     architecture: str | None,
-    precision: PrecisionKind,
+    precision: PrecisionKind | None,
     reps: int,
     preacts_trainable: bool,
     fast_measure: bool,
     policy_name: str | None = None,
-) -> PzBackwardPolicy:
-    if n_oi <= 0 or batch <= 0 or reps <= 0:
-        raise ValueError("n_oi, batch, and reps must be positive")
-    arch = normalized_architecture(architecture)
-    plan = precision_plan(precision)
+) -> PzBackwardPolicy | None:
+    """Return the launch a named policy prescribes for one PZ backward call.
+
+    ``None`` means the built-in launch: either no policy is named (``None`` or
+    ``"default"``), or the named policy was tuned for another shape, mode or
+    precision than this call (the first such call per policy warns).  Pass
+    ``precision=None`` for dtypes that no policy covers, such as float64.
+
+    Raises:
+        LaunchPolicyNotFoundError: no packaged document has this name.
+        LaunchPolicyValidationError: the name or the document is invalid.
+        LaunchPolicyMismatchError: the policy is for another architecture.
+    """
+
     resolved_policy_name = normalize_policy_name(policy_name)
+    if resolved_policy_name == DEFAULT_POLICY_NAME:
+        return None
     loaded_policy = load_launch_policy(resolved_policy_name)
-    _validate_runtime_match(
+    arch = normalized_architecture(architecture)
+    _require_architecture(loaded_policy, arch)
+    if precision is None or not _matches_call(
         loaded_policy,
-        architecture=arch,
         n_oi=n_oi,
         batch=batch,
+        precision=precision,
         reps=reps,
         preacts_trainable=preacts_trainable,
         fast_measure=fast_measure,
-    )
+    ):
+        _warn_policy_fallback(resolved_policy_name)
+        return None
     selected_block = _select_policy_block(
         loaded_policy,
         precision,
@@ -674,11 +726,10 @@ def select_pz_backward_policy(
         waves_per_eu=metadata.waves_per_eu,
         num_stages=metadata.num_stages,
     )
-    selection = _shape_selection(n_oi, batch, selected_block)
     return PzBackwardPolicy(
         architecture=arch,
-        precision=plan,
-        selection=selection,
+        precision=precision,
+        selection=_shape_selection(n_oi, batch, selected_block),
         launch=launch,
         policy_name=resolved_policy_name,
     )

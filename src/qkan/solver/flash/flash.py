@@ -18,9 +18,11 @@ import torch
 from .._base import QKANSolver, register
 from .._utils import _cast_grads_to_dtype
 from ..exact import torch_exact_solver
+from .launch_policy import DEFAULT_POLICY_NAME
 
 try:
     from .fused_ops import (
+        resolve_pz_launch,
         triton_pz_backward,
         triton_pz_forward,
         triton_real_backward,
@@ -58,7 +60,7 @@ class _FlashFunction(torch.autograd.Function):
         out_dim,
         c_dtype,
         ansatz,
-        pz_launch_policy,
+        pz_launch,
     ):
         ctx.save_for_backward(x, theta, preacts_w, preacts_b)
         ctx.reps = reps
@@ -67,7 +69,7 @@ class _FlashFunction(torch.autograd.Function):
         ctx.out_dim = out_dim
         ctx.c_dtype = c_dtype
         ctx.ansatz = ansatz
-        ctx.pz_launch_policy = pz_launch_policy
+        ctx.pz_launch = pz_launch
 
         if ansatz in ("pz_encoding", "pz"):
             return triton_pz_forward(
@@ -116,7 +118,7 @@ class _FlashFunction(torch.autograd.Function):
                 ctx.preacts_trainable,
                 ctx.fast_measure,
                 c_dtype=ctx.c_dtype,
-                policy_name=ctx.pz_launch_policy,
+                launch=ctx.pz_launch,
             )
         elif ansatz in ("rpz_encoding", "rpz"):
             grad_x, grad_theta, grad_pw, grad_pb = triton_rpz_backward(
@@ -158,7 +160,7 @@ class _FlashFunction(torch.autograd.Function):
             None,  # out_dim
             None,  # c_dtype
             None,  # ansatz
-            None,  # pz_launch_policy
+            None,  # pz_launch
         )
 
 
@@ -195,7 +197,10 @@ def flash_exact_solver(
     pz_launch_policy = kwargs.get("pz_launch_policy")
     batch, in_dim = x.shape
 
-    if pz_launch_policy is not None and ansatz not in ("pz_encoding", "pz"):
+    # "default" (or None) is the built-in launch, valid for every ansatz.  A
+    # named policy only tunes the PZ backward launch.
+    named_policy = pz_launch_policy not in (None, DEFAULT_POLICY_NAME)
+    if named_policy and ansatz not in ("pz_encoding", "pz"):
         raise ValueError("pz_launch_policy is only valid for the PZ ansatz")
 
     # Fallback for unsupported ansatzes
@@ -239,6 +244,20 @@ def flash_exact_solver(
             )
 
     if needs_grad:
+        # Resolve the policy here rather than in backward: the backward then
+        # receives plain constants, which torch.compile can trace.
+        pz_launch = None
+        if named_policy:
+            pz_launch = resolve_pz_launch(
+                pz_launch_policy,
+                x.device,
+                n_oi=out_dim * in_dim,
+                batch=batch,
+                reps=reps,
+                c_dtype=c_dtype,
+                preacts_trainable=preacts_trainable,
+                fast_measure=fast_measure,
+            )
         return _FlashFunction.apply(
             x,
             theta,
@@ -250,7 +269,7 @@ def flash_exact_solver(
             out_dim,
             c_dtype,
             ansatz,
-            pz_launch_policy,
+            pz_launch,
         )
     else:
         if ansatz in ("pz_encoding", "pz"):
