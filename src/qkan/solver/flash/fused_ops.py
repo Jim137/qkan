@@ -19,11 +19,200 @@ Implements pz_encoding, rpz_encoding, and real ansatz forward passes as fused
 Triton kernels, avoiding materialization of intermediate complex state vectors.
 """
 
+import re
+import warnings
+from functools import lru_cache
+from typing import NamedTuple
+
 import torch
 import triton  # type: ignore
 import triton.language as tl  # type: ignore
+from triton.compiler import make_backend  # type: ignore
+from triton.runtime import driver  # type: ignore
 
 from qkan._kernel_utils import _select_block_b
+from qkan.solver.flash.launch_policy import (
+    LaunchConfig,
+    LaunchPolicyMismatchError,
+    PrecisionKind,
+    normalized_architecture,
+    select_pz_backward_policy,
+)
+
+# Dtypes a launch policy can carry a tuned entry for.  Every other c_dtype
+# (float64, float16) keeps the built-in launch.
+_PRECISION_KINDS = {
+    torch.float32: PrecisionKind.FP32,
+    torch.bfloat16: PrecisionKind.BF16,
+    torch.float8_e4m3fn: PrecisionKind.FP8,
+}
+
+# From Triton 3.6 the HIP backend emits waves_per_eu=N as
+# amdgpu-waves-per-eu="N, N", pinning occupancy, with 0 meaning no limit.
+# Before 3.6 it emitted "N", a minimum only, defaulting to 1.
+_WAVES_PER_EU_PINS_OCCUPANCY = (3, 6)
+
+
+class PzLaunch(NamedTuple):
+    """A PZ backward launch resolved from a policy, as plain constants.
+
+    ``options`` holds the Triton launch keywords as sorted (name, value)
+    pairs, so the whole launch is hashable and can travel through
+    ``torch.compile`` as a constant.
+    """
+
+    block_b: int
+    options: tuple[tuple[str, int], ...]
+
+
+@lru_cache(maxsize=None)
+def _device_architecture(device_type: str, device_index: int) -> str:
+    """The architecture name launch policies match: ``gfx942``, ``sm120``.
+
+    CUDA builds of torch fill ``gcnArchName`` with the product name (for
+    example "NVIDIA GeForce RTX 5090"), so it is read only on ROCm, and CUDA
+    devices are named by compute capability instead.
+    """
+
+    if device_type != "cuda":
+        return "unknown"
+    properties = torch.cuda.get_device_properties(device_index)
+    if torch.version.hip is not None:
+        return normalized_architecture(getattr(properties, "gcnArchName", None))
+    return f"sm{properties.major}{properties.minor}"
+
+
+@lru_cache(maxsize=None)
+def _triton_version() -> tuple[int, int]:
+    match = re.match(r"(\d+)\.(\d+)", triton.__version__)
+    return (int(match.group(1)), int(match.group(2))) if match else (0, 0)
+
+
+@lru_cache(maxsize=None)
+def _supports_waves_per_eu() -> bool:
+    """Report whether the active Triton backend accepts ``waves_per_eu``.
+
+    ``waves_per_eu`` is AMD/HIP-only and Triton's JIT raises ``KeyError`` for
+    any launch keyword missing from its backend's options object, so ask that
+    backend rather than inferring the vendor from ``torch.version``. Testing
+    ``__dict__`` mirrors the JIT's own check and so also covers fields set
+    outside the dataclass declaration. The accepted set belongs to the backend
+    vendor, of which a process resolves exactly one, so caching it process-
+    wide stays correct across devices.
+    """
+
+    try:
+        target = driver.active.get_current_target()
+        options = make_backend(target).parse_options({})
+    except Exception:  # pragma: no cover - requires an unloadable driver
+        return torch.version.hip is not None
+    return "waves_per_eu" in options.__dict__
+
+
+@lru_cache(maxsize=None)
+def _warn_waves_per_eu_dropped(waves_per_eu: int) -> None:
+    """Warn once per value that a policy's ``waves_per_eu`` was not applied."""
+
+    warnings.warn(
+        f"launch policy requested waves_per_eu={waves_per_eu}, which the "
+        "active Triton backend does not accept; launching without it",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+def _launch_options(launch: LaunchConfig) -> dict[str, int]:
+    """Build the Triton launch keywords a policy asks for on this backend.
+
+    ``num_warps`` and ``num_stages`` are portable.  ``waves_per_eu`` follows
+    the Triton 3.6 contract, under which the packaged policies were measured:
+    N pins occupancy at N waves per EU and 0 sets no limit.  Older Triton only
+    takes N as a minimum, so a non-zero value cannot be reproduced there and
+    the policy is refused; 0 is simply omitted.  Backends without the option
+    drop it, and only a non-zero request diverges from the tuned policy.
+    """
+
+    options = {"num_warps": launch.num_warps, "num_stages": launch.num_stages}
+    if not _supports_waves_per_eu():
+        if launch.waves_per_eu:
+            _warn_waves_per_eu_dropped(launch.waves_per_eu)
+        return options
+    if _triton_version() >= _WAVES_PER_EU_PINS_OCCUPANCY:
+        options["waves_per_eu"] = launch.waves_per_eu
+    elif launch.waves_per_eu:
+        installed = ".".join(map(str, _triton_version()))
+        raise LaunchPolicyMismatchError(
+            f"launch policy sets waves_per_eu={launch.waves_per_eu}, which pins "
+            f"occupancy only from Triton 3.6; Triton {installed} treats it as a "
+            "minimum, so the tuned launch cannot be reproduced"
+        )
+    return options
+
+
+@lru_cache(maxsize=None)
+def _resolve_pz_launch(
+    policy_name: str,
+    device_type: str,
+    device_index: int,
+    n_oi: int,
+    batch: int,
+    reps: int,
+    c_dtype: torch.dtype,
+    preacts_trainable: bool,
+    fast_measure: bool,
+) -> PzLaunch | None:
+    policy = select_pz_backward_policy(
+        n_oi=n_oi,
+        batch=batch,
+        architecture=_device_architecture(device_type, device_index),
+        precision=_PRECISION_KINDS.get(c_dtype),
+        reps=reps,
+        preacts_trainable=preacts_trainable,
+        fast_measure=fast_measure,
+        policy_name=policy_name,
+    )
+    if policy is None:
+        return None
+    options = tuple(sorted(_launch_options(policy.launch).items()))
+    return PzLaunch(policy.launch.block_b, options)
+
+
+@torch.compiler.disable
+def resolve_pz_launch(
+    policy_name: str,
+    device: torch.device,
+    *,
+    n_oi: int,
+    batch: int,
+    reps: int,
+    c_dtype: torch.dtype,
+    preacts_trainable: bool,
+    fast_measure: bool,
+) -> PzLaunch | None:
+    """Resolve a named policy for one PZ backward call, or ``None``.
+
+    ``None`` keeps the built-in launch (see ``select_pz_backward_policy``).
+    Results are cached per call shape, so steady-state training pays one
+    dictionary lookup per forward.  Policy documents are file reads that
+    ``torch.compile`` cannot trace, so this runs eagerly; only named policies
+    reach it, and the default launch compiles as one graph.
+    """
+
+    if device.type == "cuda":
+        index = torch.cuda.current_device() if device.index is None else device.index
+    else:
+        index = 0
+    return _resolve_pz_launch(
+        policy_name,
+        device.type,
+        index,
+        n_oi,
+        batch,
+        reps,
+        c_dtype,
+        preacts_trainable,
+        fast_measure,
+    )
 
 
 @triton.jit
@@ -1292,6 +1481,9 @@ def _pz_encoding_backward_kernel(
     ).to(tl.float32)
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     program_idx = pid_oi.to(tl.int64) * tl.cdiv(batch_size, BLOCK_B) + pid_b
+    # FP8 states are stored x FP8_PRESCALE so that small amplitudes stay in
+    # e4m3's normal range.  Every state store scales and every state load
+    # unscales; theta and the in-register state are never scaled.
     FP8_INV = 1.0 / FP8_PRESCALE
     states_base = states_ptr + program_idx * stride_s_n
 
@@ -1341,7 +1533,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 0 * stride_s_c,
-            r0,
+            r0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1349,7 +1541,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 1 * stride_s_c,
-            i0,
+            i0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1357,7 +1549,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 2 * stride_s_c,
-            r1,
+            r1 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1365,7 +1557,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 3 * stride_s_c,
-            i1,
+            i1 * FP8_PRESCALE,
             mask=b_mask,
         )
         state_idx += 1
@@ -1386,7 +1578,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 0 * stride_s_c,
-            r0,
+            r0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1394,7 +1586,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 1 * stride_s_c,
-            i0,
+            i0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1402,7 +1594,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 2 * stride_s_c,
-            r1,
+            r1 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1410,7 +1602,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 3 * stride_s_c,
-            i1,
+            i1 * FP8_PRESCALE,
             mask=b_mask,
         )
         state_idx += 1
@@ -1440,7 +1632,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 0 * stride_s_c,
-            r0,
+            r0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1448,7 +1640,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 1 * stride_s_c,
-            i0,
+            i0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1456,7 +1648,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 2 * stride_s_c,
-            r1,
+            r1 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1464,7 +1656,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 3 * stride_s_c,
-            i1,
+            i1 * FP8_PRESCALE,
             mask=b_mask,
         )
         state_idx += 1
@@ -1589,10 +1781,7 @@ def _pz_encoding_backward_kernel(
         * FP8_INV
     )
 
-    t1 = (
-        tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p).to(tl.float32)
-        * FP8_INV
-    )
+    t1 = tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p).to(tl.float32)
     a = t1 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -1661,10 +1850,7 @@ def _pz_encoding_backward_kernel(
         * FP8_INV
     )
 
-    t0 = (
-        tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
-        * FP8_INV
-    )
+    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
     a = t0 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -1687,38 +1873,50 @@ def _pz_encoding_backward_kernel(
     for layer in range(reps - 1, -1, -1):
         # Backward through Rz(enc)
         state_idx -= 1
-        sr0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 0 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 1 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        sr1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 2 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 3 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
+        sr0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        sr1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 2 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 3 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
 
         enc = x_vals
         if PREACTS_TRAINABLE:
@@ -1766,38 +1964,50 @@ def _pz_encoding_backward_kernel(
 
         # Backward through Ry(t1)
         state_idx -= 1
-        sr0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 0 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 1 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        sr1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 2 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 3 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
+        sr0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        sr1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 2 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 3 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
 
         t1 = tl.load(theta_base + layer * stride_t_r + 1 * stride_t_p).to(tl.float32)
         a = t1 * 0.5
@@ -1823,38 +2033,50 @@ def _pz_encoding_backward_kernel(
 
         # Backward through Rz(t0)
         state_idx -= 1
-        sr0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 0 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 1 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        sr1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 2 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 3 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
+        sr0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        sr1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 2 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 3 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
 
         t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p).to(tl.float32)
         a = t0 * 0.5
@@ -1889,24 +2111,34 @@ def triton_pz_backward(
     preacts_trainable,
     fast_measure,
     c_dtype=torch.float32,
+    launch: PzLaunch | None = None,
 ):
-    """Launch pz_encoding backward kernel. Returns (grad_x, grad_theta, grad_pw, grad_pb)."""
+    """Launch pz_encoding backward kernel. Returns (grad_x, grad_theta, grad_pw, grad_pb).
+
+    ``launch=None`` is the built-in launch: ``_select_block_b`` picks BLOCK_B
+    and the backend picks every launch option.  A ``PzLaunch`` from
+    ``resolve_pz_launch`` overrides both.
+    """
     batch, in_dim = x.shape
     out_dim = theta.shape[0]
     reps = theta.shape[2] - 1
 
-    io_dtype = torch.bfloat16 if c_dtype == torch.float8_e4m3fn else c_dtype
+    compute_fp8 = c_dtype == torch.float8_e4m3fn
+    io_dtype = torch.bfloat16 if compute_fp8 else c_dtype
     x = x.to(io_dtype).contiguous()
     theta = theta.to(io_dtype).contiguous()
     grad_output = grad_output.contiguous()
 
     n_oi = out_dim * in_dim
-    BLOCK_B = _select_block_b(n_oi, batch)
+    if launch is None:
+        BLOCK_B = _select_block_b(n_oi, batch)
+        launch_options: dict[str, int] = {}
+    else:
+        BLOCK_B = launch.block_b
+        launch_options = dict(launch.options)
     n_states = 3 * reps + 3  # H state + 3 per layer + after final Rz
     n_b_blocks = triton.cdiv(batch, BLOCK_B)
     n_programs = n_oi * n_b_blocks
-    compute_fp8 = c_dtype == torch.float8_e4m3fn
-    io_dtype = torch.bfloat16 if compute_fp8 else c_dtype
     if compute_fp8:
         states_dtype = torch.float8_e4m3fn
     elif c_dtype == torch.bfloat16:
@@ -1980,6 +2212,7 @@ def triton_pz_backward(
         FAST_MEASURE=fast_measure,
         FP8_PRESCALE=224.0 if compute_fp8 else 1.0,
         BLOCK_B=BLOCK_B,
+        **launch_options,
     )
 
     return (

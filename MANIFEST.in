@@ -1,3 +1,4 @@
 include src/qkan/csrc/*.cu
 include src/qkan/csrc/*.cuh
+include src/qkan/solver/flash/policies/*.json
 include scripts/*.sh
