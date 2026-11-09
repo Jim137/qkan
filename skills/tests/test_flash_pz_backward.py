@@ -136,6 +136,24 @@ def test_default_launch_never_reads_a_policy(monkeypatch):
         _grads((4, 3), x, solver="flash", solver_kwargs=solver_kwargs)
 
 
+# ── FP8 ─────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("preact_trainable", [False, True])
+def test_fp8_pz_gradients_track_fp32(preact_trainable):
+    x = _input(64, 8)
+    common = dict(solver="flash", preact_trainable=preact_trainable)
+    ref = _grads((8, 8, 4), x, c_dtype=torch.float32, p_dtype=torch.float32, **common)
+    got = _grads(
+        (8, 8, 4), x, c_dtype=torch.float8_e4m3fn, p_dtype=torch.bfloat16, **common
+    )
+    for name, expected in ref.items():
+        cosine = torch.nn.functional.cosine_similarity(
+            got[name].float().flatten(), expected.float().flatten(), dim=0
+        )
+        assert cosine > 0.99, f"{name}: cosine {cosine.item():.4f}"
+
+
 # ── Named policies ──────────────────────────────────────────────────────────
 
 

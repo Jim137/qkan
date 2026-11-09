@@ -1481,6 +1481,9 @@ def _pz_encoding_backward_kernel(
     ).to(tl.float32)
     theta_base = theta_ptr + idx_o * stride_t_o + idx_i * stride_t_i
     program_idx = pid_oi.to(tl.int64) * tl.cdiv(batch_size, BLOCK_B) + pid_b
+    # FP8 states are stored x FP8_PRESCALE so that small amplitudes stay in
+    # e4m3's normal range.  Every state store scales and every state load
+    # unscales; theta and the in-register state are never scaled.
     FP8_INV = 1.0 / FP8_PRESCALE
     states_base = states_ptr + program_idx * stride_s_n
 
@@ -1530,7 +1533,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 0 * stride_s_c,
-            r0,
+            r0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1538,7 +1541,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 1 * stride_s_c,
-            i0,
+            i0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1546,7 +1549,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 2 * stride_s_c,
-            r1,
+            r1 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1554,7 +1557,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 3 * stride_s_c,
-            i1,
+            i1 * FP8_PRESCALE,
             mask=b_mask,
         )
         state_idx += 1
@@ -1575,7 +1578,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 0 * stride_s_c,
-            r0,
+            r0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1583,7 +1586,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 1 * stride_s_c,
-            i0,
+            i0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1591,7 +1594,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 2 * stride_s_c,
-            r1,
+            r1 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1599,7 +1602,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 3 * stride_s_c,
-            i1,
+            i1 * FP8_PRESCALE,
             mask=b_mask,
         )
         state_idx += 1
@@ -1629,7 +1632,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 0 * stride_s_c,
-            r0,
+            r0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1637,7 +1640,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 1 * stride_s_c,
-            i0,
+            i0 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1645,7 +1648,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 2 * stride_s_c,
-            r1,
+            r1 * FP8_PRESCALE,
             mask=b_mask,
         )
         tl.store(
@@ -1653,7 +1656,7 @@ def _pz_encoding_backward_kernel(
             + state_idx * stride_s_s
             + b_range * stride_s_b
             + 3 * stride_s_c,
-            i1,
+            i1 * FP8_PRESCALE,
             mask=b_mask,
         )
         state_idx += 1
@@ -1778,10 +1781,7 @@ def _pz_encoding_backward_kernel(
         * FP8_INV
     )
 
-    t1 = (
-        tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p).to(tl.float32)
-        * FP8_INV
-    )
+    t1 = tl.load(theta_base + reps * stride_t_r + 1 * stride_t_p).to(tl.float32)
     a = t1 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -1850,10 +1850,7 @@ def _pz_encoding_backward_kernel(
         * FP8_INV
     )
 
-    t0 = (
-        tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
-        * FP8_INV
-    )
+    t0 = tl.load(theta_base + reps * stride_t_r + 0 * stride_t_p).to(tl.float32)
     a = t0 * 0.5
     c = tl.cos(a)
     s = tl.sin(a)
@@ -1876,38 +1873,50 @@ def _pz_encoding_backward_kernel(
     for layer in range(reps - 1, -1, -1):
         # Backward through Rz(enc)
         state_idx -= 1
-        sr0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 0 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 1 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        sr1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 2 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 3 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
+        sr0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        sr1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 2 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 3 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
 
         enc = x_vals
         if PREACTS_TRAINABLE:
@@ -1955,38 +1964,50 @@ def _pz_encoding_backward_kernel(
 
         # Backward through Ry(t1)
         state_idx -= 1
-        sr0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 0 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 1 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        sr1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 2 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 3 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
+        sr0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        sr1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 2 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 3 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
 
         t1 = tl.load(theta_base + layer * stride_t_r + 1 * stride_t_p).to(tl.float32)
         a = t1 * 0.5
@@ -2012,38 +2033,50 @@ def _pz_encoding_backward_kernel(
 
         # Backward through Rz(t0)
         state_idx -= 1
-        sr0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 0 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si0 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 1 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        sr1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 2 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
-        si1 = tl.load(
-            states_base
-            + state_idx * stride_s_s
-            + b_range * stride_s_b
-            + 3 * stride_s_c,
-            mask=b_mask,
-            other=0.0,
-        ).to(tl.float32)
+        sr0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 0 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si0 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 1 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        sr1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 2 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
+        si1 = (
+            tl.load(
+                states_base
+                + state_idx * stride_s_s
+                + b_range * stride_s_b
+                + 3 * stride_s_c,
+                mask=b_mask,
+                other=0.0,
+            ).to(tl.float32)
+            * FP8_INV
+        )
 
         t0 = tl.load(theta_base + layer * stride_t_r + 0 * stride_t_p).to(tl.float32)
         a = t0 * 0.5
