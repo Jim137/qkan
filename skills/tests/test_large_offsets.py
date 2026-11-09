@@ -140,19 +140,27 @@ def test_flash_forward_output_past_int32(run_snippet):
 
 
 @pytest.mark.skipif(not _FLASH_AVAILABLE, reason="no triton")
-def test_fused_epilogue_past_int32(run_snippet):
+@pytest.mark.parametrize(
+    "batch_inner", [False, True], ids=["batch-outer", "batch-inner"]
+)
+def test_fused_epilogue_past_int32(run_snippet, batch_inner):
     # postacts is (B, O, I): its batch offset b * O*I passes 2^31 at the last
-    # row here.  The forward reads it, and the backward reads it for
-    # grad_eff_pw and writes grad_postacts the same way.
+    # rows here.  The forward reads it, and the backward reads it for
+    # grad_eff_pw and writes grad_postacts the same way.  The exact solver
+    # returns postacts batch-innermost, strides (1, I*B, B), where o * I*B is
+    # the offset that passes 2^31 instead.
     result = run_snippet(
-        """
+        f"""
         import torch
-        from qkan.qkan_epilogue import QKANEpilogue
+        from qkan.qkan_epilogue import QKANEpilogue, qkan_epilogue_forward
 
         torch.manual_seed(0)
-        B, O, I = 32769, 256, 256  # B * O * I = 2^31 + 65536
+        B, O, I = 32897, 256, 256  # (B-1)*O*I and (O-1)*I*B both pass 2^31
         dt = torch.bfloat16
-        postacts = torch.randn(B, O, I, device="cuda", dtype=dt)
+        if {batch_inner}:
+            postacts = torch.randn(O, I, B, device="cuda", dtype=dt).permute(2, 0, 1)
+        else:
+            postacts = torch.randn(B, O, I, device="cuda", dtype=dt)
         eff_pw = torch.randn(O, I, device="cuda", dtype=dt, requires_grad=True)
         base_input = torch.randn(B, I, device="cuda", dtype=dt)
         base_w = torch.randn(O, I, device="cuda", dtype=dt)
@@ -163,7 +171,10 @@ def test_fused_epilogue_past_int32(run_snippet):
             grad_p, grad_pw = torch.autograd.grad(y.float().sum(), (p, eff_pw))
             return y.detach(), grad_p, grad_pw
 
+        with torch.no_grad():  # the eval route skips the autograd wrapper
+            eval_y = qkan_epilogue_forward(postacts, eff_pw, None, base_input, base_w)
         full_y, full_grad, grad_pw = epilogue(slice(None))  # one launch past 2^31
+        assert torch.equal(full_y, eval_y), "eval route"
         for start in range(0, B, 8192):  # each launch far below it
             rows = slice(start, start + 8192)
             y, grad, _ = epilogue(rows)

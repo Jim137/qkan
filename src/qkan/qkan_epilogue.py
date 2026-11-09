@@ -364,8 +364,9 @@ def qkan_epilogue_forward(
 ) -> torch.Tensor:
     """Fused (B, O, I) epilogue forward returning (B, O).
 
-    All tensors must be CUDA + contiguous in their natural layout (the kernel
-    reads via strides, but contiguity gives the best throughput).
+    All tensors must be on CUDA.  ``postacts`` and ``base_input`` are made
+    contiguous here: the kernel's int64 offsets (#35) assume batch is the
+    outermost dimension, and the exact solver returns postacts batch-innermost.
     """
     if not _TRITON_AVAILABLE:
         raise ImportError("Triton is required for qkan_epilogue_forward.")
@@ -379,6 +380,8 @@ def qkan_epilogue_forward(
         assert pb.shape == (O, I)
     if bias_sum is not None:
         assert bias_sum.shape == (O,)
+    postacts = postacts.contiguous()
+    base_input = base_input.contiguous()
 
     out_dtype = postacts.dtype
     out = torch.empty((B, O), device=postacts.device, dtype=out_dtype)
@@ -520,6 +523,9 @@ def qkan_epilogue_backward(
             grad_out, postacts, eff_pw, pb, base_input, base_w, needs
         )
 
+    # Batch outermost, as in the forward.
+    grad_out = grad_out.contiguous()
+    postacts = postacts.contiguous()
     B, O, I = postacts.shape
 
     grad_postacts: Optional[torch.Tensor] = None
@@ -620,6 +626,8 @@ class QKANEpilogue(torch.autograd.Function):
         base_input: torch.Tensor,
         base_w: torch.Tensor,
     ) -> torch.Tensor:
+        # Save the layout the kernels need, so the backward doesn't copy again.
+        postacts = postacts.contiguous()
         ctx.save_for_backward(postacts, eff_pw, pb, base_input, base_w)
         ctx.has_pb = pb is not None
         return qkan_epilogue_forward(postacts, eff_pw, pb, base_input, base_w, None)
@@ -635,7 +643,6 @@ class QKANEpilogue(torch.autograd.Function):
         Optional[torch.Tensor],
     ]:
         postacts, eff_pw, pb, base_input, base_w = ctx.saved_tensors
-        grad_out = grad_out.contiguous()
         needs = (
             ctx.needs_input_grad[0],
             ctx.needs_input_grad[1],

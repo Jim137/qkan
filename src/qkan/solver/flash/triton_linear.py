@@ -204,8 +204,10 @@ def triton_linear_forward(
     # 96 -> 128 regs/thread on the bf16 path, so large inputs are launched in
     # row chunks that keep both products below 2^31 instead.  Chunks are a
     # multiple of BLOCK_M, so even masked tail rows stay in range; ordinary
-    # sizes still take a single launch on the tensors themselves.
-    rows = (2**31 - 1) // max(K, N) // BLOCK_M * BLOCK_M
+    # sizes still take a single launch on the tensors themselves.  Only when
+    # a single tile is already too wide do chunks drop to one row, and then
+    # just masked lanes can wrap, which never touch memory.
+    rows = max((2**31 - 1) // max(K, N, 1) // BLOCK_M * BLOCK_M, 1)
     for start in range(0, M, rows):
         x_part, y_part = x_c, y
         if M > rows:
