@@ -37,6 +37,10 @@ Solver Overview
      - Apple GPU
      - MLX fused Metal kernels for ``pz``, ``rpz``, ``real`` and ``mix`` on Apple silicon. Same state-free backward as ``flydsl``; shares Metal buffers with PyTorch's ``mps`` device without copies. f32 only.
      - ``pip install qkan[mlx]``
+   * - ``te``
+     - GPU / CPU
+     - The whole layer as one GEMM over Fourier features, exact when ``fast_measure=False`` and the preact weights stay fixed (``pz``, ``rpz``, ``real``, ``mix``). Much faster and smaller than ``flash`` from mid-size layers up. Inside Transformer Engine's ``te.autocast`` the GEMM runs in FP8 or NVFP4.
+     - Included with ``qkan``; FP8/NVFP4 need ``transformer_engine[pytorch]>=2.19``
    * - ``cutn``
      - GPU / CPU
      - cuQuantum tensor network contraction. Best for extremely large layers near OOM.

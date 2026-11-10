@@ -27,6 +27,7 @@ Each solver is implemented in its own module:
 - qml: PennyLane quantum circuits
 - qiskit: IBM Quantum backends via Qiskit Runtime
 - cudaq: NVIDIA CUDA-Q backends (GPU-accelerated simulation or QPU)
+- te: the whole layer as one Fourier-feature GEMM (NVFP4/FP8 via Transformer Engine)
 """
 
 from ._activation import make_base_activation
@@ -54,6 +55,7 @@ from .packing import (
 )
 from .qiskit import best_qubits, qiskit_solver
 from .qml import qml_solver
+from .te import fourier_layer
 
 __all__ = [
     "_CUTE_AVAILABLE",
@@ -72,6 +74,7 @@ __all__ = [
     "cutn_solver",
     "flash_exact_solver",
     "flydsl_exact_solver",
+    "fourier_layer",
     "get_registry",
     "get_solver",
     "interaction_of",

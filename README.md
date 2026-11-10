@@ -164,6 +164,7 @@ You can find more examples in the [examples](https://jim137.github.io/qkan/examp
 | BF16/FP8 mixed-precision training (alternative)                           | GPU          | `cutile`              | cuTile fused kernels with BF16/FP8 + coalesced state layout     | Best with `real` ansatz. Requires CUDA Toolkit 13.1+.                            |
 | AMD GPUs (ROCm)                                                           | AMD GPU      | `flydsl`              | FlyDSL fused kernels; state-free reversible backward            | Needs ROCm 7.x, ROCm PyTorch and `pip install qkan[flydsl]`. f32/BF16 output.      |
 | Apple silicon Macs                                                        | Apple GPU    | `mlx`                 | MLX fused Metal kernels; zero-copy buffer sharing with `mps`    | `pip install qkan[mlx]`. f32 only. 3x (tiny) to ~250x (wide layers) faster training than `exact` on `mps` (M3). |
+| Large layers or batches with `fast_measure=False`                         | GPU (or CPU) | `te`                  | The whole layer as one GEMM over Fourier features               | Exact only with `fast_measure=False` and fixed preact weights. FP8/NVFP4 inside Transformer Engine's `te.autocast`. |
 | Extremely large / memory-bound runs (near OOM, very large layers/batches) | GPU (or CPU) | `cutn`                | Best scaling and peak-memory reduction in the extreme benchmark | Use when size/memory dominates. Or CPU case better than `exact`. |
 
 **Ansatz choice (`pz` vs `real`)**
