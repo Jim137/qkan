@@ -376,8 +376,8 @@ class QKANLayer(nn.Module):
         # into state_dict); under p_dim=4 they alias the Parameters
         # themselves via object.__setattr__ (also kept out of state_dict).
         # ``_init_view_caches`` populates all seven attributes before any
-        # forward — they are non-None on every code path. ``.to()`` rebuilds
-        # them if param storage moved.
+        # forward — they are non-None on every code path.
+        # ``_refresh_from_params`` rebuilds them when param storage changes.
         self._theta_natural_v: torch.Tensor = None  # type: ignore[assignment]
         self._preacts_w_natural_v: torch.Tensor = None  # type: ignore[assignment]
         self._preacts_b_natural_v: torch.Tensor = None  # type: ignore[assignment]
@@ -562,36 +562,23 @@ class QKANLayer(nn.Module):
         with torch.no_grad():
             self._mask_is_identity = bool((self.mask == 1).all())
             self._pb_is_nonzero = bool(self.postact_bias.data.any())
+        self._refresh_from_params()  # assign=True replaces the parameters
 
-    def to(self, *args, **kwargs):
-        """
-        Move the layer to the specified device.
+    def _apply(self, fn, *args, **kwargs):
+        # Every cast or move lands here, also through a parent module (#42).
+        super()._apply(fn, *args, **kwargs)
+        self._refresh_from_params()
+        return self
 
-        Args
-        ----
-            device : str | torch.device
-                Device to move the layer to, default: "cpu"
-        """
-        device = None
-        for arg in args:
-            if isinstance(arg, str) or isinstance(arg, torch.device):
-                device = arg
-                break
-            elif isinstance(arg, torch.dtype):
-                self.p_dtype = arg
-        if isinstance(kwargs.get("dtype"), torch.dtype):
-            self.p_dtype = kwargs["dtype"]
-        if "device" in kwargs:
-            device = kwargs["device"]
-        if device:
-            self.device = device
-            for param in self.parameters():
-                param.data = param.to(device)
-        ret = super(QKANLayer, self).to(*args, **kwargs)
-        # Param storage may have moved — rebuild cached views over the new
-        # storage. No-op under p_dim=4.
+    def _refresh_from_params(self) -> None:
+        """Re-derive what is cached from the parameters after their storage
+        changed: p_dtype, device, the p_dim=2 views and, in eval mode, the
+        folded weights (#42)."""
+        self.p_dtype = self.theta.dtype
+        self.device = self.theta.device
         self._init_view_caches()
-        return ret
+        if not self.training:
+            self.train(False)
 
     def train(self, mode: bool = True):
         ret = super().train(mode)
@@ -1228,31 +1215,12 @@ class QKAN(nn.Module):
             )
         self.input_id: Optional[torch.Tensor] = None
 
-    def to(self, *args, **kwargs):
-        """
-        Move the model to the specified device.
-
-        Args
-        ----
-            device : str | torch.device
-                Device to move the model to, default: "cpu"
-        """
-        device = None
-        for arg in args:
-            if isinstance(arg, str) or isinstance(arg, torch.device):
-                device = arg
-                break
-            elif isinstance(arg, torch.dtype):
-                self.p_dtype = arg
-        if isinstance(kwargs.get("dtype"), torch.dtype):
-            self.p_dtype = kwargs["dtype"]
-        if "device" in kwargs:
-            device = kwargs["device"]
-        if device:
-            self.device = device
-        for layer in self.layers:
-            layer.to(*args, **kwargs)
-        return super(QKAN, self).to(*args, **kwargs)
+    def _apply(self, fn, *args, **kwargs):
+        # The layers refresh themselves in their own _apply (#42).
+        super()._apply(fn, *args, **kwargs)
+        self.p_dtype = self.layers[0].p_dtype
+        self.device = self.layers[0].device
+        return self
 
     @property
     def param_size(self):

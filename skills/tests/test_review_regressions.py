@@ -96,13 +96,54 @@ def test_adam_then_lbfgs_through_train_():
     assert len(results["train_loss"]) == 4  # crossed the LBFGS switch
 
 
-def test_postacts_follow_the_parameter_dtype_after_to():
-    layer = QKANLayer(2, 2, reps=2, solver="exact", seed=0)
-    layer.to(dtype=torch.bfloat16)  # keyword path
+CASTS = {
+    "to(dtype=)": lambda m: m.to(dtype=torch.bfloat16),
+    "bfloat16()": lambda m: m.bfloat16(),
+    "parent.to()": lambda m: torch.nn.Sequential(m).to(torch.bfloat16)[0],
+}
+
+
+@pytest.mark.parametrize("training", [True, False], ids=["train", "eval"])
+@pytest.mark.parametrize("cast", CASTS.values(), ids=CASTS.keys())
+@pytest.mark.parametrize("p_dim", [4, 2])
+def test_cached_state_follows_a_cast(cast, p_dim, training):
+    """Only QKANLayer.to() refreshed p_dtype, the p_dim=2 views and the eval
+    folds; .bfloat16() or a parent's .to() left them stale (#42)."""
+    layer = QKANLayer(
+        2, 2, reps=2, solver="exact", seed=0, p_dim=p_dim, postact_bias_trainable=True
+    )
+    layer = cast(layer.train(training))
     assert layer.p_dtype == torch.bfloat16
-    # Solver outputs are cast to the live parameter dtype; float32 postacts
-    # would promote the output to float32.
+    # Solver outputs are cast to p_dtype; float32 postacts would promote the
+    # output to float32.
     assert layer(torch.randn(3, 2, dtype=torch.bfloat16)).dtype == torch.bfloat16
+
+
+@pytest.mark.parametrize("p_dim", [4, 2])
+def test_load_state_dict_assign_refreshes_cached_state(p_dim):
+    """assign=True replaces the parameters; the forward kept reading the old
+    ones, so the new ones never got a gradient (#42)."""
+    torch.manual_seed(0)
+    src = QKANLayer(2, 2, reps=2, solver="exact", p_dim=p_dim)
+    layer = QKANLayer(2, 2, reps=2, solver="exact", p_dim=p_dim)
+    layer.load_state_dict(src.state_dict(), assign=True)
+    x = torch.randn(3, 2)
+    torch.testing.assert_close(layer(x), src(x))
+    layer(x).sum().backward()
+    assert layer.theta.grad is not None
+
+
+def test_refine_keeps_the_cast_dtype():
+    model = QKAN([2, 3, 1], reps=2, solver="exact", seed=0).bfloat16()
+    assert next(model.refine(3).parameters()).dtype == torch.bfloat16
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_device_follows_a_parent_move():
+    layer = torch.nn.Sequential(QKANLayer(2, 2, reps=2, solver="exact")).cuda()[0]
+    assert layer.device.type == "cuda"
+    model = QKAN([2, 3, 1], reps=2, solver="exact").cuda()
+    assert next(model.refine(3).parameters()).is_cuda
 
 
 def test_adabelief_eager_fallback_mixed_state_dtype():
