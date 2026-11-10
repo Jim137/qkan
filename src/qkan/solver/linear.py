@@ -21,6 +21,7 @@ preservation) but routes the matmul through a backend-matched kernel:
 - :class:`TritonLinear` — Triton kernel (``triton_linear.py``)
 - :class:`CuTileLinear` — cuTile kernel (``cutile_linear.py``)
 - :class:`Fp8Linear`    — cuBLASLt fp8 GEMM (Hopper / Blackwell only)
+- :class:`TELinear`     — NVIDIA Transformer Engine (NVFP4 / FP8 recipes via ``te.autocast``)
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ _BACKENDS: list[tuple[str, str, tuple[type[BaseException], ...]]] = [
     (".cutile.cutile_linear", "CuTileLinear", (ImportError,)),
     (".fp8", "Fp8Linear", (ImportError, RuntimeError)),
     (".fp8", "Fp8Activation", (ImportError, RuntimeError)),
+    (".te_linear", "TELinear", (ImportError, OSError, RuntimeError)),
 ]
 
 for _mod, _cls, _exc in _BACKENDS:
