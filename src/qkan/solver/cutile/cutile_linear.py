@@ -33,7 +33,10 @@ from typing import Any
 import cuda.tile as ct  # type: ignore
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import init
+
+from .._utils import autocast_dtype
 
 ConstInt = ct.Constant[int]
 ConstBool = ct.Constant[bool]
@@ -322,17 +325,26 @@ class CuTileLinear(nn.Module):
             init.uniform_(self.bias, -bound, bound)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Under autocast, run in its dtype as F.linear does (#43); else no-ops.
+        # The cuTile kernel has no float16 path, so fp16 autocast uses F.linear.
+        if torch.is_autocast_enabled() and autocast_dtype(x.dtype) == torch.float16:
+            return F.linear(x, self.weight, self.bias)
+        x = x.to(autocast_dtype(x.dtype))
+        weight = self.weight.to(autocast_dtype(self.weight.dtype))
+        bias = self.bias
+        if bias is not None:
+            bias = bias.to(autocast_dtype(bias.dtype))
         # Inference fast path — same trick as CuTileActivation. autograd.Function
         # saves tensors and adds Python overhead even when grad isn't needed,
         # so we skip it under no_grad / inference_mode and call the kernel
         # launcher directly.
         if not torch.is_grad_enabled() or not (
             x.requires_grad
-            or self.weight.requires_grad
-            or (self.bias is not None and self.bias.requires_grad)
+            or weight.requires_grad
+            or (bias is not None and bias.requires_grad)
         ):
-            return cutile_linear_forward(x, self.weight, self.bias)
-        return _CuTileLinearFunction.apply(x, self.weight, self.bias)
+            return cutile_linear_forward(x, weight, bias)
+        return _CuTileLinearFunction.apply(x, weight, bias)
 
     def extra_repr(self) -> str:
         return (
