@@ -34,6 +34,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .._utils import autocast_dtype
+
 try:
     import triton  # type: ignore
     import triton.language as tl  # type: ignore
@@ -350,15 +352,21 @@ class TritonLinear(nn.Module):
 
         leading_shape = x.shape[:-1]
         x_flat = x.reshape(-1, self.in_features)
+        # Under autocast, run in its dtype as F.linear does (#43); else no-ops.
+        x_flat = x_flat.to(autocast_dtype(x_flat.dtype))
+        weight = self.weight.to(autocast_dtype(self.weight.dtype))
+        bias = self.bias
+        if bias is not None:
+            bias = bias.to(autocast_dtype(bias.dtype))
 
         if torch.is_grad_enabled() and (
             x_flat.requires_grad
-            or self.weight.requires_grad
-            or (self.bias is not None and self.bias.requires_grad)
+            or weight.requires_grad
+            or (bias is not None and bias.requires_grad)
         ):
-            y_flat = _TritonLinearFunction.apply(x_flat, self.weight, self.bias)
+            y_flat = _TritonLinearFunction.apply(x_flat, weight, bias)
         else:
-            y_flat = triton_linear_forward(x_flat, self.weight, self.bias)
+            y_flat = triton_linear_forward(x_flat, weight, bias)
 
         return y_flat.reshape(*leading_shape, self.out_features)
 
