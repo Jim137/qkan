@@ -39,7 +39,7 @@ Solver Overview
      - ``pip install qkan[mlx]``
    * - ``te``
      - GPU / CPU
-     - The whole layer as one GEMM over Fourier features, exact when ``fast_measure=False`` and the preact weights stay fixed (``pz``, ``rpz``, ``real``, ``mix``). Much faster and smaller than ``flash`` from mid-size layers up. Inside Transformer Engine's ``te.autocast`` the GEMM runs in FP8 or NVFP4.
+     - The whole layer as one GEMM over Fourier features, exact when ``fast_measure=False`` and the preact weights stay fixed (``pz``, ``rpz``, ``real``, ``mix``). Much faster and smaller than ``flash`` from mid-size layers up. Inside Transformer Engine's ``te.autocast`` the GEMM runs in FP8 or NVFP4. NVFP4 beats bf16 from about 512 outputs per layer, by up to 2x; narrower layers are faster left outside ``te.autocast``.
      - Included with ``qkan``; FP8/NVFP4 need ``transformer_engine[pytorch]>=2.19``
    * - ``cutn``
      - GPU / CPU

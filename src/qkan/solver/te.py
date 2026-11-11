@@ -20,6 +20,8 @@ every edge is a trigonometric polynomial of degree ``reps`` in its input,
 ``a0 + sum_k a_k cos(kx) + b_k sin(kx)``. Sampling each edge's circuit at
 ``2*reps+1`` equispaced points gives the coefficients, so the whole layer is
 one GEMM over the features ``[cos kx, sin kx, base_activation(x)]``.
+On CUDA the coefficients and the features each come from one Triton kernel
+(``te_ops_coefficients``, ``te_ops_features``), so the GEMM is most of a step.
 
 Inside ``transformer_engine.pytorch.autocast`` the GEMM runs through
 Transformer Engine with the active recipe (e.g. NVFP4); otherwise it is
@@ -35,9 +37,13 @@ import torch
 import torch.nn.functional as F
 
 from ._base import QKANSolver, register
+from ._utils import autocast_dtype
 from .exact import torch_exact_solver
 from .flash import _FLASH_AVAILABLE, flash_exact_solver
 from .flash.flash import _SUPPORTED_FLASH_ANSATZES
+
+if _FLASH_AVAILABLE:  # the kernels need Triton
+    from . import te_ops_coefficients, te_ops_features
 
 # Ansatzes whose data gates are Rz(x) or Ry(x).
 FOURIER_ANSATZES = ("pz_encoding", "pz", "rpz_encoding", "rpz", "real", "mix")
@@ -65,7 +71,28 @@ def _sample(x, theta, preacts_weight, preacts_bias, reps, **kwargs) -> torch.Ten
 def fourier_coefficients(
     theta, preacts_weight, preacts_bias, reps: int, in_dim: int, **kwargs
 ) -> torch.Tensor:
-    """Coefficients ``[a0, a_1..a_R, b_1..b_R]`` of every edge, shape (O, 2R+1, I)."""
+    """Coefficients ``[a0, a_1..a_R, b_1..b_R]`` of every edge, shape (O, 2R+1, I).
+
+    A grouped theta gives the kernel one row, (1, 2R+1, I), for every output.
+    """
+    ansatz = kwargs.get("ansatz")
+    if (
+        theta.is_cuda
+        and _FLASH_AVAILABLE
+        and theta.dtype in te_ops_coefficients._DTYPES
+        and ansatz in te_ops_coefficients._ANSATZES
+        and reps <= te_ops_coefficients.MAX_REPS
+    ):
+        # One kernel over the stored edges. A grouped theta is tiled along the
+        # inputs as the solvers tile it; its single row broadcasts over outputs.
+        if theta.dim() != 4:
+            theta = theta.unsqueeze(0)
+        if preacts_bias.dim() != 3:
+            preacts_bias = preacts_bias.unsqueeze(0)
+        c = te_ops_coefficients.fourier_coefficients(theta, preacts_bias, reps, ansatz)
+        if c.shape[2] != in_dim:
+            c = c.repeat(1, 1, in_dim // c.shape[2] + 1)[:, :, :in_dim]
+        return c
     n = 2 * reps + 1
     # Sample at full precision whatever c_dtype is: it is only n rows.
     dtype = torch.float64 if theta.dtype == torch.float64 else torch.float32
@@ -83,15 +110,29 @@ def fourier_coefficients(
     return torch.einsum("fn,noi->ofi", dft * (2 / n), samples.to(dtype))
 
 
-def fourier_features(x: torch.Tensor, reps: int, base_activation) -> torch.Tensor:
-    """``[cos kx, sin kx, base_activation(x)]``, shape (B, (2R+1)*I).
+def fourier_features(
+    x: torch.Tensor, reps: int, base_activation, dtype: torch.dtype, align: int = 1
+) -> torch.Tensor:
+    """``[cos kx, sin kx, base_activation(x)]`` in ``dtype``, shape (B, (2R+1)*I).
 
-    Frequency-major, so the concatenation copies whole rows of I.
+    Frequency-major, so each feature is a contiguous block of I columns. Both
+    dims are zero-padded to multiples of ``align``.
     """
+    # Only make_base_activation sets the mark: a module the user passed is called.
+    kind = getattr(base_activation, "_te_kind", None)
+    if (
+        x.is_cuda
+        and _FLASH_AVAILABLE
+        and kind is not None
+        and x.dtype in te_ops_features._DTYPES
+        and dtype in te_ops_features._DTYPES
+    ):
+        return te_ops_features.fourier_features(x, reps, kind, dtype, align)
+    x = x.to(torch.promote_types(x.dtype, dtype))
     k = torch.arange(1, reps + 1, device=x.device, dtype=x.dtype)
     kx = k[:, None] * x[:, None, :]
     features = [kx.cos(), kx.sin(), base_activation(x)[:, None]]
-    return torch.cat(features, dim=1).flatten(1)
+    return _pad(torch.cat(features, dim=1).flatten(1).to(dtype), align)
 
 
 @functools.cache
@@ -174,6 +215,14 @@ class _TEGemm(torch.autograd.Function):
             BasicLinear,
         )
 
+        # Transformer Engine's GEMMs are opaque to autograd. Under
+        # create_graph=True (a PINN loss on du/dx) their gradients would come
+        # back as constants, and the second-order terms would silently vanish.
+        if torch.is_grad_enabled():
+            raise RuntimeError(
+                "solver='te' has no second derivatives inside te.autocast: "
+                "take create_graph=True gradients outside it"
+            )
         x_saved, w_saved = ctx.saved_tensors
         x_q, w_q, grad_q = ctx.quantizers
         dtype = grad_out.dtype
@@ -194,24 +243,10 @@ class _TEGemm(torch.autograd.Function):
         return grad_x, grad_w, None, None
 
 
-def _pad(t: torch.Tensor) -> torch.Tensor:
-    """Zero-pad both dims to multiples of 32; the product stays exact."""
-    rows, cols = -t.shape[0] % _TE_ALIGN, -t.shape[1] % _TE_ALIGN
+def _pad(t: torch.Tensor, align: int = _TE_ALIGN) -> torch.Tensor:
+    """Zero-pad both dims to multiples of ``align``; the product stays exact."""
+    rows, cols = -t.shape[0] % align, -t.shape[1] % align
     return F.pad(t, (0, cols, 0, rows)) if rows or cols else t
-
-
-def _linear(x: torch.Tensor, w: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    recipe = _te_recipe()
-    if recipe is None:
-        return F.linear(x, w, b)
-    if torch.is_autocast_enabled():
-        dtype = torch.get_autocast_dtype("cuda")
-    else:
-        dtype = w.dtype
-    if recipe.nvfp4():  # its Hadamard transform only takes bf16
-        x, w = x.to(torch.bfloat16), w.to(torch.bfloat16)
-    out = _TEGemm.apply(_pad(x), _pad(w), recipe, dtype)
-    return out[: x.shape[0], : w.shape[0]] + b.to(dtype)
 
 
 def fourier_layer(
@@ -232,13 +267,22 @@ def fourier_layer(
         theta, preacts_weight, preacts_bias, reps, x.shape[1], **kwargs
     )
     dtype = base_weight.dtype
-    w = torch.cat([c[:, 1:] * weight[:, None], base_weight[:, None]], dim=1)
-    b = (c[:, 0] * weight).sum(1).to(dtype)
+    a0, ab = (c * weight[:, None]).split([1, 2 * reps], dim=1)
+    w = torch.cat([ab.flatten(1), base_weight], dim=1).to(dtype)
+    b = a0.sum((1, 2)).to(dtype)
     if bias is not None:
         b = b + bias
-    return _linear(
-        fourier_features(x, reps, base_activation), w.flatten(1).to(dtype), b
-    )
+    # The features are written straight in the GEMM's dtype.
+    if x.is_cuda:
+        dtype = autocast_dtype(dtype)
+    recipe = _te_recipe()
+    if recipe is None:
+        return F.linear(fourier_features(x, reps, base_activation, dtype), w, b)
+    # NVFP4's Hadamard transform only takes bf16.
+    in_dtype = torch.bfloat16 if recipe.nvfp4() else dtype
+    features = fourier_features(x, reps, base_activation, in_dtype, _TE_ALIGN)
+    out = _TEGemm.apply(features, _pad(w.to(in_dtype)), recipe, dtype)
+    return out[: x.shape[0], : w.shape[0]] + b.to(dtype)
 
 
 class TESolver(QKANSolver):

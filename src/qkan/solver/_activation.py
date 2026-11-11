@@ -19,6 +19,7 @@ helper picks the activation kernel matching the chosen ``solver``:
 
   cute   -> qkan.solver.cute_activation.CuTeActivation
   flash  -> qkan.solver.triton_activation.TritonActivation
+  te     -> torch.nn equivalent, marked for its feature kernel to fuse
   cutile -> qkan.solver.cutile_activation.CuTileActivation
   flydsl -> qkan.solver.flydsl.flydsl_activation.FlyDSLActivation
   other  -> torch.nn equivalent (SiLU, GELU, ReLU, Tanh, Sigmoid)
@@ -97,4 +98,8 @@ def make_base_activation(kind: str, solver: object) -> nn.Module:
         except ImportError:
             pass
 
-    return _TORCH_ACTIVATIONS[k]()
+    act = _TORCH_ACTIVATIONS[k]()
+    if solver == "te":
+        # On CUDA the feature kernel computes it; everywhere else the module does.
+        act._te_kind = k  # type: ignore[assignment]
+    return act
