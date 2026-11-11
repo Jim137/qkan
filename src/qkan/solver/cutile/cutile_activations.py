@@ -74,6 +74,9 @@ _VALID_KINDS = tuple(_KIND_TO_CODE.keys())
 # enough to amortize launch / per-block indexing overhead at f32 speeds
 # (4 KiB per block) yet small enough to keep many CTAs resident.
 _BLOCK_SIZE = 1024
+# cuTile array shapes are int32: ct.launch rejects a 1-D array past 2^31
+# elements ("shape is too big"), so large tensors are launched in chunks.
+_MAX_LAUNCH_ELEMS = 2**30
 
 
 # ── forward kernel ──────────────────────────────────────────────────────────
@@ -228,6 +231,19 @@ def _resolve_io_dtype(c_dtype: torch.dtype) -> tuple[torch.dtype, bool]:
     return torch.bfloat16, True
 
 
+def _launch_chunked(kernel, flats: tuple, code: int, compute_bf16: bool) -> None:
+    """Launch ``kernel`` over the flat tensors ``flats`` in chunks of at most
+    ``_MAX_LAUNCH_ELEMS`` elements (#35).  Smaller tensors take one launch on
+    the tensors themselves, as before."""
+    n_elems = flats[0].numel()
+    stream = torch.cuda.current_stream()
+    for start in range(0, n_elems, _MAX_LAUNCH_ELEMS):
+        n = min(_MAX_LAUNCH_ELEMS, n_elems - start)
+        parts = flats if n == n_elems else tuple(t[start : start + n] for t in flats)
+        grid = (math.ceil(n / _BLOCK_SIZE), 1, 1)
+        ct.launch(stream, grid, kernel, (*parts, n, code, compute_bf16, _BLOCK_SIZE))
+
+
 def cutile_activation_forward(
     x: torch.Tensor, kind: str, c_dtype: torch.dtype
 ) -> torch.Tensor:
@@ -254,13 +270,7 @@ def cutile_activation_forward(
     if n_elems == 0:
         return out_flat.view_as(x)
 
-    grid = (math.ceil(n_elems / _BLOCK_SIZE), 1, 1)
-    ct.launch(
-        torch.cuda.current_stream(),
-        grid,
-        _activation_forward_kernel,
-        (x_flat, out_flat, n_elems, code, compute_bf16, _BLOCK_SIZE),
-    )
+    _launch_chunked(_activation_forward_kernel, (x_flat, out_flat), code, compute_bf16)
     return out_flat.view_as(x)
 
 
@@ -297,19 +307,10 @@ def cutile_activation_backward(
     if n_elems == 0:
         return grad_x_flat.view_as(x)
 
-    grid = (math.ceil(n_elems / _BLOCK_SIZE), 1, 1)
-    ct.launch(
-        torch.cuda.current_stream(),
-        grid,
+    _launch_chunked(
         _activation_backward_kernel,
-        (
-            x_flat,
-            grad_y_flat,
-            grad_x_flat,
-            n_elems,
-            code,
-            compute_bf16,
-            _BLOCK_SIZE,
-        ),
+        (x_flat, grad_y_flat, grad_x_flat),
+        code,
+        compute_bf16,
     )
     return grad_x_flat.view_as(x)
