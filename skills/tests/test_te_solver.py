@@ -170,6 +170,16 @@ def test_rejects_trained_preact_weights():
         layer.load_state_dict(state)
 
 
+def test_rejects_trained_preact_weights_of_another_model():
+    """initialize_from_another_model copies them without a checkpoint."""
+    kwargs = dict(width=[5, 4], reps=2, fast_measure=False)
+    src = QKAN(solver="exact", preact_trainable=True, **kwargs)
+    with torch.no_grad():
+        src.layers[0].preacts_weight.normal_()
+    with pytest.raises(ValueError, match="preacts_weight"):
+        QKAN(solver="te", **kwargs).initialize_from_another_model(src)
+
+
 def graph_nodes(layer, x):
     """Names of the autograd nodes behind the layer's output."""
     seen, stack = set(), [layer(x.clone().requires_grad_()).grad_fn]
@@ -316,6 +326,12 @@ def test_cpu_layer_inside_cuda_autocast():
     torch.testing.assert_close(out, layer(x))
 
 
+def fake_recipe(nvfp4, backward_override=None):
+    """What fourier_layer reads of a Transformer Engine recipe."""
+    fields = {"nvfp4": lambda self: nvfp4, "backward_override": backward_override}
+    return type("Recipe", (), fields)()
+
+
 @needs_cuda
 @pytest.mark.parametrize("nvfp4", [False, True], ids=["fp8", "nvfp4"])
 @pytest.mark.parametrize("act", ["silu", torch.nn.SiLU()], ids=["kernel", "torch"])
@@ -331,7 +347,7 @@ def test_te_branch_without_te(monkeypatch, act, nvfp4):
         assert features.dtype == w.dtype == (torch.bfloat16 if nvfp4 else dtype)
         return F.linear(features.float(), w.float()).to(dtype)
 
-    recipe = type("Recipe", (), {"nvfp4": lambda self: nvfp4})()
+    recipe = fake_recipe(nvfp4)
     (layer, ref), x = pair("flash", dtype=torch.float32, base_activation=act)
     expected = ref(x[:37])  # 37 rows, 25 features, 4 outputs: all padded
     monkeypatch.setattr(te_solver, "_te_recipe", lambda: recipe)
@@ -340,20 +356,87 @@ def test_te_branch_without_te(monkeypatch, act, nvfp4):
     torch.testing.assert_close(layer(x[:37]), expected, rtol=tol, atol=tol)
 
 
+@needs_cuda
+def test_nvfp4_backward_override_needs_bf16(monkeypatch):
+    """NVFP4's operands are bf16. They can't stand in for the float32 backward
+    that an override asks of a float32 layer, so a call that records one raises."""
+    from qkan.solver import te as te_solver
+
+    recipe = fake_recipe(True, backward_override="high_precision")
+    monkeypatch.setattr(te_solver, "_te_recipe", lambda: recipe)
+    gemm = staticmethod(lambda features, w, recipe, dtype: F.linear(features, w))
+    monkeypatch.setattr(te_solver._TEGemm, "apply", gemm)
+    (layer, _), x = pair("flash", dtype=torch.float32)
+    with pytest.raises(ValueError, match="'high_precision' backward"):
+        layer(x)
+    with torch.no_grad():
+        layer(x)
+
+
 def rel(a, b):
     return ((a.float() - b.float()).norm() / b.float().norm()).item()
 
 
+def test_torch_route_trig_in_float32():
+    """bf16 can't hold k*x, so the torch route computes the trig in float32 as
+    the kernel does: 2e-3 from the exact features where bf16 trig gave 1e-2."""
+    from qkan.solver.te import fourier_features
+
+    reps, act, x = 8, torch.nn.SiLU(), (torch.randn(64, 16) * 2).bfloat16()
+    exact = fourier_features(x.double(), reps, act, torch.float64)
+    assert rel(fourier_features(x, reps, act, torch.bfloat16), exact) < 3e-3
+
+
+@needs_cuda
+def test_captured_graphs_follow_the_recipe(monkeypatch):
+    """A CUDA graph freezes the GEMM its layers picked from te.autocast:
+    CompiledInference keeps one graph per recipe, and a fixed graph refuses
+    to run under another one."""
+    from qkan import inference
+
+    key = [None]
+    monkeypatch.setattr(inference, "te_recipe_key", lambda: key[0])
+    model = QKAN([8, 8], reps=1, solver="te", fast_measure=False, device="cuda")
+    x, y = torch.randn(2, 32, 8, device="cuda")
+    optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
+    step = inference.make_graphed_train_step(model, x, y, F.mse_loss, optimizer)
+    compiled = inference.compile_inference(model).eval()
+    replay = inference.make_graphed_inference(model, x)
+    with torch.no_grad():
+        compiled(x), replay(x), step(x, y)
+        key[0] = "recipe_type=NVFP4BlockScaling, fp4_format=E2M1"
+        compiled(x)
+        assert len(compiled._cache) == 2
+        for graphed in (lambda: replay(x), lambda: step(x, y)):
+            with pytest.raises(RuntimeError, match="under recipe_type=NVFP4"):
+                graphed()
+
+
+def fp8_with_qparams():
+    """Not the defaults, which a quantizer has before te.Linear sets these."""
+    rec, params = recipe.Float8CurrentScaling(), recipe.QParams(power_2_scale=True)
+    rec.fp8_quant_fwd_inp = rec.fp8_quant_fwd_weight = rec.fp8_quant_bwd_grad = params
+    return rec
+
+
 @needs_nvfp4
-@pytest.mark.parametrize("name", ["Float8CurrentScaling", "NVFP4BlockScaling"])
-def test_gemm_matches_te_linear(name):
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda: recipe.Float8CurrentScaling(),
+        fp8_with_qparams,
+        lambda: recipe.NVFP4BlockScaling(),
+    ],
+    ids=["fp8", "fp8-qparams", "nvfp4"],
+)
+def test_gemm_matches_te_linear(make):
     """The solver's GEMM quantizes like te.Linear. FP8 current scaling is
     deterministic, so everything matches exactly; NVFP4 rounds gradients
     stochastically, so only its forward does."""
     from qkan.solver.te import _TEGemm
 
     torch.manual_seed(0)
-    rec = getattr(recipe, name)()
+    rec = make()
     x = torch.randn(256, 640, device="cuda", dtype=torch.bfloat16)
     w = torch.randn(64, 640, device="cuda", dtype=torch.bfloat16) * 0.05
     grad = torch.randn(256, 64, device="cuda", dtype=torch.bfloat16)
@@ -367,7 +450,7 @@ def test_gemm_matches_te_linear(name):
     ref.backward(grad)
     out.backward(grad)
     torch.testing.assert_close(out, ref, rtol=0, atol=0)
-    if name == "Float8CurrentScaling":
+    if rec.float8_current_scaling():
         torch.testing.assert_close(x.grad, x_ref.grad, rtol=0, atol=0)
         torch.testing.assert_close(w.grad, lin.weight.grad, rtol=0, atol=0)
 
@@ -411,12 +494,39 @@ def test_no_second_derivatives_under_te():
 
 
 @needs_nvfp4
-def test_rejects_delayed_scaling():
-    """DelayedScaling needs amax history kept across steps, which a solver
-    call doesn't have."""
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda: recipe.DelayedScaling(),
+        lambda: recipe.CustomRecipe(qfactory=lambda role: None),
+        lambda: recipe.NVFP4BlockScaling(backward_override="high_precision"),
+    ],
+    ids=["delayed", "custom", "nvfp4-override-on-fp32"],
+)
+def test_rejects_recipes_it_cannot_honour(make):
+    """DelayedScaling needs amax history kept across steps and a CustomRecipe
+    needs quantizer roles, neither of which a solver call has; NVFP4's bf16
+    operands can't serve the backward override of a float32 layer."""
     layer = QKANLayer(64, 32, reps=1, solver="te", fast_measure=False, device="cuda")
-    with te.autocast(recipe=recipe.DelayedScaling()), pytest.raises(ValueError):
+    with te.autocast(recipe=make()), pytest.raises(ValueError, match="solver='te'"):
         layer(torch.randn(64, 64, device="cuda"))
+
+
+@needs_nvfp4
+def test_compiled_inference_follows_te_autocast():
+    """A graph captured outside te.autocast must not answer inside it."""
+    from qkan import compile_inference
+
+    torch.manual_seed(0)
+    model = QKAN([64, 64, 32], reps=2, solver="te", fast_measure=False, device="cuda")
+    compiled, x = compile_inference(model).eval(), torch.randn(64, 64, device="cuda")
+    with torch.no_grad():
+        plain = compiled(x).clone()
+        with te.autocast(recipe=recipe.NVFP4BlockScaling()):
+            quantized, eager = compiled(x).clone(), model(x)
+        assert rel(quantized, plain) > 1e-2
+        torch.testing.assert_close(quantized, eager)
+        torch.testing.assert_close(compiled(x), plain)
 
 
 @needs_nvfp4

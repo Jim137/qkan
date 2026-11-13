@@ -595,11 +595,15 @@ class QKANLayer(nn.Module):
         with torch.no_grad():
             self._mask_is_identity = bool((self.mask == 1).all())
             self._pb_is_nonzero = bool(self.postact_bias.data.any())
-            if self.solver == "te" and not bool((self.preacts_weight == 1).all()):
-                raise ValueError(
-                    "solver='te' needs preacts_weight == 1, but the checkpoint "
-                    "has trained preact weights"
-                )
+        self._check_te_preacts(self.preacts_weight)
+
+    def _check_te_preacts(self, preacts_weight: torch.Tensor) -> None:
+        """solver="te" folds each edge into Fourier coefficients, which only
+        holds for preact weight 1."""
+        if self.solver == "te" and not bool((preacts_weight == 1).all()):
+            raise ValueError(
+                "solver='te' needs preacts_weight == 1, but got trained preact weights"
+            )
 
     def to(self, *args, **kwargs):
         """
@@ -1471,6 +1475,7 @@ class QKAN(nn.Module):
             if isinstance(layer, QKANLayer):
                 src_layer = another_model.layers[l]
                 assert isinstance(src_layer, QKANLayer)
+                layer._check_te_preacts(src_layer.preacts_weight)
                 layer.reset_parameters()
                 # Use natural-rank views so the slice indexing is identical
                 # regardless of p_dim on either side.

@@ -25,7 +25,8 @@ On CUDA the coefficients and the features each come from one Triton kernel
 
 Inside ``transformer_engine.pytorch.autocast`` the GEMM runs through
 Transformer Engine with the active recipe (e.g. NVFP4); otherwise it is
-``F.linear`` and follows ``torch.autocast``.
+``F.linear`` and follows ``torch.autocast``. The recipe applies to that GEMM
+only: the per-edge postacts of ``forward_no_sum`` are never quantized.
 """
 
 import functools
@@ -37,7 +38,7 @@ import torch
 import torch.nn.functional as F
 
 from ._base import QKANSolver, register
-from ._utils import autocast_dtype
+from ._utils import autocast_dtype, te_recipe
 from .exact import torch_exact_solver
 from .flash import _FLASH_AVAILABLE, flash_exact_solver
 from .flash.flash import _SUPPORTED_FLASH_ANSATZES
@@ -48,7 +49,8 @@ if _FLASH_AVAILABLE:  # the kernels need Triton
 # Ansatzes whose data gates are Rz(x) or Ry(x).
 FOURIER_ANSATZES = ("pz_encoding", "pz", "rpz_encoding", "rpz", "real", "mix")
 
-# Transformer Engine's NVFP4 and FP8 GEMMs need dims that are multiples of 32.
+# Transformer Engine's GEMMs need dims that are multiples of 16 for FP8 and of
+# 32 for NVFP4.
 _TE_ALIGN = 32
 
 
@@ -129,15 +131,18 @@ def fourier_features(
     ):
         return te_ops_features.fourier_features(x, reps, kind, dtype, align)
     x = x.to(torch.promote_types(x.dtype, dtype))
-    k = torch.arange(1, reps + 1, device=x.device, dtype=x.dtype)
-    kx = k[:, None] * x[:, None, :]
+    # The trig in float32 at least, as in the kernel: bf16 loses k*x.
+    xf = x.to(torch.promote_types(x.dtype, torch.float32))
+    k = torch.arange(1, reps + 1, device=x.device, dtype=xf.dtype)
+    kx = k[:, None] * xf[:, None, :]
     features = [kx.cos(), kx.sin(), base_activation(x)[:, None]]
-    return _pad(torch.cat(features, dim=1).flatten(1).to(dtype), align)
+    features = [feature.to(dtype) for feature in features]
+    return _pad(torch.cat(features, dim=1).flatten(1), align)
 
 
 @functools.cache
-def _fp8_state():
-    """TE's FP8GlobalStateManager; _TEGemm relies on TE>=2.19 internals."""
+def _check_te_version() -> None:
+    """_TEGemm relies on TE>=2.19 internals."""
     import transformer_engine  # type: ignore
     from packaging.version import Version
 
@@ -146,11 +151,6 @@ def _fp8_state():
             "solver='te' needs transformer_engine>=2.19, "
             f"found {transformer_engine.__version__}"
         )
-    from transformer_engine.pytorch.quantization import (  # type: ignore
-        FP8GlobalStateManager,
-    )
-
-    return FP8GlobalStateManager
 
 
 def _te_recipe():
@@ -158,14 +158,19 @@ def _te_recipe():
     # te.autocast can only be active once the caller has imported TE.
     if "transformer_engine.pytorch" not in sys.modules:
         return None
-    state = _fp8_state()
-    if not state.is_fp8_enabled():
+    _check_te_version()
+    recipe = te_recipe()
+    if recipe is None:
         return None
-    recipe = state.get_fp8_recipe()
     if recipe.delayed():
         raise ValueError(
             "solver='te' keeps no amax history between steps: use a current-"
             "scaling recipe such as Float8CurrentScaling or NVFP4BlockScaling"
+        )
+    if recipe.custom():
+        raise ValueError(
+            "solver='te' gives a CustomRecipe's factory no quantizer roles: use "
+            "a built-in recipe such as Float8CurrentScaling or NVFP4BlockScaling"
         )
     return recipe
 
@@ -186,6 +191,14 @@ class _TEGemm(torch.autograd.Function):
         (grad_q,) = RecipeState.create(
             recipe, mode="backward", num_quantizers=1
         ).make_quantizers()
+        if recipe.float8_current_scaling():  # its QParams, as te.Linear sets them
+            for quantizer, params in (
+                (x_q, recipe.fp8_quant_fwd_inp),
+                (w_q, recipe.fp8_quant_fwd_weight),
+                (grad_q, recipe.fp8_quant_bwd_grad),
+            ):
+                quantizer.force_pow_2_scales = params.power_2_scale
+                quantizer.amax_epsilon = params.amax_epsilon
         override = recipe.backward_override
         # FP8 per-tensor scaling can't quantize grad_out for wgrad alone, so it
         # prepares dgrad too, as te.ops.BasicLinear always does.
@@ -281,6 +294,13 @@ def fourier_layer(
     # NVFP4's Hadamard transform only takes bf16.
     in_dtype = torch.bfloat16 if recipe.nvfp4() else dtype
     features = fourier_features(x, reps, base_activation, in_dtype, _TE_ALIGN)
+    override = recipe.backward_override
+    if override and in_dtype != dtype and (features.requires_grad or w.requires_grad):
+        raise ValueError(
+            f"solver='te' runs NVFP4 on bf16 operands, so the {override!r} "
+            f"backward would be bf16 instead of {dtype}: run the layer in bf16, "
+            "with torch.autocast(dtype=torch.bfloat16) or bf16 parameters"
+        )
     out = _TEGemm.apply(features, _pad(w.to(in_dtype)), recipe, dtype)
     return out[: x.shape[0], : w.shape[0]] + b.to(dtype)
 
@@ -289,8 +309,9 @@ class TESolver(QKANSolver):
     """Fourier-GEMM solver (registered as ``"te"``).
 
     Calling it returns postacts like any solver, for ``forward_no_sum``,
-    plotting and pruning. ``QKANLayer`` computes its output with
-    ``fourier_layer`` instead, which never builds the (B, O, I) postacts.
+    plotting and pruning; ``te.autocast`` does not quantize them. ``QKANLayer``
+    computes its output with ``fourier_layer`` instead, which never builds the
+    (B, O, I) postacts.
     """
 
     name = "te"
