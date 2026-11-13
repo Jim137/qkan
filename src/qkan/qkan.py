@@ -40,7 +40,13 @@ from tqdm import tqdm  # type: ignore
 from .info import get_dist_info, print0, print_version
 from .optim.lbfgs import LBFGSFinisher
 from .qkan_epilogue import QKANEpilogue, qkan_epilogue_forward
-from .solver import get_registry, get_solver, make_base_activation, qml_solver
+from .solver import (
+    get_registry,
+    get_solver,
+    make_base_activation,
+    mlx_contracted_solver,
+    qml_solver,
+)
 
 
 class QKANLayer(nn.Module):
@@ -60,7 +66,7 @@ class QKANLayer(nn.Module):
         device :
             Device to use
         solver : Union[str, Callable]
-            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable
+            Solver to use, currently supports "qml", "exact", "flash", "cutn", "mlx" or custom callable
         ansatz : Union[str, Callable]
             Ansatz to use, "pz_encoding", "px_encoding", "rpz_encoding" or custom
         qml_device : str
@@ -124,6 +130,7 @@ class QKANLayer(nn.Module):
                 "cute",
                 "cutile",
                 "flydsl",
+                "mlx",
                 "qiskit",
                 "cudaq",
             ],
@@ -190,6 +197,7 @@ class QKANLayer(nn.Module):
                 "cute",
                 "cutile",
                 "flydsl",
+                "mlx",
                 "qiskit",
                 "cudaq",
             ],
@@ -233,8 +241,12 @@ class QKANLayer(nn.Module):
         # and the base linear term are collapsed into a single Triton kernel.
         # Default OFF for parity; opt-in via constructor arg, env var, or
         # ``layer.set_fused_epilogue(True)`` post-construction.
+        # The mlx solver is the exception and defaults to ON: there the sum
+        # over inputs moves into the circuit kernel itself, which never
+        # materialises postacts (QKAN_FUSED_EPILOGUE=0 turns it off).
+        _fused_env = os.environ.get("QKAN_FUSED_EPILOGUE")
         self._use_fused_epilogue: bool = (
-            os.environ.get("QKAN_FUSED_EPILOGUE", "0") == "1"
+            solver == "mlx" if _fused_env is None else _fused_env == "1"
         )
 
         self.init_parameters()
@@ -732,21 +744,54 @@ class QKANLayer(nn.Module):
             **self.solver_kwargs,
         )
 
+    def _run_contracted_solver(
+        self, x: torch.Tensor, weight: torch.Tensor
+    ) -> Optional[torch.Tensor]:
+        """``(postacts * weight).sum(dim=2)`` from the mlx solver's fused kernel.
+
+        The kernel sums over the inputs itself, so the ``(batch, out_dim,
+        in_dim)`` postacts are never materialised. Returns None when the
+        fused route is off or does not cover this configuration; the caller
+        then contracts the output of ``_run_solver``.
+        """
+        if not (self._use_fused_epilogue and self.solver == "mlx"):
+            return None
+        return mlx_contracted_solver(
+            x,
+            self._theta_natural_v,
+            self._preacts_w_natural_v,
+            self._preacts_b_natural_v,
+            weight,
+            self.reps,
+            device=self.device,
+            ansatz=self.ansatz,
+            group=self.group,
+            preacts_trainable=self.preact_trainable,
+            fast_measure=self.fast_measure,
+            out_dim=self.out_dim,
+            dtype=self.c_dtype,
+            **self.solver_kwargs,
+        )
+
     def _forward_eval(self, x: torch.Tensor) -> torch.Tensor:
         """Inference path — uses pre-folded weights + aliased solver inputs."""
         assert x.shape[1] == self.in_dim, "Invalid input dimension"
         if self.is_batchnorm:
             x = self.bn(x)
         base_input = self.base_activation(x)
+        eff_pw = self._eff_pw
+        eff_base_w = self._eff_base_w
+        assert eff_pw is not None and eff_base_w is not None
+        main = self._run_contracted_solver(x, eff_pw)
+        if main is not None:
+            base = F.linear(base_input, eff_base_w, bias=self._bias_sum)
+            return main.to(base.dtype) + base
         postacts = self._run_solver(
             x,
             self._theta_natural_v,
             self._preacts_w_natural_v,
             self._preacts_b_natural_v,
         )
-        eff_pw = self._eff_pw
-        eff_base_w = self._eff_base_w
-        assert eff_pw is not None and eff_base_w is not None
         if self._use_fused_epilogue and postacts.is_cuda:
             return qkan_epilogue_forward(
                 postacts, eff_pw, None, base_input, eff_base_w, self._bias_sum
@@ -763,12 +808,6 @@ class QKANLayer(nn.Module):
         if self.is_batchnorm:
             x = self.bn(x)
         base_input = self.base_activation(x)
-        postacts = self._run_solver(
-            x,
-            self._theta_natural_v,
-            self._preacts_w_natural_v,
-            self._preacts_b_natural_v,
-        )
         pw_oi = self._pw_oi
         bw_oi = self._bw_oi
         if self._mask_is_identity:
@@ -778,12 +817,29 @@ class QKANLayer(nn.Module):
             mask_oi = self._mask_oi
             eff_pw = pw_oi * mask_oi
             base_w = bw_oi * mask_oi
+        use_pb = self.postact_bias_trainable or self._pb_is_nonzero
+
+        # mlx: the circuit kernel also sums over the inputs. The postact bias
+        # only shifts each output by sum_i pb * eff_pw, which stays in torch.
+        main = self._run_contracted_solver(x, eff_pw)
+        if main is not None:
+            if use_pb:
+                bias = self._pb_oi * eff_pw
+                main = main + bias.sum(dim=1, dtype=bias.dtype)
+            base = F.linear(base_input, base_w)
+            return main.to(base.dtype) + base
+
+        postacts = self._run_solver(
+            x,
+            self._theta_natural_v,
+            self._preacts_w_natural_v,
+            self._preacts_b_natural_v,
+        )
         # Fused-epilogue train path: forward is a single Triton kernel; the
         # backward fuses grad_postacts / grad_eff_pw / grad_pb into one Triton
         # kernel and keeps the two matmul-shaped gradients on cuBLAS (~4
         # launches vs ~7 eager dispatches).
 
-        use_pb = self.postact_bias_trainable or self._pb_is_nonzero
         if self._use_fused_epilogue and postacts.is_cuda:
             pb = self._pb_oi if use_pb else None
             return QKANEpilogue.apply(postacts, eff_pw, pb, base_input, base_w)
@@ -807,6 +863,12 @@ class QKANLayer(nn.Module):
         kernel launch; the backward fuses grad_postacts / grad_eff_pw / grad_pb
         into one Triton kernel and keeps the matmul-shaped gradients on cuBLAS.
         CPU tensors and non-CUDA paths transparently fall back to the eager
+        chain.
+
+        With ``solver="mlx"`` it is on by default and goes further: the sum
+        over inputs is folded into the circuit's Metal kernel, so postacts
+        are never materialised in either pass. The base linear term stays in
+        PyTorch. Turning it off restores the solver followed by the eager
         chain.
         """
         self._use_fused_epilogue = bool(enabled)
@@ -1002,7 +1064,7 @@ class QKAN(nn.Module):
         device : Literal["cpu", "cuda"]
             Device to use
         solver : Union[str, Callable]
-            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable
+            Solver to use, currently supports "qml", "exact", "flash", "cutn", "mlx" or custom callable
         qml_device : str
             PennyLane device to use
         layers : QKANModuleList
@@ -1053,6 +1115,7 @@ class QKAN(nn.Module):
                 "cute",
                 "cutile",
                 "flydsl",
+                "mlx",
                 "qiskit",
                 "cudaq",
             ],
@@ -1099,7 +1162,7 @@ class QKAN(nn.Module):
             device :
                 Device to use, default: "cpu"
             solver : Union[str, Callable]
-                Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable, default: "exact"
+                Solver to use, currently supports "qml", "exact", "flash", "cutn", "mlx" or custom callable, default: "exact"
             ansatz : Union[str, Callable]
                 Ansatz to use, "pz_encoding" ("pz"), "px_encoding" ("px"), "rpz_encoding" ("rpz", reduced pz encoding) or custom
             qml_device : str
@@ -1155,6 +1218,7 @@ class QKAN(nn.Module):
                 "cute",
                 "cutile",
                 "flydsl",
+                "mlx",
                 "qiskit",
                 "cudaq",
             ],
