@@ -101,10 +101,9 @@ and replay per shape; train / grad forwards fall back to eager.
        y = model(x)                          # first call: captures
        y = model(x)                          # subsequent calls: replays
 
-The cache key is ``(shape, dtype, device)``. On a miss the wrapper
-captures a new graph (up to ``max_shapes`` entries, default 8). When
-the cache is saturated, further unseen shapes fall through to eager
-rather than evict an existing graph mid-replay.
+The cache key is the ``(shape, dtype, device)`` of the input plus the CUDA ``torch.autocast`` state (off, or its dtype), so calls inside and outside ``torch.autocast`` each get their own graph.
+On a miss the wrapper captures a new graph (up to ``max_shapes`` entries, default 8).
+When the cache is saturated, further unseen shapes fall through to eager rather than evict an existing graph mid-replay.
 
 ``compile_inference`` is a thin shortcut for
 ``CompiledInference(module, ...)``. The class form is equivalent:
@@ -114,9 +113,8 @@ rather than evict an existing graph mid-replay.
    from qkan import CompiledInference
    model = CompiledInference(model, max_shapes=16, warmup=3)
 
-After modifying parameters in place (e.g. loading a new checkpoint),
-call ``model.clear_cache()`` to drop stale graphs.
-``model.train()`` clears the cache automatically.
+The wrapper drops its graphs whenever parameter storage can change through it or through a parent module: ``train()`` / ``eval()``, every cast or move (``.to()``, ``.float()``, ``.cuda()``, ...), also one that changes nothing, and every ``load_state_dict``.
+Changes made behind the wrapper's back (``model.module.to(...)``, ``model.module.load_state_dict(...)``, a replaced ``model.module``) cannot be seen: call ``model.clear_cache()`` after them.
 
 
 ``make_graphed_inference`` (low-level, single shape)
@@ -273,6 +271,11 @@ Caveats
    cache is saturated. If your eval batch size varies a lot, either
    widen ``max_shapes`` or pad inputs to a fixed shape.
 
+**A graph belongs to the autocast state it was captured in.**
+   A captured graph replays the kernels of the CUDA ``torch.autocast`` state (off, or its dtype) at capture time.
+   ``compile_inference`` keeps one graph per state; the low-level helpers raise ``RuntimeError`` when called in another state.
+   Capture one ``make_graphed_inference`` graph for each state you use, and capture a train step in the state you train in: a second ``make_graphed_train_step`` re-allocates the parameters of the first.
+
 **Output tensors are reused buffers.**
    ``make_graphed_inference`` returns a callable whose output is a
    view into a static buffer overwritten on every replay. Clone the
@@ -281,10 +284,10 @@ Caveats
    ``CompiledInference`` inherits this behavior for cache hits.
 
 **Parameter mutation invalidates graphs.**
-   The captured graph references specific parameter storage. Editing
-   parameters in place (e.g. loading a checkpoint) requires
-   ``CompiledInference.clear_cache()``.
-   ``train()`` / ``eval()`` transitions clear the cache automatically.
+   The captured graph references specific parameter storage.
+   ``CompiledInference`` drops its graphs on ``train()`` / ``eval()``, on every cast or move and on every ``load_state_dict``, also when these come through a parent module.
+   Changing the wrapped module directly (``wrapper.module``) requires ``CompiledInference.clear_cache()``.
+   The low-level helpers cannot notice any of this: capture again after casting, moving or reloading the model.
 
 **Non-graph-safe ops break full-model capture.**
    Python control flow on tensor values, ``.item()``, ``.cpu()``, CPU
