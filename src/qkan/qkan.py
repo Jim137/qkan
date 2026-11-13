@@ -47,6 +47,7 @@ from .solver import (
     mlx_contracted_solver,
     qml_solver,
 )
+from .solver.te import FOURIER_ANSATZES, fourier_layer
 
 
 class QKANLayer(nn.Module):
@@ -66,7 +67,10 @@ class QKANLayer(nn.Module):
         device :
             Device to use
         solver : Union[str, Callable]
-            Solver to use, currently supports "qml", "exact", "flash", "cutn", "mlx" or custom callable
+            Solver to use, currently supports "qml", "exact", "flash", "cutn", "mlx" or custom callable.
+            "te" computes the layer as one Fourier-feature GEMM, NVFP4 inside
+            Transformer Engine's autocast; it needs ``fast_measure=False`` and
+            fixed preact weights (see ``qkan.solver.te``)
         ansatz : Union[str, Callable]
             Ansatz to use, "pz_encoding", "px_encoding", "rpz_encoding" or custom
         qml_device : str
@@ -134,6 +138,7 @@ class QKANLayer(nn.Module):
                 "mlx",
                 "qiskit",
                 "cudaq",
+                "te",
             ],
             Callable,
         ] = "exact",
@@ -177,6 +182,19 @@ class QKANLayer(nn.Module):
             np.random.seed(seed)
             random.seed(seed)
 
+        # The Fourier rewrite is exact only when each edge's encoding is
+        # Rz(x) or Ry(x) with unit weight and the measurement is |a|^2 - |b|^2.
+        if solver == "te" and (
+            fast_measure
+            or preact_trainable
+            or preact_init
+            or ansatz not in FOURIER_ANSATZES
+        ):
+            raise ValueError(
+                "solver='te' needs fast_measure=False, preact_trainable=False, "
+                f"preact_init=False and an ansatz in {FOURIER_ANSATZES}"
+            )
+
         if isinstance(group, int):
             if group == -1:
                 group = (out_dim, in_dim)
@@ -201,6 +219,7 @@ class QKANLayer(nn.Module):
                 "mlx",
                 "qiskit",
                 "cudaq",
+                "te",
             ],
             Callable,
         ] = solver
@@ -576,6 +595,15 @@ class QKANLayer(nn.Module):
         with torch.no_grad():
             self._mask_is_identity = bool((self.mask == 1).all())
             self._pb_is_nonzero = bool(self.postact_bias.data.any())
+        self._check_te_preacts(self.preacts_weight)
+
+    def _check_te_preacts(self, preacts_weight: torch.Tensor) -> None:
+        """solver="te" folds each edge into Fourier coefficients, which only
+        holds for preact weight 1."""
+        if self.solver == "te" and not bool((preacts_weight == 1).all()):
+            raise ValueError(
+                "solver='te' needs preacts_weight == 1, but got trained preact weights"
+            )
 
     def to(self, *args, **kwargs):
         """
@@ -775,15 +803,42 @@ class QKANLayer(nn.Module):
             **self.solver_kwargs,
         )
 
+    def _forward_te(
+        self,
+        x: torch.Tensor,
+        weight: torch.Tensor,
+        base_weight: torch.Tensor,
+        bias: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        """solver="te": the layer as one GEMM, without the (B, O, I) postacts."""
+        return fourier_layer(
+            x,
+            self._theta_natural_v,
+            self._preacts_w_natural_v,
+            self._preacts_b_natural_v,
+            self.reps,
+            weight=weight,
+            base_weight=base_weight,
+            bias=bias,
+            base_activation=self.base_activation,
+            ansatz=self.ansatz,
+            fast_measure=self.fast_measure,
+            out_dim=self.out_dim,
+            checkpoint_reps=self.checkpoint_reps,
+            **self.solver_kwargs,
+        )
+
     def _forward_eval(self, x: torch.Tensor) -> torch.Tensor:
         """Inference path — uses pre-folded weights + aliased solver inputs."""
         assert x.shape[1] == self.in_dim, "Invalid input dimension"
         if self.is_batchnorm:
             x = self.bn(x)
-        base_input = self.base_activation(x)
         eff_pw = self._eff_pw
         eff_base_w = self._eff_base_w
         assert eff_pw is not None and eff_base_w is not None
+        if self.solver == "te":
+            return self._forward_te(x, eff_pw, eff_base_w, self._bias_sum)
+        base_input = self.base_activation(x)
         main = self._run_contracted_solver(x, eff_pw)
         if main is not None:
             base = F.linear(base_input, eff_base_w, bias=self._bias_sum)
@@ -809,7 +864,6 @@ class QKANLayer(nn.Module):
         assert x.shape[1] == self.in_dim, "Invalid input dimension"
         if self.is_batchnorm:
             x = self.bn(x)
-        base_input = self.base_activation(x)
         pw_oi = self._pw_oi
         bw_oi = self._bw_oi
         if self._mask_is_identity:
@@ -820,6 +874,10 @@ class QKANLayer(nn.Module):
             eff_pw = pw_oi * mask_oi
             base_w = bw_oi * mask_oi
         use_pb = self.postact_bias_trainable or self._pb_is_nonzero
+        if self.solver == "te":
+            bias = (self._pb_oi * eff_pw).sum(1) if use_pb else None
+            return self._forward_te(x, eff_pw, base_w, bias)
+        base_input = self.base_activation(x)
 
         # mlx: the circuit kernel also sums over the inputs. The postact bias
         # only shifts each output by sum_i pb * eff_pw, which stays in torch.
@@ -997,6 +1055,7 @@ class QKANLayer(nn.Module):
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
             c_dtype=self.c_dtype,
+            fast_measure=self.fast_measure,
             seed=self.seed,
             p_dim=self.p_dim,
         )
@@ -1119,6 +1178,7 @@ class QKAN(nn.Module):
                 "mlx",
                 "qiskit",
                 "cudaq",
+                "te",
             ],
             Callable,
         ] = "exact",
@@ -1224,6 +1284,7 @@ class QKAN(nn.Module):
                 "mlx",
                 "qiskit",
                 "cudaq",
+                "te",
             ],
             Callable,
         ] = solver
@@ -1414,6 +1475,7 @@ class QKAN(nn.Module):
             if isinstance(layer, QKANLayer):
                 src_layer = another_model.layers[l]
                 assert isinstance(src_layer, QKANLayer)
+                layer._check_te_preacts(src_layer.preacts_weight)
                 layer.reset_parameters()
                 # Use natural-rank views so the slice indexing is identical
                 # regardless of p_dim on either side.
@@ -2341,6 +2403,7 @@ class QKAN(nn.Module):
             postact_bias_trainable=self.postact_bias_trainable,
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
+            fast_measure=self.fast_measure,
             save_act=self.save_act,
             c_dtype=self.c_dtype,
             seed=self.seed,
@@ -2454,6 +2517,7 @@ class QKAN(nn.Module):
             postact_bias_trainable=self.postact_bias_trainable,
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
+            fast_measure=self.fast_measure,
             save_act=self.save_act,
             c_dtype=self.c_dtype,
             seed=self.seed,

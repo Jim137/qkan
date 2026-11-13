@@ -51,6 +51,8 @@ from typing import Any, Callable, Optional
 import torch
 from torch import nn
 
+from .solver._utils import te_recipe_key
+
 __all__ = [
     "make_graphed_inference",
     "make_graphed_train_step",
@@ -65,6 +67,20 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
+def _check_recipe(captured: Optional[str]) -> None:
+    """A graph replays the GEMMs of the te.autocast state it was captured in."""
+    current = te_recipe_key()
+    if current != captured:
+        where = [
+            "outside te.autocast" if key is None else f"under {key.partition(',')[0]}"
+            for key in (captured, current)
+        ]
+        raise RuntimeError(
+            f"this graph was captured {where[0]} and replays those GEMMs: it "
+            f"cannot run {where[1]}, so capture another one there"
+        )
+
+
 def make_graphed_inference(
     model: nn.Module,
     sample_input: torch.Tensor,
@@ -75,6 +91,8 @@ def make_graphed_inference(
     The input to the returned callable must match ``sample_input`` in shape,
     dtype, and device. The output tensor is reused across calls — clone it
     before issuing the next replay if you need to keep the value around.
+    The graph replays the GEMMs of the ``te.autocast`` state it was captured
+    in, so a call in another one raises.
 
     Args:
         model: a module in eval() mode. Parameters must not change between
@@ -114,6 +132,7 @@ def make_graphed_inference(
 
     sample_shape = sample_input.shape
     sample_dtype = sample_input.dtype
+    recipe = te_recipe_key()
 
     def replay(x: torch.Tensor) -> torch.Tensor:
         if x.shape != sample_shape or x.dtype != sample_dtype:
@@ -122,6 +141,7 @@ def make_graphed_inference(
                 f"dtype {sample_dtype}; got shape {tuple(x.shape)} "
                 f"dtype {x.dtype}"
             )
+        _check_recipe(recipe)
         static_input.copy_(x)
         graph.replay()
         return static_output
@@ -221,7 +241,8 @@ def make_graphed_train_step(
     static buffers, replays the graph, and returns the loss tensor (a view
     into a static buffer — clone before mutating). After replay, every
     parameter's ``.grad`` holds the captured-step gradient and ``optimizer
-    .step()`` can be called as usual.
+    .step()`` can be called as usual. The graph replays the GEMMs of the
+    ``te.autocast`` state it was captured in, so a call in another one raises.
 
     Side effects on ``model`` and ``optimizer``:
         - Every trainable Parameter is re-allocated on the capture stream so
@@ -303,6 +324,7 @@ def make_graphed_train_step(
     sample_in_dtype = sample_input.dtype
     sample_tgt_shape = sample_target.shape
     sample_tgt_dtype = sample_target.dtype
+    recipe = te_recipe_key()
 
     def train_step(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         if x.shape != sample_in_shape or x.dtype != sample_in_dtype:
@@ -317,6 +339,7 @@ def make_graphed_train_step(
                 f"dtype {sample_tgt_dtype}; got shape {tuple(y.shape)} "
                 f"dtype {y.dtype}"
             )
+        _check_recipe(recipe)
         static_input.copy_(x)
         static_target.copy_(y)
         graph.replay()
@@ -331,10 +354,13 @@ def make_graphed_train_step(
 
 
 def _input_key(x: torch.Tensor) -> Optional[tuple]:
-    """Hashable key for graph-cache lookup; None when graphs don't apply."""
+    """Hashable key for graph-cache lookup; None when graphs don't apply.
+
+    The te.autocast recipe is part of it: each one gets its own graph.
+    """
     if not isinstance(x, torch.Tensor) or not x.is_cuda:
         return None
-    return (tuple(x.shape), x.dtype, x.device.index)
+    return (tuple(x.shape), x.dtype, x.device.index, te_recipe_key())
 
 
 class CompiledInference(nn.Module):
@@ -350,14 +376,16 @@ class CompiledInference(nn.Module):
         with torch.no_grad():
             model(x)                               # captures + replays
 
-    On each eval/no-grad forward, the (shape, dtype, device) of the input is
-    used as the cache key. A miss triggers a capture (up to ``max_shapes``);
+    On each eval/no-grad forward, the (shape, dtype, device) of the input and
+    the active ``te.autocast`` recipe are used as the cache key. A miss
+    triggers a capture (up to ``max_shapes``);
     a hit replays the captured graph. When the cache is full the fallback is
     eager execution — graphs are not evicted.
 
     Args:
         module: the module to wrap. ``forward`` must take one tensor arg.
-        max_shapes: maximum number of distinct input shapes to cache.
+        max_shapes: maximum number of graphs to cache, one per input shape
+            and ``te.autocast`` recipe.
         warmup: warmup forward passes before each capture.
     """
 
