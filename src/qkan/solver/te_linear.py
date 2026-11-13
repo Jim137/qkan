@@ -37,14 +37,12 @@ from functools import partial
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import transformer_engine  # type: ignore
 import transformer_engine.pytorch as te  # type: ignore
 from packaging.version import Version
-from transformer_engine.pytorch.quantization import (  # type: ignore
-    FP8GlobalStateManager,
-)
 
-from ._utils import autocast_dtype
+from ._utils import autocast_dtype, te_recipe
 
 # Before 2.19, NVFP4 training on sm_120 ran on all-zero gradients (TE #3281).
 if Version(transformer_engine.__version__) < Version("2.19"):
@@ -52,15 +50,18 @@ if Version(transformer_engine.__version__) < Version("2.19"):
     warnings.warn(_msg, stacklevel=2)
     raise ImportError(_msg)
 
-# TE's NVFP4 GEMMs need the token count and both feature sizes divisible by 32.
+# TE's GEMMs take whole blocks of tokens: 16 for FP8, 32 for NVFP4 training.
 _ALIGN = 32
 
 
 class TELinear(te.Linear):
     """``te.Linear`` with ``nn.Linear``'s initialization and checkpoints.
 
-    Under a ``te.autocast`` recipe, shapes TE can't quantize run unquantized
-    instead of raising, so the layer can replace any ``nn.Linear``.
+    Under a ``te.autocast`` recipe a call is quantized with that recipe or
+    raises.  The token count is zero-padded to a multiple of 32 when needed.
+    Feature sizes are left to ``te.Linear``, which needs multiples of 16 (FP8)
+    or 32 (NVFP4) to train and raises otherwise, for some sizes only in
+    ``backward``: keep such a layer an ``nn.Linear`` or outside ``te.autocast``.
     """
 
     def __init__(
@@ -79,7 +80,6 @@ class TELinear(te.Linear):
             params_dtype=dtype,
             device=device or "cuda",
         )
-        self._aligned = in_features % _ALIGN == 0 and out_features % _ALIGN == 0
 
     @classmethod
     def from_linear(cls, linear: nn.Linear) -> "TELinear":
@@ -93,6 +93,8 @@ class TELinear(te.Linear):
             dtype=linear.weight.dtype,
         )
         new.load_state_dict(linear.state_dict())
+        for name, param in linear.named_parameters():
+            new.get_parameter(name).requires_grad_(param.requires_grad)
         return new
 
     def reset_parameters(self, defer_init=False):
@@ -104,16 +106,22 @@ class TELinear(te.Linear):
             nn.init.uniform_(self.bias, -bound, bound)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if not FP8GlobalStateManager.is_fp8_enabled():
+        recipe = te_recipe()
+        if recipe is None:
             return super().forward(x)  # follows torch.autocast by itself
+        # TE keeps the quantizers of an earlier recipe of the same class (TE #3157).
+        if recipe != self.fp8_meta.get("recipe"):
+            self.fp8_meta_tensors_initialized = False
         # TE quantizes the input as given, and NVFP4's Hadamard transform only
         # takes bf16, so cast to the autocast dtype first, as nn.Linear would.
         x = x.to(autocast_dtype(x.dtype))
-        if self._aligned and (x.numel() // x.shape[-1]) % _ALIGN == 0:
+        tokens = x.numel() // x.shape[-1]
+        pad = -tokens % _ALIGN
+        if not pad:
             return super().forward(x)
-        recipe = FP8GlobalStateManager.get_fp8_recipe()
-        with te.autocast(enabled=False, recipe=recipe):
-            return super().forward(x)
+        # Zero rows change neither the real rows nor any gradient.
+        padded = F.pad(x.reshape(tokens, x.shape[-1]), (0, 0, 0, pad))
+        return super().forward(padded)[:tokens].reshape(*x.shape[:-1], -1)
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
         # nn.Linear checkpoints carry no TE metadata; TE ignores None.
