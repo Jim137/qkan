@@ -96,7 +96,9 @@ class TorchGates:
         return: torch.Tensor, shape: (2, 2, out_dim, in_dim)
         """
         exp = torch.exp(-0.5j * theta)
-        zero = torch.zeros_like(theta)
+        # Complex like ``exp``: stacking a real zero with a complex tensor
+        # fails on MPS (torch 2.15: "Failed to create function state object").
+        zero = torch.zeros_like(exp)
         return torch.stack(
             [
                 torch.stack([exp, zero]),
