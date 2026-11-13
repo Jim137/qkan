@@ -394,7 +394,7 @@ def qkan_epilogue_forward(
     postacts = postacts.contiguous()
     base_input = base_input.contiguous()
 
-    out_dtype = _output_dtype(postacts.dtype)
+    out_dtype = _output_dtype(base_w.dtype)
     out = torch.empty((B, O), device=postacts.device, dtype=out_dtype)
 
     block_m, block_n, block_i = _select_blocks(B, O, I)
@@ -528,9 +528,9 @@ def qkan_epilogue_backward(
     grad_base_w)`` — each ``None`` when ``needs`` says it isn't required.
     """
     need_p, need_pw, need_pb, need_bi, need_bw = needs
-    # Under autocast the forward returns, and the next layer passes on, the
-    # autocast dtype while the weights keep theirs (#33); the matmuls below
-    # need one dtype.
+    # Under autocast grad_out, and base_input when it is another layer's
+    # output, arrive in the autocast dtype while the weights keep theirs (#33);
+    # the matmuls below need one dtype.
     grad_out = grad_out.to(base_w.dtype)
     base_input = base_input.to(base_w.dtype)
 

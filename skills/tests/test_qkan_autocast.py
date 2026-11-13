@@ -19,7 +19,6 @@ import pytest
 pytest.importorskip("torch")
 
 import torch  # noqa: E402
-import torch.nn as nn  # noqa: E402
 
 from qkan import QKAN, QKANLayer  # noqa: E402
 from qkan.solver import _CUTE_AVAILABLE, _FLASH_AVAILABLE  # noqa: E402
@@ -110,11 +109,10 @@ def test_fused_epilogue_stack_matches_eager(dtype):
     grads = []
     for fused in (False, True):
         torch.manual_seed(0)
-        net = nn.Sequential(
-            QKANLayer(12, 8, reps=2, solver="exact", device="cuda"),
-            QKANLayer(8, 6, reps=2, solver="exact", device="cuda"),
+        net = QKAN(
+            width=[12, 8, 6], reps=2, solver="exact", device="cuda", ba_trainable=True
         ).to(dtype)
-        for layer in net:
+        for layer in net.layers:
             layer.set_fused_epilogue(fused)
         x = torch.randn(48, 12, device="cuda", dtype=dtype, requires_grad=True)
         with torch.autocast(**AUTOCAST):
@@ -123,6 +121,22 @@ def test_fused_epilogue_stack_matches_eager(dtype):
         y.float().sum().backward()
         grads.append(x.grad)
     torch.testing.assert_close(grads[1], grads[0], rtol=2e-2, atol=2e-2)
+
+
+@pytest.mark.parametrize("fused", [False, True], ids=["eager", "fused"])
+@pytest.mark.parametrize(
+    "dtype, autocast", [(torch.bfloat16, False), (torch.float64, True)]
+)
+def test_output_takes_the_weights_dtype(dtype, autocast, fused):
+    """As F.linear's does.  A callable solver's postacts need not have the
+    weights' dtype: fp32 here, which autocast would turn into bf16."""
+
+    def solver(x, *args, **kwargs):
+        return x.float().cos()[:, None, :].expand(-1, 10, -1)
+
+    layer, x = make_layer(solver, dtype, fused, theta_size=[1, 1])
+    with torch.autocast(enabled=autocast, **AUTOCAST):
+        assert layer(x).dtype == dtype
 
 
 @pytest.mark.skipif(not _CUTE_AVAILABLE, reason="no CuTe extension")
