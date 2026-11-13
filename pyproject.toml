@@ -42,6 +42,14 @@ flydsl = [
     "numpy",
 ]
 
+# Apple silicon only. MLX launches the solver's Metal kernels on the Mac's GPU
+# and shares Metal buffers with PyTorch's MPS device through DLPack.
+# 0.32.4 is the oldest MLX the solver has been tested with.
+mlx = [
+    "mlx>=0.32.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "numpy",
+]
+
 cutn-cu12 = [
     "cuquantum-cu12",
 ]

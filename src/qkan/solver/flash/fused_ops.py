@@ -1259,8 +1259,8 @@ def _real_encoding_kernel(
     Circuit: H|0> -> [X, Ry(theta[l,0]), Z, Ry(enc_x)]×reps -> measure Z
     No final rotation. Data encoding uses Ry (not Rz).
     When COMPUTE_BF16=True, uses real-only fast path (no imaginary components).
-    When BLOCK_B>1, tiles over the batch dimension for better throughput:
-    theta loads/trig are amortized across the batch tile.
+    Tiles over the batch dimension for better throughput: theta loads/trig
+    are amortized across the batch tile.
     Grid: (out_dim * in_dim, cdiv(batch, BLOCK_B)).
     """
     pid_oi = tl.program_id(0)
@@ -2259,9 +2259,9 @@ def triton_real_forward(
 
     output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=io_dtype)
 
-    compute_bf16 = c_dtype == torch.bfloat16
+    compute_bf16 = c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
     n_oi = out_dim * in_dim
-    BLOCK_B = _select_block_b(n_oi, batch, 32 if compute_bf16 else 1)
+    BLOCK_B = _select_block_b(n_oi, batch)
     grid = (n_oi, triton.cdiv(batch, BLOCK_B))
 
     if preacts_trainable:
@@ -2425,7 +2425,7 @@ def _real_encoding_backward_kernel(
                 + state_idx * stride_s_s
                 + b_range * stride_s_b
                 + 0 * stride_s_c,
-                r0,
+                r0 * FP8_PRESCALE,
                 mask=b_mask,
             )
             tl.store(
@@ -2433,7 +2433,7 @@ def _real_encoding_backward_kernel(
                 + state_idx * stride_s_s
                 + b_range * stride_s_b
                 + 1 * stride_s_c,
-                r1,
+                r1 * FP8_PRESCALE,
                 mask=b_mask,
             )
             state_idx += 1
@@ -2452,7 +2452,7 @@ def _real_encoding_backward_kernel(
                 + state_idx * stride_s_s
                 + b_range * stride_s_b
                 + 0 * stride_s_c,
-                r0,
+                r0 * FP8_PRESCALE,
                 mask=b_mask,
             )
             tl.store(
@@ -2460,7 +2460,7 @@ def _real_encoding_backward_kernel(
                 + state_idx * stride_s_s
                 + b_range * stride_s_b
                 + 1 * stride_s_c,
-                r1,
+                r1 * FP8_PRESCALE,
                 mask=b_mask,
             )
             state_idx += 1
@@ -2472,7 +2472,7 @@ def _real_encoding_backward_kernel(
                 + state_idx * stride_s_s
                 + b_range * stride_s_b
                 + 0 * stride_s_c,
-                r0,
+                r0 * FP8_PRESCALE,
                 mask=b_mask,
             )
             tl.store(
@@ -2480,7 +2480,7 @@ def _real_encoding_backward_kernel(
                 + state_idx * stride_s_s
                 + b_range * stride_s_b
                 + 1 * stride_s_c,
-                r1,
+                r1 * FP8_PRESCALE,
                 mask=b_mask,
             )
             state_idx += 1
@@ -3065,7 +3065,7 @@ def triton_real_backward(
     pb = pb.to(io_dtype).contiguous()
     grad_output = grad_output.contiguous()
     n_oi = out_dim * in_dim
-    BLOCK_B = _select_block_b(n_oi, batch, 32 if compute_bf16 else 1)
+    BLOCK_B = _select_block_b(n_oi, batch)
 
     n_states = 3 * reps + 1  # H state + 3 per layer (after X, Ry_theta, Z)
     n_b_blocks = triton.cdiv(batch, BLOCK_B)

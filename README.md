@@ -91,6 +91,14 @@ python -c "import torch; print(torch.version.hip)"
 
 The order matters: if torch is not installed yet, `pip install qkan[flydsl]` pulls the default (CUDA/CPU) torch from PyPI, and the FlyDSL solver will refuse to run.
 
+To use the MLX solver (`solver="mlx"`) on Apple silicon Macs:
+
+```bash
+pip install qkan[mlx]
+```
+
+The model stays a PyTorch module on `device="mps"` or `device="cpu"`; only the circuit kernels run through [MLX](https://github.com/ml-explore/mlx) on the Mac's GPU.
+
 <!-- To install QKAN from source, you can use the following command:
 
 ```bash
@@ -155,6 +163,7 @@ You can find more examples in the [examples](https://jim137.github.io/qkan/examp
 | BF16/FP8 maximum throughput with CUTLASS                                  | GPU          | `cute`                | CuTe smem trig caching + __sincosf + FP8 prescaled states      | **1.95x** on GPT-2 HQKANsformer. Requires CUTLASS headers.                      |
 | BF16/FP8 mixed-precision training (alternative)                           | GPU          | `cutile`              | cuTile fused kernels with BF16/FP8 + coalesced state layout     | Best with `real` ansatz. Requires CUDA Toolkit 13.1+.                            |
 | AMD GPUs (ROCm)                                                           | AMD GPU      | `flydsl`              | FlyDSL fused kernels; state-free reversible backward            | Needs ROCm 7.x, ROCm PyTorch and `pip install qkan[flydsl]`. f32/BF16 output.      |
+| Apple silicon Macs                                                        | Apple GPU    | `mlx`                 | MLX fused Metal kernels; zero-copy buffer sharing with `mps`    | `pip install qkan[mlx]`. f32 only. 3x (tiny) to ~250x (wide layers) faster training than `exact` on `mps` (M3). |
 | Extremely large / memory-bound runs (near OOM, very large layers/batches) | GPU (or CPU) | `cutn`                | Best scaling and peak-memory reduction in the extreme benchmark | Use when size/memory dominates. Or CPU case better than `exact`. |
 
 **Ansatz choice (`pz` vs `real`)**

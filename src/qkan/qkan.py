@@ -40,7 +40,13 @@ from tqdm import tqdm  # type: ignore
 from .info import get_dist_info, print0, print_version
 from .optim.lbfgs import LBFGSFinisher
 from .qkan_epilogue import QKANEpilogue, qkan_epilogue_forward
-from .solver import get_registry, get_solver, make_base_activation, qml_solver
+from .solver import (
+    get_registry,
+    get_solver,
+    make_base_activation,
+    mlx_contracted_solver,
+    qml_solver,
+)
 
 
 class QKANLayer(nn.Module):
@@ -60,7 +66,7 @@ class QKANLayer(nn.Module):
         device :
             Device to use
         solver : Union[str, Callable]
-            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable
+            Solver to use, currently supports "qml", "exact", "flash", "cutn", "mlx" or custom callable
         ansatz : Union[str, Callable]
             Ansatz to use, "pz_encoding", "px_encoding", "rpz_encoding" or custom
         qml_device : str
@@ -90,19 +96,20 @@ class QKANLayer(nn.Module):
         fast_measure : bool
             Enable to use fast measurement in exact solver. Which would be quantum-inspired method.
             When False, the exact solver simulates the exact measurement process of quantum circuit.
-        c_dtype : torch.dtype
+        c_dtype : torch.dtype, optional
             Compute dtype for quantum simulation. Supported values:
 
-            - ``torch.complex64`` / ``torch.float32``: full-precision f32 (default)
+            - ``torch.complex64`` / ``torch.float32``: full-precision f32
             - ``torch.bfloat16``: mixed-precision bf16 I/O, f32 compute, bf16 state checkpoints
             - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints
+
+            Default ``None`` resolves to ``torch.bfloat16`` for ``"real"``, ``torch.complex64`` otherwise.
         p_dtype : torch.dtype
             Parameter dtype (``torch.float32`` or ``torch.bfloat16``).
             Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.
             The output dtype follows the layer's base ``F.linear`` term, as for
             ``nn.Linear``: ``p_dtype`` normally, the autocast dtype under
-            ``torch.autocast``. The opt-in fused epilogue does not follow
-            autocast yet and returns the solver output's dtype (#33).
+            ``torch.autocast``.
         _x0 : Optional[torch.Tensor]
             Leave for ResQKANLayer
     """
@@ -124,6 +131,7 @@ class QKANLayer(nn.Module):
                 "cute",
                 "cutile",
                 "flydsl",
+                "mlx",
                 "qiskit",
                 "cudaq",
             ],
@@ -140,7 +148,7 @@ class QKANLayer(nn.Module):
         ba_trainable: bool = True,
         is_batchnorm: bool = False,
         fast_measure: bool = True,
-        c_dtype: torch.dtype = torch.complex64,
+        c_dtype: Optional[torch.dtype] = None,
         p_dtype: torch.dtype = torch.float32,
         seed=None,
         solver_kwargs: Optional[dict] = None,
@@ -190,6 +198,7 @@ class QKANLayer(nn.Module):
                 "cute",
                 "cutile",
                 "flydsl",
+                "mlx",
                 "qiskit",
                 "cudaq",
             ],
@@ -203,9 +212,11 @@ class QKANLayer(nn.Module):
         self.is_batchnorm = is_batchnorm
         self.fast_measure = fast_measure
         self.seed = seed
+        if c_dtype is None:
+            c_dtype = torch.bfloat16 if ansatz == "real" else torch.complex64
         # Flash / cutile / cute / flydsl solvers use real-valued GPU kernels and
         # cannot operate on complex dtypes.  Transparently map complex → real so
-        # users can keep the default ``c_dtype=torch.complex64`` without error.
+        # a complex ``c_dtype`` (the default for non-real ansatzes) works.
         # Only for ansatzes the fused kernels implement: the rest fall back to
         # torch_exact_solver, whose Rz/Rx gates need the complex dtype.
         if (
@@ -233,8 +244,12 @@ class QKANLayer(nn.Module):
         # and the base linear term are collapsed into a single Triton kernel.
         # Default OFF for parity; opt-in via constructor arg, env var, or
         # ``layer.set_fused_epilogue(True)`` post-construction.
+        # The mlx solver is the exception and defaults to ON: there the sum
+        # over inputs moves into the circuit kernel itself, which never
+        # materialises postacts (QKAN_FUSED_EPILOGUE=0 turns it off).
+        _fused_env = os.environ.get("QKAN_FUSED_EPILOGUE")
         self._use_fused_epilogue: bool = (
-            os.environ.get("QKAN_FUSED_EPILOGUE", "0") == "1"
+            solver == "mlx" if _fused_env is None else _fused_env == "1"
         )
 
         self.init_parameters()
@@ -281,7 +296,6 @@ class QKANLayer(nn.Module):
                 self._theta_natural_shape = (*group, reps + 1, 1)
             elif self.ansatz == "real":
                 self._theta_natural_shape = (*group, reps, 1)
-                self.c_dtype = torch.bfloat16
             else:
                 raise NotImplementedError()
             self._theta_collapsible = True
@@ -719,21 +733,54 @@ class QKANLayer(nn.Module):
             **self.solver_kwargs,
         )
 
+    def _run_contracted_solver(
+        self, x: torch.Tensor, weight: torch.Tensor
+    ) -> Optional[torch.Tensor]:
+        """``(postacts * weight).sum(dim=2)`` from the mlx solver's fused kernel.
+
+        The kernel sums over the inputs itself, so the ``(batch, out_dim,
+        in_dim)`` postacts are never materialised. Returns None when the
+        fused route is off or does not cover this configuration; the caller
+        then contracts the output of ``_run_solver``.
+        """
+        if not (self._use_fused_epilogue and self.solver == "mlx"):
+            return None
+        return mlx_contracted_solver(
+            x,
+            self._theta_natural_v,
+            self._preacts_w_natural_v,
+            self._preacts_b_natural_v,
+            weight,
+            self.reps,
+            device=self.device,
+            ansatz=self.ansatz,
+            group=self.group,
+            preacts_trainable=self.preact_trainable,
+            fast_measure=self.fast_measure,
+            out_dim=self.out_dim,
+            dtype=self.c_dtype,
+            **self.solver_kwargs,
+        )
+
     def _forward_eval(self, x: torch.Tensor) -> torch.Tensor:
         """Inference path — uses pre-folded weights + aliased solver inputs."""
         assert x.shape[1] == self.in_dim, "Invalid input dimension"
         if self.is_batchnorm:
             x = self.bn(x)
         base_input = self.base_activation(x)
+        eff_pw = self._eff_pw
+        eff_base_w = self._eff_base_w
+        assert eff_pw is not None and eff_base_w is not None
+        main = self._run_contracted_solver(x, eff_pw)
+        if main is not None:
+            base = F.linear(base_input, eff_base_w, bias=self._bias_sum)
+            return main.to(base.dtype) + base
         postacts = self._run_solver(
             x,
             self._theta_natural_v,
             self._preacts_w_natural_v,
             self._preacts_b_natural_v,
         )
-        eff_pw = self._eff_pw
-        eff_base_w = self._eff_base_w
-        assert eff_pw is not None and eff_base_w is not None
         if self._use_fused_epilogue and postacts.is_cuda:
             return qkan_epilogue_forward(
                 postacts, eff_pw, None, base_input, eff_base_w, self._bias_sum
@@ -750,12 +797,6 @@ class QKANLayer(nn.Module):
         if self.is_batchnorm:
             x = self.bn(x)
         base_input = self.base_activation(x)
-        postacts = self._run_solver(
-            x,
-            self._theta_natural_v,
-            self._preacts_w_natural_v,
-            self._preacts_b_natural_v,
-        )
         pw_oi = self._pw_oi
         bw_oi = self._bw_oi
         if self._mask_is_identity:
@@ -765,12 +806,29 @@ class QKANLayer(nn.Module):
             mask_oi = self._mask_oi
             eff_pw = pw_oi * mask_oi
             base_w = bw_oi * mask_oi
+        use_pb = self.postact_bias_trainable or self._pb_is_nonzero
+
+        # mlx: the circuit kernel also sums over the inputs. The postact bias
+        # only shifts each output by sum_i pb * eff_pw, which stays in torch.
+        main = self._run_contracted_solver(x, eff_pw)
+        if main is not None:
+            if use_pb:
+                bias = self._pb_oi * eff_pw
+                main = main + bias.sum(dim=1, dtype=bias.dtype)
+            base = F.linear(base_input, base_w)
+            return main.to(base.dtype) + base
+
+        postacts = self._run_solver(
+            x,
+            self._theta_natural_v,
+            self._preacts_w_natural_v,
+            self._preacts_b_natural_v,
+        )
         # Fused-epilogue train path: forward is a single Triton kernel; the
         # backward fuses grad_postacts / grad_eff_pw / grad_pb into one Triton
         # kernel and keeps the two matmul-shaped gradients on cuBLAS (~4
         # launches vs ~7 eager dispatches).
 
-        use_pb = self.postact_bias_trainable or self._pb_is_nonzero
         if self._use_fused_epilogue and postacts.is_cuda:
             pb = self._pb_oi if use_pb else None
             return QKANEpilogue.apply(postacts, eff_pw, pb, base_input, base_w)
@@ -795,6 +853,12 @@ class QKANLayer(nn.Module):
         into one Triton kernel and keeps the matmul-shaped gradients on cuBLAS.
         CPU tensors and non-CUDA paths transparently fall back to the eager
         chain.
+
+        With ``solver="mlx"`` it is on by default and goes further: the sum
+        over inputs is folded into the circuit's Metal kernel, so postacts
+        are never materialised in either pass. The base linear term stays in
+        PyTorch. Turning it off restores the solver followed by the eager
+        chain.
         """
         self._use_fused_epilogue = bool(enabled)
 
@@ -811,8 +875,6 @@ class QKANLayer(nn.Module):
             random.seed(self.seed)
 
         self.theta.data.zero_()
-        if self.ansatz == "real":
-            self.c_dtype = torch.bfloat16
 
         if self.ba_trainable:
             self.base_weight.data.fill_(0.5)
@@ -921,6 +983,7 @@ class QKANLayer(nn.Module):
             postact_bias_trainable=self.postact_bias_trainable,
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
+            c_dtype=self.c_dtype,
             seed=self.seed,
             p_dim=self.p_dim,
         )
@@ -989,7 +1052,7 @@ class QKAN(nn.Module):
         device : Literal["cpu", "cuda"]
             Device to use
         solver : Union[str, Callable]
-            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable
+            Solver to use, currently supports "qml", "exact", "flash", "cutn", "mlx" or custom callable
         qml_device : str
             PennyLane device to use
         layers : QKANModuleList
@@ -1040,6 +1103,7 @@ class QKAN(nn.Module):
                 "cute",
                 "cutile",
                 "flydsl",
+                "mlx",
                 "qiskit",
                 "cudaq",
             ],
@@ -1057,7 +1121,7 @@ class QKAN(nn.Module):
         ba_trainable: bool = False,
         fast_measure: bool = True,
         save_act: bool = False,
-        c_dtype: torch.dtype = torch.complex64,
+        c_dtype: Optional[torch.dtype] = None,
         p_dtype: torch.dtype = torch.float32,
         seed=None,
         solver_kwargs: Optional[dict] = None,
@@ -1086,7 +1150,7 @@ class QKAN(nn.Module):
             device :
                 Device to use, default: "cpu"
             solver : Union[str, Callable]
-                Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable, default: "exact"
+                Solver to use, currently supports "qml", "exact", "flash", "cutn", "mlx" or custom callable, default: "exact"
             ansatz : Union[str, Callable]
                 Ansatz to use, "pz_encoding" ("pz"), "px_encoding" ("px"), "rpz_encoding" ("rpz", reduced pz encoding) or custom
             qml_device : str
@@ -1111,12 +1175,14 @@ class QKAN(nn.Module):
             p_dtype : torch.dtype
                 Parameter dtype (``torch.float32`` or ``torch.bfloat16``).
                 Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.
-            c_dtype : torch.dtype
+            c_dtype : torch.dtype, optional
                 Compute dtype for quantum simulation. Supported values:
 
-                - ``torch.complex64`` / ``torch.float32``: full-precision f32 (default)
+                - ``torch.complex64`` / ``torch.float32``: full-precision f32
                 - ``torch.bfloat16``: mixed-precision bf16 I/O, f32 compute, bf16 state checkpoints
                 - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints
+
+                Default ``None`` resolves to ``torch.bfloat16`` for ``"real"``, ``torch.complex64`` otherwise.
             seed : Any
                 Random seed, default: None
         """
@@ -1142,6 +1208,7 @@ class QKAN(nn.Module):
                 "cute",
                 "cutile",
                 "flydsl",
+                "mlx",
                 "qiskit",
                 "cudaq",
             ],
@@ -2243,6 +2310,7 @@ class QKAN(nn.Module):
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
             save_act=self.save_act,
+            c_dtype=self.c_dtype,
             seed=self.seed,
             p_dim=self.p_dim,
         )
@@ -2355,6 +2423,7 @@ class QKAN(nn.Module):
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
             save_act=self.save_act,
+            c_dtype=self.c_dtype,
             seed=self.seed,
             p_dim=self.p_dim,
         )

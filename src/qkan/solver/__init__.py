@@ -22,6 +22,7 @@ Each solver is implemented in its own module:
 - cute: CuTe DSL CUDA fused kernels
 - cutile: cuTile (NVIDIA Tile Language) fused kernels
 - flydsl: FlyDSL (AMD ROCm) fused kernels
+- mlx: MLX (Apple silicon) fused Metal kernels
 - cutn: cuQuantum tensor network contraction
 - qml: PennyLane quantum circuits
 - qiskit: IBM Quantum backends via Qiskit Runtime
@@ -44,6 +45,7 @@ from .layout import (
     score_layout,
     tile_disjoint,
 )
+from .mlx import _MLX_AVAILABLE, mlx_contracted_solver, mlx_exact_solver
 from .packing import (
     PackedCircuit,
     interaction_of,
@@ -58,6 +60,7 @@ __all__ = [
     "_CUTILE_AVAILABLE",
     "_FLASH_AVAILABLE",
     "_FLYDSL_AVAILABLE",
+    "_MLX_AVAILABLE",
     "DeviceProfile",
     "PackedCircuit",
     "QKANSolver",
@@ -74,6 +77,8 @@ __all__ = [
     "interaction_of",
     "kernel_interaction_of",
     "make_base_activation",
+    "mlx_contracted_solver",
+    "mlx_exact_solver",
     "pack_circuit",
     "qiskit_solver",
     "qml_solver",
