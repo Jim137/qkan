@@ -48,7 +48,7 @@ def run(module, x, rec=None):
     with te.autocast(enabled=rec is not None, recipe=rec):
         y = module(x)
     y.float().pow(2).mean().backward()
-    return y.detach(), x.grad, module.weight.grad
+    return y.detach(), x.grad, module.weight.grad, module.bias.grad
 
 
 def rel(a, b):
@@ -66,22 +66,28 @@ def test_init_matches_nn_linear():
         lin.reset_parameters()
 
 
+# Lowest and highest error against bf16 nn.Linear. bf16 itself is at 3e-3, so
+# a quantized GEMM is above the lower bound; a broken one is above the upper.
+PLAIN = (None, 0, 1e-2)
+FP8 = (recipe.Float8CurrentScaling(), 1e-2, 0.1)
+NVFP4 = (recipe.NVFP4BlockScaling(), 5e-2, 0.25)
+
+
+def check(lin, ref, x, rec, min_err, max_err):
+    """Output and the input, weight and bias gradients; a zero weight grad
+    (TE #3281 on sm_120) would fail too."""
+    for out, ref_out in zip(run(lin, x, rec), run(ref, x)):
+        assert out.shape == ref_out.shape
+        assert min_err <= rel(out, ref_out) < max_err
+
+
 @pytest.mark.parametrize(
-    "rec, max_err",
-    [
-        (None, 1e-2),
-        (recipe.Float8CurrentScaling(), 0.1),
-        (recipe.NVFP4BlockScaling(), 0.25),
-    ],
-    ids=["no-recipe", "fp8", "nvfp4"],
+    "rec, min_err, max_err", [PLAIN, FP8, NVFP4], ids=["no-recipe", "fp8", "nvfp4"]
 )
-def test_matches_nn_linear(rec, max_err):
-    """Output, input grad and weight grad against bf16 nn.Linear; a zero
-    weight grad (TE #3281 on sm_120) would fail too."""
+def test_matches_nn_linear(rec, min_err, max_err):
     lin, ref = pair(768, 2304)
     x = torch.randn(1024, 768, device="cuda", dtype=torch.bfloat16)
-    for out, ref_out in zip(run(lin, x, rec), run(ref, x)):
-        assert rel(out, ref_out) < max_err
+    check(lin, ref, x, rec, min_err, max_err)
 
 
 def test_nvfp4_under_torch_autocast_with_fp32_activations():
@@ -98,14 +104,54 @@ def test_nvfp4_under_torch_autocast_with_fp32_activations():
     assert torch.isfinite(lin.weight.grad).all()
 
 
+def test_from_linear_keeps_frozen_parameters():
+    ref = nn.Linear(64, 64, device="cuda").requires_grad_(False)
+    assert not any(p.requires_grad for p in TELinear.from_linear(ref).parameters())
+
+
+def test_compiled_inference_follows_te_autocast():
+    """A CUDA graph captured outside te.autocast must not answer inside it."""
+    from qkan import compile_inference
+
+    lin, _ = pair(768, 768)
+    compiled = compile_inference(lin).eval()
+    x = torch.randn(64, 768, device="cuda", dtype=torch.bfloat16)
+    with torch.no_grad():
+        plain = compiled(x).clone()
+        with te.autocast(recipe=recipe.NVFP4BlockScaling()):
+            quantized, eager = compiled(x).clone(), lin(x)
+        assert rel(quantized, plain) > 5e-2
+        torch.testing.assert_close(quantized, eager)
+        torch.testing.assert_close(compiled(x), plain)
+
+
+def test_follows_a_change_of_recipe():
+    """te.Linear keeps the quantizers of the first recipe of a class (TE #3157)."""
+    (lin, _), (fresh, _) = pair(768, 768), pair(768, 768)
+    x = torch.randn(64, 768, device="cuda", dtype=torch.bfloat16)
+    with torch.no_grad():
+        with te.autocast(recipe=recipe.NVFP4BlockScaling()):
+            lin(x)
+        with te.autocast(recipe=recipe.NVFP4BlockScaling(disable_2d_quantization=True)):
+            torch.testing.assert_close(lin(x), fresh(x), rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("rec, min_err, max_err", [FP8, NVFP4], ids=["fp8", "nvfp4"])
 @pytest.mark.parametrize(
-    "m, k, n",
-    [(1024, 768, 10), (1024, 10, 768), (1000, 768, 2304)],
-    ids=["out-features", "in-features", "tokens"],
+    "shape", [(1000, 768), (3, 197, 768), (1, 1, 768)], ids=["2d", "3d", "one-token"]
 )
-def test_unaligned_shapes_run_unquantized(m, k, n):
-    """Plain te.Linear raises on these under an NVFP4 recipe."""
+def test_any_token_count_is_quantized(shape, rec, min_err, max_err):
+    """Plain te.Linear raises on token counts that aren't multiples of 32 (16
+    for FP8); zero rows pad them instead of running them unquantized."""
+    lin, ref = pair(768, 768)
+    x = torch.randn(*shape, device="cuda", dtype=torch.bfloat16)
+    check(lin, ref, x, rec, min_err, max_err)
+
+
+@pytest.mark.parametrize("k, n", [(768, 10), (10, 768)], ids=["out", "in"])
+def test_unaligned_features_raise(k, n):
+    """Transformer Engine can't quantize them, and nothing else is run instead."""
     lin, _ = pair(k, n)
-    x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
-    for out, plain in zip(run(lin, x, recipe.NVFP4BlockScaling()), run(lin, x)):
-        torch.testing.assert_close(out, plain)
+    x = torch.randn(1024, k, device="cuda", dtype=torch.bfloat16)
+    with pytest.raises(ValueError, match="divisible"):
+        run(lin, x, recipe.NVFP4BlockScaling())
