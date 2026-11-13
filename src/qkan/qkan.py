@@ -22,6 +22,7 @@ Supported solvers:
     - Custom solvers api
 """
 
+import contextlib
 import math
 import os
 import random
@@ -390,8 +391,8 @@ class QKANLayer(nn.Module):
         # into state_dict); under p_dim=4 they alias the Parameters
         # themselves via object.__setattr__ (also kept out of state_dict).
         # ``_init_view_caches`` populates all seven attributes before any
-        # forward — they are non-None on every code path. ``.to()`` rebuilds
-        # them if param storage moved.
+        # forward — they are non-None on every code path.
+        # ``_views_released`` rebuilds them when param storage changes.
         self._theta_natural_v: torch.Tensor = None  # type: ignore[assignment]
         self._preacts_w_natural_v: torch.Tensor = None  # type: ignore[assignment]
         self._preacts_b_natural_v: torch.Tensor = None  # type: ignore[assignment]
@@ -432,18 +433,21 @@ class QKANLayer(nn.Module):
         ``p_dim`` with no Python-side dispatch.
         """
         if self.p_dim == 2:
-            theta_v = (
-                self.theta.view(*self._theta_natural_shape)
-                if self._theta_collapsible
-                else self.theta
-            )
-            pw_v = self.preacts_weight.view(*self._preacts_natural_shape)
-            pb_v = self.preacts_bias.view(*self._preacts_natural_shape)
-            oi = (self.out_dim, self.in_dim)
-            pw_oi = self.postact_weights.view(*oi)
-            pb_oi = self.postact_bias.view(*oi)
-            bw_oi = self.base_weight.view(*oi)
-            mask_oi = self.mask.view(*oi)
+            # A view made under no_grad is cut off from its parameter, which
+            # then gets no gradient: a cast or a load can run under no_grad.
+            with torch.inference_mode(False), torch.enable_grad():
+                theta_v = (
+                    self.theta.view(*self._theta_natural_shape)
+                    if self._theta_collapsible
+                    else self.theta
+                )
+                pw_v = self.preacts_weight.view(*self._preacts_natural_shape)
+                pb_v = self.preacts_bias.view(*self._preacts_natural_shape)
+                oi = (self.out_dim, self.in_dim)
+                pw_oi = self.postact_weights.view(*oi)
+                pb_oi = self.postact_bias.view(*oi)
+                bw_oi = self.base_weight.view(*oi)
+                mask_oi = self.mask.view(*oi)
         else:
             theta_v = self.theta
             pw_v = self.preacts_weight
@@ -454,13 +458,9 @@ class QKANLayer(nn.Module):
             mask_oi = self.mask
         # Bypass Module's Parameter detection so aliases don't show up
         # in state_dict / named_parameters.
-        object.__setattr__(self, "_theta_natural_v", theta_v)
-        object.__setattr__(self, "_preacts_w_natural_v", pw_v)
-        object.__setattr__(self, "_preacts_b_natural_v", pb_v)
-        object.__setattr__(self, "_pw_oi", pw_oi)
-        object.__setattr__(self, "_pb_oi", pb_oi)
-        object.__setattr__(self, "_bw_oi", bw_oi)
-        object.__setattr__(self, "_mask_oi", mask_oi)
+        views = (theta_v, pw_v, pb_v, pw_oi, pb_oi, bw_oi, mask_oi)
+        for name, view in zip(self._VIEW_CACHES, views):
+            object.__setattr__(self, name, view)
         # Stash natural-rank shape on each Parameter so optimisers (e.g.
         # QKANAdamMini) can partition by the natural shape even when
         # storage is p_dim=2-collapsed.
@@ -561,51 +561,62 @@ class QKANLayer(nn.Module):
             source = state_dict[key]
             if source.shape != target.shape and source.numel() == target.numel():
                 state_dict[key] = source.reshape(target.shape)
-        super()._load_from_state_dict(
-            state_dict,
-            prefix,
-            local_metadata,
-            strict,
-            missing_keys,
-            unexpected_keys,
-            error_msgs,
-        )
+        with self._views_released():  # with the swap flag a load swaps too
+            super()._load_from_state_dict(
+                state_dict,
+                prefix,
+                local_metadata,
+                strict,
+                missing_keys,
+                unexpected_keys,
+                error_msgs,
+            )
         # The checkpoint may carry a pruned (non-identity) mask or a nonzero
         # frozen bias — recompute the fast-path flags so the forward routes
         # don't silently skip the `* mask` / `+ postact_bias` terms.
         with torch.no_grad():
             self._mask_is_identity = bool((self.mask == 1).all())
             self._pb_is_nonzero = bool(self.postact_bias.data.any())
+        self._refresh_from_params()  # assign=True replaces the parameters
 
-    def to(self, *args, **kwargs):
-        """
-        Move the layer to the specified device.
+    def _apply(self, fn, *args, **kwargs):
+        # Every cast or move lands here, also through a parent module (#42).
+        with self._views_released():
+            super()._apply(fn, *args, **kwargs)
+        self._refresh_from_params()
+        return self
 
-        Args
-        ----
-            device : str | torch.device
-                Device to move the layer to, default: "cpu"
-        """
-        device = None
-        for arg in args:
-            if isinstance(arg, str) or isinstance(arg, torch.device):
-                device = arg
-                break
-            elif isinstance(arg, torch.dtype):
-                self.p_dtype = arg
-        if isinstance(kwargs.get("dtype"), torch.dtype):
-            self.p_dtype = kwargs["dtype"]
-        if "device" in kwargs:
-            device = kwargs["device"]
-        if device:
-            self.device = device
-            for param in self.parameters():
-                param.data = param.to(device)
-        ret = super(QKANLayer, self).to(*args, **kwargs)
-        # Param storage may have moved — rebuild cached views over the new
-        # storage. No-op under p_dim=4.
-        self._init_view_caches()
-        return ret
+    # The aliases that _init_view_caches builds, in its order.
+    _VIEW_CACHES = (
+        "_theta_natural_v",
+        "_preacts_w_natural_v",
+        "_preacts_b_natural_v",
+        "_pw_oi",
+        "_pb_oi",
+        "_bw_oi",
+        "_mask_oi",
+    )
+
+    @contextlib.contextmanager
+    def _views_released(self):
+        """Release the cached views while the parameters are replaced, then
+        rebuild them: ``torch.utils.swap_tensors`` refuses a tensor that a
+        view still references (#49)."""
+        for name in self._VIEW_CACHES:
+            object.__setattr__(self, name, None)
+        try:
+            yield
+        finally:
+            self._init_view_caches()
+
+    def _refresh_from_params(self) -> None:
+        """Re-derive what is cached from the parameters after their storage
+        changed: p_dtype, device and, in eval mode, the folded weights (#42).
+        ``_views_released`` has rebuilt the p_dim=2 views."""
+        self.p_dtype = self.theta.dtype
+        self.device = self.theta.device
+        if not self.training:
+            self.train(False)
 
     def train(self, mode: bool = True):
         ret = super().train(mode)
@@ -1295,31 +1306,15 @@ class QKAN(nn.Module):
             )
         self.input_id: Optional[torch.Tensor] = None
 
-    def to(self, *args, **kwargs):
-        """
-        Move the model to the specified device.
-
-        Args
-        ----
-            device : str | torch.device
-                Device to move the model to, default: "cpu"
-        """
-        device = None
-        for arg in args:
-            if isinstance(arg, str) or isinstance(arg, torch.device):
-                device = arg
-                break
-            elif isinstance(arg, torch.dtype):
-                self.p_dtype = arg
-        if isinstance(kwargs.get("dtype"), torch.dtype):
-            self.p_dtype = kwargs["dtype"]
-        if "device" in kwargs:
-            device = kwargs["device"]
-        if device:
-            self.device = device
-        for layer in self.layers:
-            layer.to(*args, **kwargs)
-        return super(QKAN, self).to(*args, **kwargs)
+    def _apply(self, fn, *args, **kwargs):
+        # The layers refresh themselves in their own _apply (#42).
+        super()._apply(fn, *args, **kwargs)
+        # Not layers[0]: it is an nn.Linear with is_map, and QKAN([n]) has none.
+        param = next(self.parameters(), None)
+        if param is not None:
+            self.p_dtype = param.dtype
+            self.device = param.device
+        return self
 
     @property
     def param_size(self):

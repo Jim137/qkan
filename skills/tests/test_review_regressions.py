@@ -96,13 +96,241 @@ def test_adam_then_lbfgs_through_train_():
     assert len(results["train_loss"]) == 4  # crossed the LBFGS switch
 
 
-def test_postacts_follow_the_parameter_dtype_after_to():
-    layer = QKANLayer(2, 2, reps=2, solver="exact", seed=0)
-    layer.to(dtype=torch.bfloat16)  # keyword path
+CASTS = {
+    "to(dtype=)": lambda m: m.to(dtype=torch.bfloat16),
+    "bfloat16()": lambda m: m.bfloat16(),
+    "parent.to()": lambda m: torch.nn.Sequential(m).to(torch.bfloat16)[0],
+}
+
+
+@pytest.mark.parametrize("training", [True, False], ids=["train", "eval"])
+@pytest.mark.parametrize("cast", CASTS.values(), ids=CASTS.keys())
+@pytest.mark.parametrize("p_dim", [4, 2])
+def test_cached_state_follows_a_cast(cast, p_dim, training):
+    """Only QKANLayer.to() refreshed p_dtype, the p_dim=2 views and the eval
+    folds; .bfloat16() or a parent's .to() left them stale (#42)."""
+    layer = QKANLayer(
+        2, 2, reps=2, solver="exact", seed=0, p_dim=p_dim, postact_bias_trainable=True
+    )
+    layer = cast(layer.train(training))
     assert layer.p_dtype == torch.bfloat16
-    # Solver outputs are cast to the live parameter dtype; float32 postacts
-    # would promote the output to float32.
+    # Solver outputs are cast to p_dtype; float32 postacts would promote the
+    # output to float32.
     assert layer(torch.randn(3, 2, dtype=torch.bfloat16)).dtype == torch.bfloat16
+
+
+def test_refine_keeps_the_cast_dtype():
+    model = QKAN([2, 3, 1], reps=2, solver="exact", seed=0).bfloat16()
+    assert next(model.refine(3).parameters()).dtype == torch.bfloat16
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_device_follows_a_parent_move():
+    layer = torch.nn.Sequential(QKANLayer(2, 2, reps=2, solver="exact")).cuda()[0]
+    assert layer.device.type == "cuda"
+    model = QKAN([2, 3, 1], reps=2, solver="exact").cuda()
+    assert next(model.refine(3).parameters()).is_cuda
+
+
+def test_cast_of_a_qkan_without_a_qkan_layer():
+    # is_map with a two-entry width leaves only the nn.Linear map.
+    model = QKAN([2, 1], is_map=True, hidden=4, solver="exact").double()
+    assert model.p_dtype == torch.float64
+    assert model(torch.rand(3, 2, dtype=torch.float64)).dtype == torch.float64
+    # A one-entry width has no layer and no parameter at all.
+    x = torch.rand(3, 2)
+    assert torch.equal(QKAN([2]).double()(x), x)
+
+
+@pytest.fixture(params=[False, True], ids=["set_data", "swap"])
+def swap_on_conversion(request):
+    """Run under both values of the global flag, and restore it. PyTorch swaps
+    parameters when it is set, and always for DTensor parameters (FSDP2)."""
+    before = torch.__future__.get_swap_module_params_on_conversion()
+    torch.__future__.set_swap_module_params_on_conversion(request.param)
+    yield request.param
+    torch.__future__.set_swap_module_params_on_conversion(before)
+
+
+swap_only = pytest.mark.parametrize("swap_on_conversion", [True], indirect=True)
+
+ALL_TRAINABLE = dict(
+    preact_trainable=True,
+    postact_weight_trainable=True,
+    postact_bias_trainable=True,
+    ba_trainable=True,
+)
+# The layer converted directly and through each kind of parent.
+CONVERSIONS = [
+    pytest.param(
+        lambda **kw: QKANLayer(2, 2, **kw), lambda m: m.double(), id="layer-double"
+    ),
+    pytest.param(
+        lambda **kw: torch.nn.Sequential(QKANLayer(2, 2, **kw)),
+        lambda m: m.to(torch.bfloat16),
+        id="Sequential-to(bfloat16)",
+    ),
+    pytest.param(
+        lambda **kw: QKAN([2, 2], **kw),
+        lambda m: m.cuda(),
+        id="QKAN-cuda",
+        marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA"),
+    ),
+]
+
+
+@pytest.mark.parametrize("training", [True, False], ids=["train", "eval"])
+@pytest.mark.parametrize("root, convert", CONVERSIONS)
+@pytest.mark.parametrize("p_dim", [4, 2])
+def test_conversion_rebuilds_cached_aliases(
+    swap_on_conversion, p_dim, root, convert, training
+):
+    """The cached p_dim=2 views kept the parameters referenced, and
+    torch.utils.swap_tensors refuses such a tensor: "_apply(): Couldn't swap
+    QKANLayer.theta" (#49)."""
+    model = root(reps=2, solver="exact", seed=0, p_dim=p_dim, **ALL_TRAINABLE)
+    model.train(training)
+    keys = list(model.state_dict())
+    x = torch.rand(3, 2)
+    before = model(x).detach()
+
+    model = convert(model)
+
+    layer = next(m for m in model.modules() if isinstance(m, QKANLayer))
+    theta = layer.theta
+    out = model(x.to(theta.device, theta.dtype))
+    assert (out.dtype, out.device) == (theta.dtype, theta.device)
+    tol = 2e-2 if theta.dtype == torch.bfloat16 else 1e-5
+    torch.testing.assert_close(out.detach().float().cpu(), before, atol=tol, rtol=tol)
+    # The forward must read the parameters the module holds now.
+    out.sum().backward()
+    reached = ["theta", "preacts_weight", "preacts_bias"]
+    if training:  # the eval route reads these three through detached folds
+        reached += ["base_weight", "postact_weights", "postact_bias"]
+    for name in reached:
+        assert getattr(layer, name).grad is not None, name
+    assert list(model.state_dict()) == keys
+    # A swap also takes the tensor's __dict__, where the optimisers look this up.
+    assert theta._qkan_natural_shape == layer._theta_natural_shape
+
+
+@pytest.mark.parametrize("assign", [False, True], ids=["copy", "assign"])
+@pytest.mark.parametrize("p_dim", [4, 2])
+def test_load_state_dict_gets_past_cached_aliases(swap_on_conversion, p_dim, assign):
+    """assign=True replaces the parameters and the forward kept reading the old
+    ones (#42); under the flag every load swaps, and was refused like a cast
+    (#49)."""
+    torch.manual_seed(0)
+    src = QKANLayer(2, 2, reps=2, solver="exact", p_dim=p_dim)
+    layer = QKANLayer(2, 2, reps=2, solver="exact", p_dim=p_dim)
+    keys = list(layer.state_dict())
+    layer.load_state_dict(src.state_dict(), assign=assign)
+    x = torch.randn(3, 2)
+    torch.testing.assert_close(layer(x), src(x))
+    layer(x).sum().backward()
+    assert layer.theta.grad is not None
+    assert list(layer.state_dict()) == keys
+
+
+@swap_only
+@pytest.mark.parametrize("training", [True, False], ids=["train", "eval"])
+@pytest.mark.parametrize("p_dim", [4, 2])
+def test_refused_swap_can_be_retried(swap_on_conversion, p_dim, training):
+    layer = QKANLayer(2, 2, reps=2, solver="exact", seed=0, p_dim=p_dim)
+    layer.train(training)
+    x = torch.rand(3, 2)
+    before = layer(x).detach()
+    held = layer.theta.view(-1)  # a view of the caller's own does block the swap
+    with pytest.raises(RuntimeError, match="Couldn't swap QKANLayer.theta"):
+        layer.double()
+    # theta is the first parameter, so nothing was converted yet
+    torch.testing.assert_close(layer(x).detach(), before)
+    del held
+    assert layer.double()(x.double()).dtype == torch.float64
+
+
+def test_failed_load_keeps_the_cached_aliases():
+    layer = QKANLayer(2, 2, reps=2, solver="exact", seed=0, p_dim=2)
+    x = torch.rand(3, 2)
+    before = layer(x).detach()
+
+    def reject(*args):
+        raise ValueError("rejected")
+
+    layer.register_load_state_dict_pre_hook(reject)
+    with pytest.raises(ValueError, match="rejected"):
+        layer.load_state_dict(layer.state_dict())
+    torch.testing.assert_close(layer(x).detach(), before)
+
+
+def _load(layer, **kwargs):
+    layer.load_state_dict(layer.state_dict(), **kwargs)
+
+
+# (grad mode, change). A cast or an assign load under inference_mode would
+# make the parameters inference tensors, which cannot train anyway.
+NO_GRAD_CHANGES = {
+    "double": (torch.no_grad, lambda layer: layer.double()),
+    "load": (torch.no_grad, _load),
+    "assign load": (torch.no_grad, lambda layer: _load(layer, assign=True)),
+    "load in inference_mode": (torch.inference_mode, _load),
+}
+
+
+@pytest.mark.parametrize("change", NO_GRAD_CHANGES)
+@pytest.mark.parametrize("p_dim", [4, 2])
+def test_conversion_under_no_grad_keeps_the_layer_trainable(
+    swap_on_conversion, p_dim, change
+):
+    """A view rebuilt under no_grad is cut off from its parameter: the layer
+    ran, but its parameters got no gradient any more."""
+    layer = QKANLayer(
+        2, 2, reps=2, solver="exact", seed=0, p_dim=p_dim, **ALL_TRAINABLE
+    )
+    no_grad, convert = NO_GRAD_CHANGES[change]
+    with no_grad():  # e.g. an evaluation that loads EMA weights
+        convert(layer)
+    layer(torch.rand(3, 2, dtype=layer.theta.dtype)).sum().backward()
+    for name, param in layer.named_parameters():
+        assert param.grad is not None or not param.requires_grad, name
+
+
+VIEW_OF = {
+    "_theta_natural_v": "theta",
+    "_preacts_w_natural_v": "preacts_weight",
+    "_preacts_b_natural_v": "preacts_bias",
+    "_pw_oi": "postact_weights",
+    "_pb_oi": "postact_bias",
+    "_bw_oi": "base_weight",
+    "_mask_oi": "mask",
+}
+
+
+@pytest.mark.parametrize("p_dim", [4, 2])
+def test_cached_views_alias_their_own_parameter(p_dim):
+    layer = QKANLayer(2, 2, reps=2, solver="exact", p_dim=p_dim)
+    assert set(QKANLayer._VIEW_CACHES) == set(VIEW_OF)
+    for alias, name in VIEW_OF.items():
+        view, param = getattr(layer, alias), getattr(layer, name)
+        assert view is param or view._base is param, alias
+
+
+@pytest.mark.parametrize("assign", [False, True], ids=["copy", "assign"])
+@pytest.mark.parametrize("p_dim", [4, 2])
+def test_load_into_an_eval_layer_refolds_its_weights(p_dim, assign):
+    """A pruned mask and a frozen postact bias both live in the eval folds."""
+    src = QKANLayer(2, 2, reps=2, solver="exact", seed=0, p_dim=p_dim)
+    with torch.no_grad():
+        src.mask.view(-1)[0] = 0
+        src.postact_bias.normal_()
+    state = {k: v.double() for k, v in src.state_dict().items()}
+    src.load_state_dict(state)  # recomputes src's own mask and bias flags
+    layer = QKANLayer(2, 2, reps=2, solver="exact", seed=1, p_dim=p_dim).eval()
+    layer.load_state_dict(state, assign=assign)
+    if assign:
+        assert layer.p_dtype == torch.float64
+    x = torch.rand(3, 2, dtype=layer.theta.dtype)
+    torch.testing.assert_close(layer(x), src(x.float()).to(x.dtype))
 
 
 def test_adabelief_eager_fallback_mixed_state_dtype():
