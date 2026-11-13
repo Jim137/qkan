@@ -1401,6 +1401,22 @@ class QKAN(nn.Module):
         Initialize from another model.
         Used for layer extension to refine the model.
 
+        The reps of ``another_model`` become the first reps of this model,
+        which must have at least as many. Where the ansatz allows it, the
+        added reps start as the identity, so that every edge keeps its
+        activation:
+
+        - ``"pz_encoding"``, ``"rpz_encoding"``, ``"mix"``: kept.
+        - ``"real"``: kept with ``preact_trainable=True``. With frozen
+          preacts each added rep applies ``Ry(x)``, which raises the
+          frequency of the activation, so no initialization can keep it.
+        - ``"px_encoding"``: not kept, no identity is set up for it.
+        - custom ansatz or solver: theta fills the leading block of the new
+          theta; what the rest computes is up to the callable.
+
+        Theta, the preacts, the postact weights and bias and the base weights
+        are copied; a pruning mask and the batchnorm layer are not.
+
         Args
         ----
             another_model : QKAN
@@ -1408,6 +1424,9 @@ class QKAN(nn.Module):
         """
         assert all(x == y for x, y in zip(self.width, another_model.width)), (
             "Cannot initialize from another model with different width"
+        )
+        assert self.reps >= another_model.reps, (
+            "Cannot initialize from another model with more reps"
         )
         count = -2
         for l, layer in enumerate(self.layers):
@@ -1417,22 +1436,39 @@ class QKAN(nn.Module):
                 layer.reset_parameters()
                 # Use natural-rank views so the slice indexing is identical
                 # regardless of p_dim on either side.
+                reps = src_layer.reps
                 src_t = src_layer._theta_natural().data
                 dst_t = layer._theta_natural().data
-                src_pw = src_layer._preacts_w_natural().data
                 dst_pw = layer._preacts_w_natural().data
-                src_pb = src_layer._preacts_b_natural().data
-                dst_pb = layer._preacts_b_natural().data
-                for i in range(src_layer.reps):
-                    dst_t[..., i, :].copy_(src_t[..., i, :])
-                    dst_pw[..., i].copy_(src_pw[..., i])
-                    dst_pb[..., i].copy_(src_pb[..., i])
-                dst_t[..., src_layer.reps, :].copy_(src_t[..., src_layer.reps, :])
-                # Added reps stay at zero from reset_parameters; for
-                # pz/rpz/px this is identity, so refine() is function-
-                # preserving at step 0. For "real" ansatz, theta=0 gives
-                # X·Z (not identity), so the refine boundary is
-                # discontinuous for that ansatz.
+                dst_pw[..., :reps].copy_(src_layer._preacts_w_natural().data)
+                layer._preacts_b_natural().data[..., :reps].copy_(
+                    src_layer._preacts_b_natural().data
+                )
+                if not layer._theta_collapsible:
+                    # Custom theta has the user's layout: the source fills the
+                    # leading block of the target.
+                    assert src_t.dim() == dst_t.dim(), (
+                        "Cannot initialize a custom theta from one of another rank"
+                    )
+                    dst_t[tuple(slice(n) for n in src_t.shape)].copy_(src_t)
+                else:
+                    # One slice per rep, then the final layer (real has none);
+                    # a theta shared by a group broadcasts over the edges.
+                    dst_t[..., : src_t.shape[-2], :].copy_(src_t)
+                    # The added reps keep the reset values (theta 0, preacts 1
+                    # and 0): for pz/rpz they are Rz data gates only, which
+                    # do not change the Z measurement.
+                    if layer.ansatz == "mix" and layer.reps > reps:
+                        # Nor do the Ry data gates of mix once they sit between
+                        # Rx(-pi/2) and Rx(pi/2): Rx(pi/2) Ry(x) Rx(-pi/2) = Rz(x).
+                        dst_t[..., reps, 1] -= math.pi / 2
+                        dst_t[..., -1, 1] = math.pi / 2
+                    elif layer.ansatz == "real":
+                        # Z Ry(-pi) X = I, and a zero weight makes the data
+                        # gate Ry(w x + b) the identity too.
+                        dst_t[..., reps:, :] = -math.pi
+                        if layer.preact_trainable:
+                            dst_pw[..., reps:] = 0
                 # (O, I) params: copy via 2D view to bridge p_dim differences.
                 layer._as_oi(layer.postact_weights).data.copy_(
                     src_layer._as_oi(src_layer.postact_weights).data
@@ -1440,6 +1476,8 @@ class QKAN(nn.Module):
                 layer._as_oi(layer.postact_bias).data.copy_(
                     src_layer._as_oi(src_layer.postact_bias).data
                 )
+                # reset_parameters cleared it; a frozen bias is skipped without
+                layer._pb_is_nonzero = bool(layer.postact_bias.data.any())
                 layer._as_oi(layer.base_weight).data.copy_(
                     src_layer._as_oi(src_layer.base_weight).data
                 )
@@ -1466,6 +1504,12 @@ class QKAN(nn.Module):
     def refine(self, new_reps: int) -> "QKAN":
         """
         Refine the model by layer extension, increasing the number of repetitions of quantum layers.
+
+        The new model starts from the parameters of this one. Every edge keeps
+        its activation for ``"pz_encoding"``, ``"rpz_encoding"``, ``"mix"`` and
+        for ``"real"`` with ``preact_trainable=True``, but not for ``"real"``
+        with frozen preacts nor for ``"px_encoding"``, see
+        :meth:`initialize_from_another_model`.
 
         Args
         ----
