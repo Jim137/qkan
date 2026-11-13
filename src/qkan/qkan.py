@@ -90,12 +90,14 @@ class QKANLayer(nn.Module):
         fast_measure : bool
             Enable to use fast measurement in exact solver. Which would be quantum-inspired method.
             When False, the exact solver simulates the exact measurement process of quantum circuit.
-        c_dtype : torch.dtype
+        c_dtype : torch.dtype, optional
             Compute dtype for quantum simulation. Supported values:
 
-            - ``torch.complex64`` / ``torch.float32``: full-precision f32 (default)
+            - ``torch.complex64`` / ``torch.float32``: full-precision f32
             - ``torch.bfloat16``: mixed-precision bf16 I/O, f32 compute, bf16 state checkpoints
             - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints
+
+            Default ``None`` resolves to ``torch.bfloat16`` for ``"real"``, ``torch.complex64`` otherwise.
         p_dtype : torch.dtype
             Parameter dtype (``torch.float32`` or ``torch.bfloat16``).
             Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.
@@ -139,7 +141,7 @@ class QKANLayer(nn.Module):
         ba_trainable: bool = True,
         is_batchnorm: bool = False,
         fast_measure: bool = True,
-        c_dtype: torch.dtype = torch.complex64,
+        c_dtype: Optional[torch.dtype] = None,
         p_dtype: torch.dtype = torch.float32,
         seed=None,
         solver_kwargs: Optional[dict] = None,
@@ -202,9 +204,11 @@ class QKANLayer(nn.Module):
         self.is_batchnorm = is_batchnorm
         self.fast_measure = fast_measure
         self.seed = seed
+        if c_dtype is None:
+            c_dtype = torch.bfloat16 if ansatz == "real" else torch.complex64
         # Flash / cutile / cute / flydsl solvers use real-valued GPU kernels and
         # cannot operate on complex dtypes.  Transparently map complex → real so
-        # users can keep the default ``c_dtype=torch.complex64`` without error.
+        # a complex ``c_dtype`` (the default for non-real ansatzes) works.
         # Only for ansatzes the fused kernels implement: the rest fall back to
         # torch_exact_solver, whose Rz/Rx gates need the complex dtype.
         if (
@@ -280,7 +284,6 @@ class QKANLayer(nn.Module):
                 self._theta_natural_shape = (*group, reps + 1, 1)
             elif self.ansatz == "real":
                 self._theta_natural_shape = (*group, reps, 1)
-                self.c_dtype = torch.bfloat16
             else:
                 raise NotImplementedError()
             self._theta_collapsible = True
@@ -823,8 +826,6 @@ class QKANLayer(nn.Module):
             random.seed(self.seed)
 
         self.theta.data.zero_()
-        if self.ansatz == "real":
-            self.c_dtype = torch.bfloat16
 
         if self.ba_trainable:
             self.base_weight.data.fill_(0.5)
@@ -933,6 +934,7 @@ class QKANLayer(nn.Module):
             postact_bias_trainable=self.postact_bias_trainable,
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
+            c_dtype=self.c_dtype,
             seed=self.seed,
             p_dim=self.p_dim,
         )
@@ -1069,7 +1071,7 @@ class QKAN(nn.Module):
         ba_trainable: bool = False,
         fast_measure: bool = True,
         save_act: bool = False,
-        c_dtype: torch.dtype = torch.complex64,
+        c_dtype: Optional[torch.dtype] = None,
         p_dtype: torch.dtype = torch.float32,
         seed=None,
         solver_kwargs: Optional[dict] = None,
@@ -1123,12 +1125,14 @@ class QKAN(nn.Module):
             p_dtype : torch.dtype
                 Parameter dtype (``torch.float32`` or ``torch.bfloat16``).
                 Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.
-            c_dtype : torch.dtype
+            c_dtype : torch.dtype, optional
                 Compute dtype for quantum simulation. Supported values:
 
-                - ``torch.complex64`` / ``torch.float32``: full-precision f32 (default)
+                - ``torch.complex64`` / ``torch.float32``: full-precision f32
                 - ``torch.bfloat16``: mixed-precision bf16 I/O, f32 compute, bf16 state checkpoints
                 - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints
+
+                Default ``None`` resolves to ``torch.bfloat16`` for ``"real"``, ``torch.complex64`` otherwise.
             seed : Any
                 Random seed, default: None
         """
@@ -2274,6 +2278,7 @@ class QKAN(nn.Module):
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
             save_act=self.save_act,
+            c_dtype=self.c_dtype,
             seed=self.seed,
             p_dim=self.p_dim,
         )
@@ -2386,6 +2391,7 @@ class QKAN(nn.Module):
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
             save_act=self.save_act,
+            c_dtype=self.c_dtype,
             seed=self.seed,
             p_dim=self.p_dim,
         )

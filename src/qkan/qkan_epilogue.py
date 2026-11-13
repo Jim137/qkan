@@ -105,6 +105,10 @@ if _TRITON_AVAILABLE:
         pid_m = tl.program_id(0)
         pid_n = tl.program_id(1)
 
+        # Batch-scaled offsets (b * O*I into postacts) pass 2^31 elements at
+        # realistic sizes (#35).  As in fused_ops, offs_m stays int32 and only
+        # its products with a batch stride are widened; the backward kernel
+        # does the same with offs_b.
         offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)  # batch tile
         offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)  # out tile
 
@@ -120,7 +124,7 @@ if _TRITON_AVAILABLE:
             # postacts[b, o, i]: [BLOCK_M, BLOCK_N, BLOCK_I]
             p_ptrs = (
                 postacts_ptr
-                + offs_m[:, None, None] * sp_b
+                + offs_m[:, None, None].to(tl.int64) * sp_b
                 + offs_n[None, :, None] * sp_o
                 + offs_i[None, None, :] * sp_i
             )
@@ -143,7 +147,11 @@ if _TRITON_AVAILABLE:
                 term = postacts_tile * eff_pw_tile[None, :, :]
 
             # base_input[b, i]: [BLOCK_M, BLOCK_I]
-            bi_ptrs = base_input_ptr + offs_m[:, None] * sbi_b + offs_i[None, :] * sbi_i
+            bi_ptrs = (
+                base_input_ptr
+                + offs_m[:, None].to(tl.int64) * sbi_b
+                + offs_i[None, :] * sbi_i
+            )
             bi_mask = m_mask[:, None] & i_mask[None, :]
             base_input_tile = tl.load(bi_ptrs, mask=bi_mask, other=0.0).to(tl.float32)
 
@@ -160,7 +168,9 @@ if _TRITON_AVAILABLE:
             bs = tl.load(bias_sum_ptr + offs_n, mask=n_mask, other=0.0).to(tl.float32)
             acc += bs[None, :]
 
-        out_ptrs = out_ptr + offs_m[:, None] * so_b + offs_n[None, :] * so_o
+        out_ptrs = (
+            out_ptr + offs_m[:, None].to(tl.int64) * so_b + offs_n[None, :] * so_o
+        )
         out_mask = m_mask[:, None] & n_mask[None, :]
         tl.store(out_ptrs, acc.to(out_ptr.dtype.element_ty), mask=out_mask)
 
@@ -245,7 +255,11 @@ if _TRITON_AVAILABLE:
             b_mask = offs_b < B
 
             # grad_out[B, O] tile -> [BLOCK_B, BLOCK_N]
-            go_ptrs = grad_out_ptr + offs_b[:, None] * sgo_b + offs_n[None, :] * sgo_o
+            go_ptrs = (
+                grad_out_ptr
+                + offs_b[:, None].to(tl.int64) * sgo_b
+                + offs_n[None, :] * sgo_o
+            )
             go_mask = b_mask[:, None] & n_mask[None, :]
             go_tile = tl.load(go_ptrs, mask=go_mask, other=0.0).to(tl.float32)
 
@@ -253,7 +267,7 @@ if _TRITON_AVAILABLE:
                 # postacts[B, O, I] tile
                 p_ptrs = (
                     postacts_ptr
-                    + offs_b[:, None, None] * sp_b
+                    + offs_b[:, None, None].to(tl.int64) * sp_b
                     + offs_n[None, :, None] * sp_o
                     + offs_i[None, None, :] * sp_i
                 )
@@ -271,7 +285,7 @@ if _TRITON_AVAILABLE:
                 gp = go_tile[:, :, None] * pw_tile[None, :, :]
                 gp_ptrs = (
                     grad_postacts_ptr
-                    + offs_b[:, None, None] * sgp_b
+                    + offs_b[:, None, None].to(tl.int64) * sgp_b
                     + offs_n[None, :, None] * sgp_o
                     + offs_i[None, None, :] * sgp_i
                 )
@@ -360,9 +374,10 @@ def qkan_epilogue_forward(
 ) -> torch.Tensor:
     """Fused (B, O, I) epilogue forward returning (B, O).
 
-    All tensors must be CUDA + contiguous in their natural layout (the kernel
-    reads via strides, but contiguity gives the best throughput).  The output
-    follows CUDA autocast, as the eager route's ``F.linear`` does.
+    All tensors must be on CUDA.  ``postacts`` and ``base_input`` are made
+    contiguous here: the kernel's int64 offsets (#35) assume batch is the
+    outermost dimension, and the exact solver returns postacts batch-innermost.
+    The output follows CUDA autocast, as the eager route's ``F.linear`` does.
     """
     if not _TRITON_AVAILABLE:
         raise ImportError("Triton is required for qkan_epilogue_forward.")
@@ -376,6 +391,8 @@ def qkan_epilogue_forward(
         assert pb.shape == (O, I)
     if bias_sum is not None:
         assert bias_sum.shape == (O,)
+    postacts = postacts.contiguous()
+    base_input = base_input.contiguous()
 
     out_dtype = _output_dtype(postacts.dtype)
     out = torch.empty((B, O), device=postacts.device, dtype=out_dtype)
@@ -522,6 +539,9 @@ def qkan_epilogue_backward(
             grad_out, postacts, eff_pw, pb, base_input, base_w, needs
         )
 
+    # Batch outermost, as in the forward.
+    grad_out = grad_out.contiguous()
+    postacts = postacts.contiguous()
     B, O, I = postacts.shape
 
     grad_postacts: Optional[torch.Tensor] = None
@@ -622,6 +642,8 @@ class QKANEpilogue(torch.autograd.Function):
         base_input: torch.Tensor,
         base_w: torch.Tensor,
     ) -> torch.Tensor:
+        # Save the layout the kernels need, so the backward doesn't copy again.
+        postacts = postacts.contiguous()
         ctx.save_for_backward(postacts, eff_pw, pb, base_input, base_w)
         ctx.has_pb = pb is not None
         return qkan_epilogue_forward(postacts, eff_pw, pb, base_input, base_w, None)
@@ -637,7 +659,6 @@ class QKANEpilogue(torch.autograd.Function):
         Optional[torch.Tensor],
     ]:
         postacts, eff_pw, pb, base_input, base_w = ctx.saved_tensors
-        grad_out = grad_out.contiguous()
         needs = (
             ctx.needs_input_grad[0],
             ctx.needs_input_grad[1],
