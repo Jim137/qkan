@@ -566,7 +566,7 @@ def cutile_real_forward(
     output = torch.empty(batch, out_dim, in_dim, device=x.device, dtype=io_dtype)
 
     n_oi = out_dim * in_dim
-    BLOCK_B = _select_block_b(n_oi, batch, 32 if compute_bf16 else 1)
+    BLOCK_B = _select_block_b(n_oi, batch)
     grid = (n_oi, math.ceil(batch / BLOCK_B), 1)
 
     kernel = (
@@ -2099,7 +2099,6 @@ def cutile_real_backward(
     grad_output = grad_output.contiguous()
 
     n_oi = out_dim * in_dim
-    # cuTile real: always use BLOCK_B>=32 (coalesced layout makes larger blocks efficient)
     BLOCK_B = _select_block_b(n_oi, batch)
 
     n_states = 3 * reps + 1
