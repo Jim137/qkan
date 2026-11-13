@@ -41,21 +41,22 @@ DTYPES = [torch.float32, torch.bfloat16]
 AUTOCAST = dict(device_type="cuda", dtype=torch.bfloat16)
 
 
-def make_layer(solver, dtype, **kwargs):
+def make_layer(solver, dtype, fused=False, **kwargs):
     torch.manual_seed(0)
     layer = QKANLayer(12, 10, reps=2, solver=solver, device="cuda", **kwargs)
     layer = layer.to(dtype)
-    layer.set_fused_epilogue(False)  # independent of QKAN_FUSED_EPILOGUE
+    layer.set_fused_epilogue(fused)  # independent of QKAN_FUSED_EPILOGUE
     x = torch.randn(48, 12, device="cuda", dtype=dtype, requires_grad=True)
     return layer, x
 
 
+@pytest.mark.parametrize("fused", [False, True], ids=["eager", "fused"])
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("solver", SOLVERS)
-def test_train_route(solver, dtype):
+def test_train_route(solver, dtype, fused):
     """Outside autocast the output keeps the parameter dtype; under bf16
     autocast it is bf16 -- for fp32 parameters too, as nn.Linear behaves."""
-    layer, x = make_layer(solver, dtype)
+    layer, x = make_layer(solver, dtype, fused)
     assert layer(x).dtype == dtype
     with torch.autocast(**AUTOCAST):
         y = layer(x)
@@ -64,10 +65,11 @@ def test_train_route(solver, dtype):
     assert x.grad is not None and x.grad.dtype == dtype
 
 
+@pytest.mark.parametrize("fused", [False, True], ids=["eager", "fused"])
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("solver", SOLVERS)
-def test_eval_route(solver, dtype):
-    layer, x = make_layer(solver, dtype, postact_bias_trainable=True)
+def test_eval_route(solver, dtype, fused):
+    layer, x = make_layer(solver, dtype, fused, postact_bias_trainable=True)
     layer.eval()
     with torch.no_grad():
         assert layer(x).dtype == dtype
@@ -100,25 +102,41 @@ def test_stacked_network(dtype):
     assert x.grad is not None and x.grad.dtype == dtype
 
 
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_fused_epilogue_stack_matches_eager(dtype):
+    """Fused layers return the autocast dtype like eager ones (#33), so the
+    second layer gets bf16 input against its own weights in backward."""
+    grads = []
+    for fused in (False, True):
+        torch.manual_seed(0)
+        net = QKAN(
+            width=[12, 8, 6], reps=2, solver="exact", device="cuda", ba_trainable=True
+        ).to(dtype)
+        for layer in net.layers:
+            layer.set_fused_epilogue(fused)
+        x = torch.randn(48, 12, device="cuda", dtype=dtype, requires_grad=True)
+        with torch.autocast(**AUTOCAST):
+            y = net(x)
+        assert y.dtype == torch.bfloat16
+        y.float().sum().backward()
+        grads.append(x.grad)
+    torch.testing.assert_close(grads[1], grads[0], rtol=2e-2, atol=2e-2)
+
+
+@pytest.mark.parametrize("fused", [False, True], ids=["eager", "fused"])
 @pytest.mark.parametrize(
-    "dtype",
-    [
-        pytest.param(
-            torch.float32,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="fused epilogue takes its output dtype from postacts, "
-                "not autocast (#33)",
-            ),
-        ),
-        torch.bfloat16,
-    ],
+    "dtype, autocast", [(torch.bfloat16, False), (torch.float64, True)]
 )
-def test_fused_epilogue_route(dtype):
-    layer, x = make_layer("exact", dtype)
-    layer.set_fused_epilogue(True)
-    with torch.autocast(**AUTOCAST):
-        assert layer(x).dtype == torch.bfloat16
+def test_output_takes_the_weights_dtype(dtype, autocast, fused):
+    """As F.linear's does.  A callable solver's postacts need not have the
+    weights' dtype: fp32 here, which autocast would turn into bf16."""
+
+    def solver(x, *args, **kwargs):
+        return x.float().cos()[:, None, :].expand(-1, 10, -1)
+
+    layer, x = make_layer(solver, dtype, fused, theta_size=[1, 1])
+    with torch.autocast(enabled=autocast, **AUTOCAST):
+        assert layer(x).dtype == dtype
 
 
 @pytest.mark.skipif(not _CUTE_AVAILABLE, reason="no CuTe extension")
