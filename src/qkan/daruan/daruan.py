@@ -105,7 +105,6 @@ class DARUAN(nn.Module):
         self.p_dim: Literal[2, 4] = p_dim
         self.dim = dim
         self.reps = reps
-        self.device = device
         self.solver: Literal["qml", "exact"] = solver
         self.ansatz = ansatz
 
@@ -147,6 +146,11 @@ class DARUAN(nn.Module):
             torch.zeros(dim, device=device),
             requires_grad=postact_bias_trainable,
         )
+
+    @property
+    def device(self) -> torch.device:
+        """Device of the parameters; read-only so it cannot go stale."""
+        return self.theta.device
 
     def _theta_natural(self) -> torch.Tensor:
         """Theta in its 3D natural shape ``(dim, reps+1, K)``."""
