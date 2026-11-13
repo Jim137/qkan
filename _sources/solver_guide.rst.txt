@@ -33,6 +33,10 @@ Solver Overview
      - AMD GPU
      - FlyDSL (AMD ROCm) fused kernels for ``pz``, ``rpz`` and ``real``. Unrolls ``reps`` at compile time and recovers backward states by un-applying gates, so no state checkpoints are stored. f32 or BF16 output.
      - ROCm 7.x and a ROCm PyTorch, then ``pip install qkan[flydsl]``
+   * - ``mlx``
+     - Apple GPU
+     - MLX fused Metal kernels for ``pz``, ``rpz``, ``real`` and ``mix`` on Apple silicon. Same state-free backward as ``flydsl``; shares Metal buffers with PyTorch's ``mps`` device without copies. f32 only.
+     - ``pip install qkan[mlx]``
    * - ``cutn``
      - GPU / CPU
      - cuQuantum tensor network contraction. Best for extremely large layers near OOM.
@@ -84,6 +88,101 @@ Performance (from `#12 <https://github.com/Jim137/qkan/issues/12>`_):
    Use FP8 only for ``c_dtype``.
 
 
+Apple Silicon (MLX)
+-------------------
+
+The ``mlx`` solver runs the circuit in Metal kernels launched through
+`MLX <https://github.com/ml-explore/mlx>`_ on the Mac's GPU. The model, the
+optimizer and the training loop stay in PyTorch:
+
+.. code-block:: python
+
+   qkan = QKAN([784, 64, 10], solver="mlx", device="mps")   # or device="cpu"
+
+- One kernel evaluates the whole circuit for ``pz``, ``rpz``, ``real`` and
+  ``mix``; ``px`` and custom ansatzes fall back to the ``exact`` solver.
+- The kernel also performs the layer's sum over inputs,
+  ``sum_i postacts[b, o, i] * postact_weights[o, i]``, and returns
+  ``(batch, out_dim)`` directly, so the ``(batch, out_dim, in_dim)`` tensor is
+  never materialised in the forward or the backward pass. This is on by
+  default for ``mlx``; ``layer.set_fused_epilogue(False)`` or
+  ``QKAN_FUSED_EPILOGUE=0`` restores the solver followed by the PyTorch
+  epilogue. A layer whose thetas are shared across outputs (``group`` equal to
+  ``in_dim``) always takes that unfused route, as does ``forward_no_sum``.
+- The backward pass recomputes the circuit and walks the adjoint back through
+  the gates like ``flydsl``, so no per-repetition state is stored in memory,
+  and it has no second derivatives.
+- With ``device="mps"`` PyTorch and MLX address the same Metal buffers through
+  DLPack: inputs, outputs and gradients cross without a copy. The two
+  frameworks use separate Metal command queues, so the solver waits for
+  pending PyTorch work before each launch.
+- With ``device="cpu"`` the kernels still run on the GPU and the output is a
+  zero-copy view of MLX's buffer. No queue has to be flushed, which makes this
+  the faster choice for small models.
+- Compute is float32 (Metal has no float64): ``c_dtype=torch.complex128`` falls
+  back to ``exact``, and bf16 parameters are widened to float32 for the launch.
+
+Training step (forward, loss, backward, Adam) and inference forward for the
+default ``pz`` ansatz with ``reps=3`` on an M3 (10-core GPU, 16 GB), PyTorch
+2.15, MLX 0.32.4, in milliseconds, from ``scripts/bench_mlx_solver.py``:
+
+.. list-table:: Train step / inference forward (ms)
+   :header-rows: 1
+   :widths: 22 14 14 14 14 22
+
+   * - Widths, batch
+     - ``exact`` on ``mps``
+     - ``exact`` on ``cpu``
+     - ``mlx`` on ``mps``
+     - ``mlx`` on ``cpu``
+     - Train speed-up over ``exact`` on ``mps`` (``mlx`` on ``mps`` / ``cpu``)
+   * - [4, 8, 2], 64
+     - 7.43 / 3.02
+     - 2.72 / 0.78
+     - 2.89 / 0.98
+     - 1.51 / 0.53
+     - 2.6x / 4.9x
+   * - [16, 32, 16], 256
+     - 65.5 / 33.2
+     - 122 / 50.7
+     - 2.62 / 1.05
+     - 1.51 / 0.61
+     - 25x / 43x
+   * - [64, 64, 64], 512
+     - 1032 / 493
+     - 1884 / 807
+     - 4.00 / 1.51
+     - 3.29 / 1.07
+     - 258x / 314x
+   * - [784, 64, 10], 64
+     - 785 / 389
+     - 390 / 172
+     - 3.71 / 1.36
+     - 3.19 / 0.91
+     - 212x / 246x
+   * - [784, 64, 10], 256
+     - not run
+     - not run
+     - 6.52 / 2.18
+     - 6.07 / 1.84
+     -
+   * - [100, 100, 100], 1000
+     - not run
+     - not run
+     - 10.6 / 3.06
+     - 9.65 / 2.62
+     -
+
+The ``exact`` solver keeps several complex ``(batch, out_dim, in_dim, 2)``
+states per repetition for autograd; at the two largest shapes that is more
+memory than the machine has, so it was not timed there.
+
+Summing over the inputs inside the kernel is worth 1.5--2.1x of that training
+speed and 1.6--3.1x of the inference speed at the four largest shapes
+(compare with ``QKAN_FUSED_EPILOGUE=0``). On the two small models a step is
+mostly fixed launch latency and it makes no measurable difference.
+
+
 Performance Tuning
 ------------------
 
@@ -103,7 +202,7 @@ so behavior matches earlier releases unless you enable them.
      - ~1/reps rep-state memory
      - +1 forward pass
    * - ``fused_epilogue``
-     - flash / cute / cutile epilogue
+     - flash / cute / cutile epilogue (``mlx`` fuses by default)
      - 2 intermediate buffers, ~3 launches
      - CUDA-only fast path
    * - bf16 optimizer state
@@ -167,6 +266,10 @@ When to use:
 - CUDA training/inference where the post-activation epilogue is a measurable
   fraction of step time (deep stacks, small ``out_dim``, or after the quantum
   kernel itself has been fused).
+
+The ``mlx`` solver has its own version of this, on by default, which folds
+the sum into the circuit kernel instead of running a second one (see
+`Apple Silicon (MLX)`_).
 
 Tradeoff: CUDA-only fast path; CPU tensors fall back to the eager chain
 transparently. Numerics match eager within bf16/f32 rounding; gradients are

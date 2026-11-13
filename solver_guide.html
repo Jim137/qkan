@@ -53,6 +53,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#solver-overview">Solver Overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#ansatz-choice">Ansatz Choice</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#mixed-precision">Mixed Precision</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#apple-silicon-mlx">Apple Silicon (MLX)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#performance-tuning">Performance Tuning</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#activation-checkpointing-the-rep-loop">Activation Checkpointing the Rep Loop</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#fused-triton-epilogue">Fused Triton Epilogue</a></li>
@@ -143,22 +144,27 @@ Choose the right solver based on your hardware, model size, and deployment targe
 <td><p>FlyDSL (AMD ROCm) fused kernels for <code class="docutils literal notranslate"><span class="pre">pz</span></code>, <code class="docutils literal notranslate"><span class="pre">rpz</span></code> and <code class="docutils literal notranslate"><span class="pre">real</span></code>. Unrolls <code class="docutils literal notranslate"><span class="pre">reps</span></code> at compile time and recovers backward states by un-applying gates, so no state checkpoints are stored. f32 or BF16 output.</p></td>
 <td><p>ROCm 7.x and a ROCm PyTorch, then <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">qkan[flydsl]</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">cutn</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">mlx</span></code></p></td>
+<td><p>Apple GPU</p></td>
+<td><p>MLX fused Metal kernels for <code class="docutils literal notranslate"><span class="pre">pz</span></code>, <code class="docutils literal notranslate"><span class="pre">rpz</span></code>, <code class="docutils literal notranslate"><span class="pre">real</span></code> and <code class="docutils literal notranslate"><span class="pre">mix</span></code> on Apple silicon. Same state-free backward as <code class="docutils literal notranslate"><span class="pre">flydsl</span></code>; shares Metal buffers with PyTorch’s <code class="docutils literal notranslate"><span class="pre">mps</span></code> device without copies. f32 only.</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">qkan[mlx]</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">cutn</span></code></p></td>
 <td><p>GPU / CPU</p></td>
 <td><p>cuQuantum tensor network contraction. Best for extremely large layers near OOM.</p></td>
 <td><p>GPU: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">cuquantum</span></code>, CPU: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">opt-einsum</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">qml</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">qml</span></code></p></td>
 <td><p>CPU</p></td>
 <td><p>PennyLane quantum circuits. For demonstration, not optimized.</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">pennylane</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">qiskit</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">qiskit</span></code></p></td>
 <td><p>IBM QPU</p></td>
 <td><p>IBM Quantum backends via Qiskit Runtime. For real quantum device inference.</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">qiskit</span> <span class="pre">qiskit-ibm-runtime</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">cudaq</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">cudaq</span></code></p></td>
 <td><p>QPU / GPU</p></td>
 <td><p>NVIDIA CUDA-Q. Supports AWS Braket QPUs, GPU simulators, and CPU simulators.</p></td>
 <td><p>See <a class="reference external" href="https://nvidia.github.io/cuda-quantum/">CUDA-Q installation</a></p></td>
@@ -197,6 +203,113 @@ Choose the right solver based on your hardware, model size, and deployment targe
 Use FP8 only for <code class="docutils literal notranslate"><span class="pre">c_dtype</span></code>.</p>
 </div>
 </section>
+<section id="apple-silicon-mlx">
+<h2>Apple Silicon (MLX)<a class="headerlink" href="#apple-silicon-mlx" title="Link to this heading"></a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">mlx</span></code> solver runs the circuit in Metal kernels launched through
+<a class="reference external" href="https://github.com/ml-explore/mlx">MLX</a> on the Mac’s GPU. The model, the
+optimizer and the training loop stay in PyTorch:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">qkan</span> <span class="o">=</span> <span class="n">QKAN</span><span class="p">([</span><span class="mi">784</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="n">solver</span><span class="o">=</span><span class="s2">"mlx"</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">"mps"</span><span class="p">)</span>   <span class="c1"># or device="cpu"</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>One kernel evaluates the whole circuit for <code class="docutils literal notranslate"><span class="pre">pz</span></code>, <code class="docutils literal notranslate"><span class="pre">rpz</span></code>, <code class="docutils literal notranslate"><span class="pre">real</span></code> and
+<code class="docutils literal notranslate"><span class="pre">mix</span></code>; <code class="docutils literal notranslate"><span class="pre">px</span></code> and custom ansatzes fall back to the <code class="docutils literal notranslate"><span class="pre">exact</span></code> solver.</p></li>
+<li><p>The kernel also performs the layer’s sum over inputs,
+<code class="docutils literal notranslate"><span class="pre">sum_i</span> <span class="pre">postacts[b,</span> <span class="pre">o,</span> <span class="pre">i]</span> <span class="pre">*</span> <span class="pre">postact_weights[o,</span> <span class="pre">i]</span></code>, and returns
+<code class="docutils literal notranslate"><span class="pre">(batch,</span> <span class="pre">out_dim)</span></code> directly, so the <code class="docutils literal notranslate"><span class="pre">(batch,</span> <span class="pre">out_dim,</span> <span class="pre">in_dim)</span></code> tensor is
+never materialised in the forward or the backward pass. This is on by
+default for <code class="docutils literal notranslate"><span class="pre">mlx</span></code>; <code class="docutils literal notranslate"><span class="pre">layer.set_fused_epilogue(False)</span></code> or
+<code class="docutils literal notranslate"><span class="pre">QKAN_FUSED_EPILOGUE=0</span></code> restores the solver followed by the PyTorch
+epilogue. A layer whose thetas are shared across outputs (<code class="docutils literal notranslate"><span class="pre">group</span></code> equal to
+<code class="docutils literal notranslate"><span class="pre">in_dim</span></code>) always takes that unfused route, as does <code class="docutils literal notranslate"><span class="pre">forward_no_sum</span></code>.</p></li>
+<li><p>The backward pass recomputes the circuit and walks the adjoint back through
+the gates like <code class="docutils literal notranslate"><span class="pre">flydsl</span></code>, so no per-repetition state is stored in memory,
+and it has no second derivatives.</p></li>
+<li><p>With <code class="docutils literal notranslate"><span class="pre">device=&quot;mps&quot;</span></code> PyTorch and MLX address the same Metal buffers through
+DLPack: inputs, outputs and gradients cross without a copy. The two
+frameworks use separate Metal command queues, so the solver waits for
+pending PyTorch work before each launch.</p></li>
+<li><p>With <code class="docutils literal notranslate"><span class="pre">device=&quot;cpu&quot;</span></code> the kernels still run on the GPU and the output is a
+zero-copy view of MLX’s buffer. No queue has to be flushed, which makes this
+the faster choice for small models.</p></li>
+<li><p>Compute is float32 (Metal has no float64): <code class="docutils literal notranslate"><span class="pre">c_dtype=torch.complex128</span></code> falls
+back to <code class="docutils literal notranslate"><span class="pre">exact</span></code>, and bf16 parameters are widened to float32 for the launch.</p></li>
+</ul>
+<p>Training step (forward, loss, backward, Adam) and inference forward for the
+default <code class="docutils literal notranslate"><span class="pre">pz</span></code> ansatz with <code class="docutils literal notranslate"><span class="pre">reps=3</span></code> on an M3 (10-core GPU, 16 GB), PyTorch
+2.15, MLX 0.32.4, in milliseconds, from <code class="docutils literal notranslate"><span class="pre">scripts/bench_mlx_solver.py</span></code>:</p>
+<table class="docutils align-default" id="id2">
+<caption><span class="caption-text">Train step / inference forward (ms)</span><a class="headerlink" href="#id2" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 22.0%" />
+<col style="width: 14.0%" />
+<col style="width: 14.0%" />
+<col style="width: 14.0%" />
+<col style="width: 14.0%" />
+<col style="width: 22.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Widths, batch</p></th>
+<th class="head"><p><code class="docutils literal notranslate"><span class="pre">exact</span></code> on <code class="docutils literal notranslate"><span class="pre">mps</span></code></p></th>
+<th class="head"><p><code class="docutils literal notranslate"><span class="pre">exact</span></code> on <code class="docutils literal notranslate"><span class="pre">cpu</span></code></p></th>
+<th class="head"><p><code class="docutils literal notranslate"><span class="pre">mlx</span></code> on <code class="docutils literal notranslate"><span class="pre">mps</span></code></p></th>
+<th class="head"><p><code class="docutils literal notranslate"><span class="pre">mlx</span></code> on <code class="docutils literal notranslate"><span class="pre">cpu</span></code></p></th>
+<th class="head"><p>Train speed-up over <code class="docutils literal notranslate"><span class="pre">exact</span></code> on <code class="docutils literal notranslate"><span class="pre">mps</span></code> (<code class="docutils literal notranslate"><span class="pre">mlx</span></code> on <code class="docutils literal notranslate"><span class="pre">mps</span></code> / <code class="docutils literal notranslate"><span class="pre">cpu</span></code>)</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>[4, 8, 2], 64</p></td>
+<td><p>7.43 / 3.02</p></td>
+<td><p>2.72 / 0.78</p></td>
+<td><p>2.89 / 0.98</p></td>
+<td><p>1.51 / 0.53</p></td>
+<td><p>2.6x / 4.9x</p></td>
+</tr>
+<tr class="row-odd"><td><p>[16, 32, 16], 256</p></td>
+<td><p>65.5 / 33.2</p></td>
+<td><p>122 / 50.7</p></td>
+<td><p>2.62 / 1.05</p></td>
+<td><p>1.51 / 0.61</p></td>
+<td><p>25x / 43x</p></td>
+</tr>
+<tr class="row-even"><td><p>[64, 64, 64], 512</p></td>
+<td><p>1032 / 493</p></td>
+<td><p>1884 / 807</p></td>
+<td><p>4.00 / 1.51</p></td>
+<td><p>3.29 / 1.07</p></td>
+<td><p>258x / 314x</p></td>
+</tr>
+<tr class="row-odd"><td><p>[784, 64, 10], 64</p></td>
+<td><p>785 / 389</p></td>
+<td><p>390 / 172</p></td>
+<td><p>3.71 / 1.36</p></td>
+<td><p>3.19 / 0.91</p></td>
+<td><p>212x / 246x</p></td>
+</tr>
+<tr class="row-even"><td><p>[784, 64, 10], 256</p></td>
+<td><p>not run</p></td>
+<td><p>not run</p></td>
+<td><p>6.52 / 2.18</p></td>
+<td><p>6.07 / 1.84</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>[100, 100, 100], 1000</p></td>
+<td><p>not run</p></td>
+<td><p>not run</p></td>
+<td><p>10.6 / 3.06</p></td>
+<td><p>9.65 / 2.62</p></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>The <code class="docutils literal notranslate"><span class="pre">exact</span></code> solver keeps several complex <code class="docutils literal notranslate"><span class="pre">(batch,</span> <span class="pre">out_dim,</span> <span class="pre">in_dim,</span> <span class="pre">2)</span></code>
+states per repetition for autograd; at the two largest shapes that is more
+memory than the machine has, so it was not timed there.</p>
+<p>Summing over the inputs inside the kernel is worth 1.5–2.1x of that training
+speed and 1.6–3.1x of the inference speed at the four largest shapes
+(compare with <code class="docutils literal notranslate"><span class="pre">QKAN_FUSED_EPILOGUE=0</span></code>). On the two small models a step is
+mostly fixed launch latency and it makes no measurable difference.</p>
+</section>
 <section id="performance-tuning">
 <h2>Performance Tuning<a class="headerlink" href="#performance-tuning" title="Link to this heading"></a></h2>
 <p>Three opt-in features trade compute or accuracy for memory. All default to off,
@@ -222,7 +335,7 @@ so behavior matches earlier releases unless you enable them.</p>
 <td><p>+1 forward pass</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">fused_epilogue</span></code></p></td>
-<td><p>flash / cute / cutile epilogue</p></td>
+<td><p>flash / cute / cutile epilogue (<code class="docutils literal notranslate"><span class="pre">mlx</span></code> fuses by default)</p></td>
 <td><p>2 intermediate buffers, ~3 launches</p></td>
 <td><p>CUDA-only fast path</p></td>
 </tr>
@@ -281,6 +394,9 @@ intermediate buffers and ~3 kernel launches per layer.</p>
 fraction of step time (deep stacks, small <code class="docutils literal notranslate"><span class="pre">out_dim</span></code>, or after the quantum
 kernel itself has been fused).</p></li>
 </ul>
+<p>The <code class="docutils literal notranslate"><span class="pre">mlx</span></code> solver has its own version of this, on by default, which folds
+the sum into the circuit kernel instead of running a second one (see
+<a class="reference internal" href="#apple-silicon-mlx">Apple Silicon (MLX)</a>).</p>
 <p>Tradeoff: CUDA-only fast path; CPU tensors fall back to the eager chain
 transparently. Numerics match eager within bf16/f32 rounding; gradients are
 fused into one backward kernel and the matmul-shaped grads stay on cuBLAS.</p>
@@ -575,8 +691,8 @@ and Richardson-extrapolates to the zero-noise limit. For Qiskit, you can alterna
 Reduces variance from shot-to-shot fluctuations.</p>
 <p><strong>Expectation clipping</strong> (<code class="docutils literal notranslate"><span class="pre">clip_expvals</span></code>): Clamps values to [-1, 1] after mitigation.
 Prevents catastrophic outliers from ZNE extrapolation.</p>
-<table class="docutils align-default" id="id2">
-<caption><span class="caption-text">Mitigation Cost</span><a class="headerlink" href="#id2" title="Link to this table"></a></caption>
+<table class="docutils align-default" id="id3">
+<caption><span class="caption-text">Mitigation Cost</span><a class="headerlink" href="#id3" title="Link to this table"></a></caption>
 <thead>
 <tr class="row-odd"><th class="head"><p>Technique</p></th>
 <th class="head"><p>Circuit multiplier</p></th>

@@ -120,7 +120,13 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">.info</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_dist_info</span><span class="p">,</span> <span class="n">print0</span><span class="p">,</span> <span class="n">print_version</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.optim.lbfgs</span><span class="w"> </span><span class="kn">import</span> <span class="n">LBFGSFinisher</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.qkan_epilogue</span><span class="w"> </span><span class="kn">import</span> <span class="n">QKANEpilogue</span><span class="p">,</span> <span class="n">qkan_epilogue_forward</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.solver</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_registry</span><span class="p">,</span> <span class="n">get_solver</span><span class="p">,</span> <span class="n">make_base_activation</span><span class="p">,</span> <span class="n">qml_solver</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.solver</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_registry</span><span class="p">,</span>
+    <span class="n">get_solver</span><span class="p">,</span>
+    <span class="n">make_base_activation</span><span class="p">,</span>
+    <span class="n">mlx_contracted_solver</span><span class="p">,</span>
+    <span class="n">qml_solver</span><span class="p">,</span>
+<span class="p">)</span>
 
 
 <div class="viewcode-block" id="QKANLayer">
@@ -142,7 +148,7 @@
 <span class="sd">        device :</span>
 <span class="sd">            Device to use</span>
 <span class="sd">        solver : Union[str, Callable]</span>
-<span class="sd">            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable</span>
+<span class="sd">            Solver to use, currently supports "qml", "exact", "flash", "cutn", "mlx" or custom callable</span>
 <span class="sd">        ansatz : Union[str, Callable]</span>
 <span class="sd">            Ansatz to use, "pz_encoding", "px_encoding", "rpz_encoding" or custom</span>
 <span class="sd">        qml_device : str</span>
@@ -172,12 +178,14 @@
 <span class="sd">        fast_measure : bool</span>
 <span class="sd">            Enable to use fast measurement in exact solver. Which would be quantum-inspired method.</span>
 <span class="sd">            When False, the exact solver simulates the exact measurement process of quantum circuit.</span>
-<span class="sd">        c_dtype : torch.dtype</span>
+<span class="sd">        c_dtype : torch.dtype, optional</span>
 <span class="sd">            Compute dtype for quantum simulation. Supported values:</span>
 
-<span class="sd">            - ``torch.complex64`` / ``torch.float32``: full-precision f32 (default)</span>
+<span class="sd">            - ``torch.complex64`` / ``torch.float32``: full-precision f32</span>
 <span class="sd">            - ``torch.bfloat16``: mixed-precision bf16 I/O, f32 compute, bf16 state checkpoints</span>
 <span class="sd">            - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints</span>
+
+<span class="sd">            Default ``None`` resolves to ``torch.bfloat16`` for ``"real"``, ``torch.complex64`` otherwise.</span>
 <span class="sd">        p_dtype : torch.dtype</span>
 <span class="sd">            Parameter dtype (``torch.float32`` or ``torch.bfloat16``).</span>
 <span class="sd">            Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.</span>
@@ -206,6 +214,7 @@
                 <span class="s2">"cute"</span><span class="p">,</span>
                 <span class="s2">"cutile"</span><span class="p">,</span>
                 <span class="s2">"flydsl"</span><span class="p">,</span>
+                <span class="s2">"mlx"</span><span class="p">,</span>
                 <span class="s2">"qiskit"</span><span class="p">,</span>
                 <span class="s2">"cudaq"</span><span class="p">,</span>
             <span class="p">],</span>
@@ -222,7 +231,7 @@
         <span class="n">ba_trainable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">is_batchnorm</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">fast_measure</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-        <span class="n">c_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex64</span><span class="p">,</span>
+        <span class="n">c_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">p_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
         <span class="n">seed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="n">solver_kwargs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -272,6 +281,7 @@
                 <span class="s2">"cute"</span><span class="p">,</span>
                 <span class="s2">"cutile"</span><span class="p">,</span>
                 <span class="s2">"flydsl"</span><span class="p">,</span>
+                <span class="s2">"mlx"</span><span class="p">,</span>
                 <span class="s2">"qiskit"</span><span class="p">,</span>
                 <span class="s2">"cudaq"</span><span class="p">,</span>
             <span class="p">],</span>
@@ -285,9 +295,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">is_batchnorm</span> <span class="o">=</span> <span class="n">is_batchnorm</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span> <span class="o">=</span> <span class="n">fast_measure</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">seed</span> <span class="o">=</span> <span class="n">seed</span>
+        <span class="k">if</span> <span class="n">c_dtype</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">c_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span> <span class="k">if</span> <span class="n">ansatz</span> <span class="o">==</span> <span class="s2">"real"</span> <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex64</span>
         <span class="c1"># Flash / cutile / cute / flydsl solvers use real-valued GPU kernels and</span>
         <span class="c1"># cannot operate on complex dtypes.  Transparently map complex → real so</span>
-        <span class="c1"># users can keep the default ``c_dtype=torch.complex64`` without error.</span>
+        <span class="c1"># a complex ``c_dtype`` (the default for non-real ansatzes) works.</span>
         <span class="c1"># Only for ansatzes the fused kernels implement: the rest fall back to</span>
         <span class="c1"># torch_exact_solver, whose Rz/Rx gates need the complex dtype.</span>
         <span class="k">if</span> <span class="p">(</span>
@@ -315,8 +327,12 @@
         <span class="c1"># and the base linear term are collapsed into a single Triton kernel.</span>
         <span class="c1"># Default OFF for parity; opt-in via constructor arg, env var, or</span>
         <span class="c1"># ``layer.set_fused_epilogue(True)`` post-construction.</span>
+        <span class="c1"># The mlx solver is the exception and defaults to ON: there the sum</span>
+        <span class="c1"># over inputs moves into the circuit kernel itself, which never</span>
+        <span class="c1"># materialises postacts (QKAN_FUSED_EPILOGUE=0 turns it off).</span>
+        <span class="n">_fused_env</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"QKAN_FUSED_EPILOGUE"</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_use_fused_epilogue</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"QKAN_FUSED_EPILOGUE"</span><span class="p">,</span> <span class="s2">"0"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"1"</span>
+            <span class="n">solver</span> <span class="o">==</span> <span class="s2">"mlx"</span> <span class="k">if</span> <span class="n">_fused_env</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_fused_env</span> <span class="o">==</span> <span class="s2">"1"</span>
         <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">init_parameters</span><span class="p">()</span>
@@ -365,7 +381,6 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_theta_natural_shape</span> <span class="o">=</span> <span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
             <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span> <span class="o">==</span> <span class="s2">"real"</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_theta_natural_shape</span> <span class="o">=</span> <span class="p">(</span><span class="o">*</span><span class="n">group</span><span class="p">,</span> <span class="n">reps</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_theta_collapsible</span> <span class="o">=</span> <span class="kc">True</span>
@@ -829,21 +844,54 @@
             <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">solver_kwargs</span><span class="p">,</span>
         <span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_run_contracted_solver</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">weight</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""``(postacts * weight).sum(dim=2)`` from the mlx solver's fused kernel.</span>
+
+<span class="sd">        The kernel sums over the inputs itself, so the ``(batch, out_dim,</span>
+<span class="sd">        in_dim)`` postacts are never materialised. Returns None when the</span>
+<span class="sd">        fused route is off or does not cover this configuration; the caller</span>
+<span class="sd">        then contracts the output of ``_run_solver``.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_use_fused_epilogue</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">solver</span> <span class="o">==</span> <span class="s2">"mlx"</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">mlx_contracted_solver</span><span class="p">(</span>
+            <span class="n">x</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_theta_natural_v</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_preacts_w_natural_v</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_preacts_b_natural_v</span><span class="p">,</span>
+            <span class="n">weight</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">reps</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">ansatz</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span><span class="p">,</span>
+            <span class="n">group</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">group</span><span class="p">,</span>
+            <span class="n">preacts_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">preact_trainable</span><span class="p">,</span>
+            <span class="n">fast_measure</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">fast_measure</span><span class="p">,</span>
+            <span class="n">out_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
+            <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">solver_kwargs</span><span class="p">,</span>
+        <span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_forward_eval</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Inference path — uses pre-folded weights + aliased solver inputs."""</span>
         <span class="k">assert</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_dim</span><span class="p">,</span> <span class="s2">"Invalid input dimension"</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_batchnorm</span><span class="p">:</span>
             <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bn</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
         <span class="n">base_input</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_activation</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">eff_pw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_eff_pw</span>
+        <span class="n">eff_base_w</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_eff_base_w</span>
+        <span class="k">assert</span> <span class="n">eff_pw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">eff_base_w</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">main</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_contracted_solver</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">eff_pw</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">main</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">base</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">base_input</span><span class="p">,</span> <span class="n">eff_base_w</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_bias_sum</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">main</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">base</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span> <span class="o">+</span> <span class="n">base</span>
         <span class="n">postacts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_solver</span><span class="p">(</span>
             <span class="n">x</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_theta_natural_v</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_preacts_w_natural_v</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_preacts_b_natural_v</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">eff_pw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_eff_pw</span>
-        <span class="n">eff_base_w</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_eff_base_w</span>
-        <span class="k">assert</span> <span class="n">eff_pw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">eff_base_w</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_use_fused_epilogue</span> <span class="ow">and</span> <span class="n">postacts</span><span class="o">.</span><span class="n">is_cuda</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">qkan_epilogue_forward</span><span class="p">(</span>
                 <span class="n">postacts</span><span class="p">,</span> <span class="n">eff_pw</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">base_input</span><span class="p">,</span> <span class="n">eff_base_w</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bias_sum</span>
@@ -860,12 +908,6 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_batchnorm</span><span class="p">:</span>
             <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bn</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
         <span class="n">base_input</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_activation</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="n">postacts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_solver</span><span class="p">(</span>
-            <span class="n">x</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_theta_natural_v</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_preacts_w_natural_v</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_preacts_b_natural_v</span><span class="p">,</span>
-        <span class="p">)</span>
         <span class="n">pw_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pw_oi</span>
         <span class="n">bw_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bw_oi</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mask_is_identity</span><span class="p">:</span>
@@ -875,12 +917,29 @@
             <span class="n">mask_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mask_oi</span>
             <span class="n">eff_pw</span> <span class="o">=</span> <span class="n">pw_oi</span> <span class="o">*</span> <span class="n">mask_oi</span>
             <span class="n">base_w</span> <span class="o">=</span> <span class="n">bw_oi</span> <span class="o">*</span> <span class="n">mask_oi</span>
+        <span class="n">use_pb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">postact_bias_trainable</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pb_is_nonzero</span>
+
+        <span class="c1"># mlx: the circuit kernel also sums over the inputs. The postact bias</span>
+        <span class="c1"># only shifts each output by sum_i pb * eff_pw, which stays in torch.</span>
+        <span class="n">main</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_contracted_solver</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">eff_pw</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">main</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">use_pb</span><span class="p">:</span>
+                <span class="n">bias</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pb_oi</span> <span class="o">*</span> <span class="n">eff_pw</span>
+                <span class="n">main</span> <span class="o">=</span> <span class="n">main</span> <span class="o">+</span> <span class="n">bias</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">bias</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+            <span class="n">base</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">base_input</span><span class="p">,</span> <span class="n">base_w</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">main</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">base</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span> <span class="o">+</span> <span class="n">base</span>
+
+        <span class="n">postacts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_solver</span><span class="p">(</span>
+            <span class="n">x</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_theta_natural_v</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_preacts_w_natural_v</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_preacts_b_natural_v</span><span class="p">,</span>
+        <span class="p">)</span>
         <span class="c1"># Fused-epilogue train path: forward is a single Triton kernel; the</span>
         <span class="c1"># backward fuses grad_postacts / grad_eff_pw / grad_pb into one Triton</span>
         <span class="c1"># kernel and keeps the two matmul-shaped gradients on cuBLAS (~4</span>
         <span class="c1"># launches vs ~7 eager dispatches).</span>
 
-        <span class="n">use_pb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">postact_bias_trainable</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pb_is_nonzero</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_use_fused_epilogue</span> <span class="ow">and</span> <span class="n">postacts</span><span class="o">.</span><span class="n">is_cuda</span><span class="p">:</span>
             <span class="n">pb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pb_oi</span> <span class="k">if</span> <span class="n">use_pb</span> <span class="k">else</span> <span class="kc">None</span>
             <span class="k">return</span> <span class="n">QKANEpilogue</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">postacts</span><span class="p">,</span> <span class="n">eff_pw</span><span class="p">,</span> <span class="n">pb</span><span class="p">,</span> <span class="n">base_input</span><span class="p">,</span> <span class="n">base_w</span><span class="p">)</span>
@@ -907,6 +966,12 @@
 <span class="sd">        into one Triton kernel and keeps the matmul-shaped gradients on cuBLAS.</span>
 <span class="sd">        CPU tensors and non-CUDA paths transparently fall back to the eager</span>
 <span class="sd">        chain.</span>
+
+<span class="sd">        With ``solver="mlx"`` it is on by default and goes further: the sum</span>
+<span class="sd">        over inputs is folded into the circuit's Metal kernel, so postacts</span>
+<span class="sd">        are never materialised in either pass. The base linear term stays in</span>
+<span class="sd">        PyTorch. Turning it off restores the solver followed by the eager</span>
+<span class="sd">        chain.</span>
 <span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_use_fused_epilogue</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span></div>
 
@@ -926,8 +991,6 @@
             <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ansatz</span> <span class="o">==</span> <span class="s2">"real"</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">base_weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
@@ -1042,6 +1105,7 @@
             <span class="n">postact_bias_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">postact_bias_trainable</span><span class="p">,</span>
             <span class="n">base_activation</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base_activation</span><span class="p">,</span>
             <span class="n">ba_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span><span class="p">,</span>
+            <span class="n">c_dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="n">seed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
             <span class="n">p_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">p_dim</span><span class="p">,</span>
         <span class="p">)</span>
@@ -1114,7 +1178,7 @@
 <span class="sd">        device : Literal["cpu", "cuda"]</span>
 <span class="sd">            Device to use</span>
 <span class="sd">        solver : Union[str, Callable]</span>
-<span class="sd">            Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable</span>
+<span class="sd">            Solver to use, currently supports "qml", "exact", "flash", "cutn", "mlx" or custom callable</span>
 <span class="sd">        qml_device : str</span>
 <span class="sd">            PennyLane device to use</span>
 <span class="sd">        layers : QKANModuleList</span>
@@ -1165,6 +1229,7 @@
                 <span class="s2">"cute"</span><span class="p">,</span>
                 <span class="s2">"cutile"</span><span class="p">,</span>
                 <span class="s2">"flydsl"</span><span class="p">,</span>
+                <span class="s2">"mlx"</span><span class="p">,</span>
                 <span class="s2">"qiskit"</span><span class="p">,</span>
                 <span class="s2">"cudaq"</span><span class="p">,</span>
             <span class="p">],</span>
@@ -1182,7 +1247,7 @@
         <span class="n">ba_trainable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">fast_measure</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">save_act</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="n">c_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex64</span><span class="p">,</span>
+        <span class="n">c_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">p_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
         <span class="n">seed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="n">solver_kwargs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1211,7 +1276,7 @@
 <span class="sd">            device :</span>
 <span class="sd">                Device to use, default: "cpu"</span>
 <span class="sd">            solver : Union[str, Callable]</span>
-<span class="sd">                Solver to use, currently supports "qml", "exact", "flash", "cutn" or custom callable, default: "exact"</span>
+<span class="sd">                Solver to use, currently supports "qml", "exact", "flash", "cutn", "mlx" or custom callable, default: "exact"</span>
 <span class="sd">            ansatz : Union[str, Callable]</span>
 <span class="sd">                Ansatz to use, "pz_encoding" ("pz"), "px_encoding" ("px"), "rpz_encoding" ("rpz", reduced pz encoding) or custom</span>
 <span class="sd">            qml_device : str</span>
@@ -1236,12 +1301,14 @@
 <span class="sd">            p_dtype : torch.dtype</span>
 <span class="sd">                Parameter dtype (``torch.float32`` or ``torch.bfloat16``).</span>
 <span class="sd">                Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.</span>
-<span class="sd">            c_dtype : torch.dtype</span>
+<span class="sd">            c_dtype : torch.dtype, optional</span>
 <span class="sd">                Compute dtype for quantum simulation. Supported values:</span>
 
-<span class="sd">                - ``torch.complex64`` / ``torch.float32``: full-precision f32 (default)</span>
+<span class="sd">                - ``torch.complex64`` / ``torch.float32``: full-precision f32</span>
 <span class="sd">                - ``torch.bfloat16``: mixed-precision bf16 I/O, f32 compute, bf16 state checkpoints</span>
 <span class="sd">                - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints</span>
+
+<span class="sd">                Default ``None`` resolves to ``torch.bfloat16`` for ``"real"``, ``torch.complex64`` otherwise.</span>
 <span class="sd">            seed : Any</span>
 <span class="sd">                Random seed, default: None</span>
 <span class="sd">        """</span>
@@ -1267,6 +1334,7 @@
                 <span class="s2">"cute"</span><span class="p">,</span>
                 <span class="s2">"cutile"</span><span class="p">,</span>
                 <span class="s2">"flydsl"</span><span class="p">,</span>
+                <span class="s2">"mlx"</span><span class="p">,</span>
                 <span class="s2">"qiskit"</span><span class="p">,</span>
                 <span class="s2">"cudaq"</span><span class="p">,</span>
             <span class="p">],</span>
@@ -2425,6 +2493,7 @@
             <span class="n">base_activation</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base_activation</span><span class="p">,</span>
             <span class="n">ba_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span><span class="p">,</span>
             <span class="n">save_act</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">save_act</span><span class="p">,</span>
+            <span class="n">c_dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="n">seed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
             <span class="n">p_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">p_dim</span><span class="p">,</span>
         <span class="p">)</span>
@@ -2546,6 +2615,7 @@
             <span class="n">base_activation</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base_activation</span><span class="p">,</span>
             <span class="n">ba_trainable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ba_trainable</span><span class="p">,</span>
             <span class="n">save_act</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">save_act</span><span class="p">,</span>
+            <span class="n">c_dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">c_dtype</span><span class="p">,</span>
             <span class="n">seed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
             <span class="n">p_dim</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">p_dim</span><span class="p">,</span>
         <span class="p">)</span>

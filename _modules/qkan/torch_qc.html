@@ -192,7 +192,9 @@
 <span class="sd">        return: torch.Tensor, shape: (2, 2, out_dim, in_dim)</span>
 <span class="sd">        """</span>
         <span class="n">exp</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="n">j</span> <span class="o">*</span> <span class="n">theta</span><span class="p">)</span>
-        <span class="n">zero</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+        <span class="c1"># Complex like ``exp``: stacking a real zero with a complex tensor</span>
+        <span class="c1"># fails on MPS (torch 2.15: "Failed to create function state object").</span>
+        <span class="n">zero</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">exp</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
             <span class="p">[</span>
                 <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">exp</span><span class="p">,</span> <span class="n">zero</span><span class="p">]),</span>
