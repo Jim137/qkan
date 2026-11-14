@@ -33,7 +33,6 @@ from typing import Any
 import cuda.tile as ct  # type: ignore
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.nn import init
 
 from .._utils import autocast_dtype
@@ -130,7 +129,8 @@ def _resolve_io_dtype(dtype: torch.dtype) -> tuple[torch.dtype, bool]:
         return torch.bfloat16, True
     raise ValueError(
         f"CuTileLinear only supports float32 and bfloat16, got {dtype}. "
-        "Cast inputs/parameters before the call."
+        "Cast inputs/parameters before the call, or under torch.autocast use "
+        "dtype=torch.bfloat16."
     )
 
 
@@ -326,9 +326,6 @@ class CuTileLinear(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Under autocast, run in its dtype as F.linear does (#43); else no-ops.
-        # The cuTile kernel has no float16 path, so fp16 autocast uses F.linear.
-        if torch.is_autocast_enabled() and autocast_dtype(x.dtype) == torch.float16:
-            return F.linear(x, self.weight, self.bias)
         x = x.to(autocast_dtype(x.dtype))
         weight = self.weight.to(autocast_dtype(self.weight.dtype))
         bias = self.bias

@@ -60,6 +60,12 @@ def test_matches_nn_linear_under_autocast(name, m, k, n, param_dtype, amp_dtype)
         y.float().sum().backward()
         return y, module.weight.grad
 
+    if name == "CuTileLinear" and amp_dtype == torch.float16:
+        # no float16 kernel, and no other route in its place
+        with pytest.raises(ValueError, match="only supports float32 and bfloat16"):
+            run(lin)
+        return
+
     # assert_close also checks the dtypes: amp_dtype out, param_dtype grad
     for out, ref_out in zip(run(lin), run(ref)):
         torch.testing.assert_close(out, ref_out, rtol=2e-2, atol=2e-1)
