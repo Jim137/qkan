@@ -30,10 +30,10 @@ Components
 ----------
 - :class:`Fp8Linear` — drop-in for ``nn.Linear``. e4m3 weights, dynamic
   per-tensor input scaling, bf16 output. Every size runs the fp8 GEMM:
-  cuBLASLt needs both feature dimensions to be multiples of 16, so other
-  sizes — HQKAN's narrow inner projections,
-  ``els = ceil(log2(d_model))`` — are zero-padded up to the next one and
-  the output is sliced back.
+  cuBLASLt needs both feature dimensions to be multiples of 16, so for
+  other sizes — HQKAN's narrow inner projections,
+  ``els = ceil(log2(d_model))`` — the weight and bias are stored
+  zero-padded up to the next one and the output is sliced back.
 - :class:`Fp8Activation` — optional wrapper for stand-alone fp8-in /
   bf16-out activation use cases outside the canonical HQKAN pipeline.
   Not needed for the standard HQKAN block since Fp8Linear's bf16 output
@@ -87,9 +87,13 @@ def quantize_to_fp8(
     such that the original tensor is approximately ``x_fp8 * scale``.
     Use :func:`dequantize_from_fp8` to invert.
     """
-    amax = x.detach().abs().amax().to(torch.float32).clamp_min(1e-12)
-    scale = amax / _E4M3_MAX  # multiplicative scale: x_fp8 ≈ x / scale
-    x_fp8 = (x.to(torch.float32) / scale).to(dtype)
+    if x.dtype not in (torch.float16, torch.bfloat16):  # exact in float32
+        x = x.to(torch.float32)
+    amax = torch.linalg.vector_norm(x.detach(), ord=float("inf"), dtype=torch.float32)
+    scale = amax.clamp_min(1e-12) / _E4M3_MAX  # x_fp8 ≈ x / scale
+    # The division runs in float32: a half x is promoted by the kernel
+    # itself, which a scale of x's shape makes it do.
+    x_fp8 = (x / scale.expand_as(x)).to(dtype)
     return x_fp8, scale
 
 
@@ -120,9 +124,14 @@ class Fp8Linear(nn.Module):
     bf16 is the default and matches what cuBLASLt's fp8 path produces.
 
     ``in_features`` and ``out_features`` may be any size. cuBLASLt needs
-    multiples of 16, so for other sizes each call zero-pads the weight,
-    the bias and the input features up to the next one and slices the
-    output back. It is the same fp8 GEMM, at the cost of those copies.
+    multiples of 16, so for other sizes ``weight`` and ``bias`` are stored
+    zero-padded up to the next one: ``weight`` is
+    ``(ceil16(out_features), ceil16(in_features))``. Each call then pads
+    the quantised input, if ``in_features`` is not a multiple, and slices
+    the output back, if ``out_features`` is not. It is the same fp8 GEMM.
+    ``state_dict()`` keeps the ``(out_features, in_features)`` layout;
+    operands given in that layout, through ``load_state_dict`` or
+    ``torch.func.functional_call``, are padded.
 
     A dtype cast of the layer or of a parent (``.bfloat16()``, ``.half()``,
     ``.to(dtype)``) changes the bias and the output dtype. The e4m3 weight
@@ -166,7 +175,7 @@ class Fp8Linear(nn.Module):
             (out_features, in_features), device=device, dtype=torch.float32
         )
         init.kaiming_uniform_(w_f32, a=math.sqrt(5))
-        w_fp8, w_scale = quantize_to_fp8(w_f32)
+        w_fp8, w_scale = quantize_to_fp8(self._pad(w_f32))
         self.weight = nn.Parameter(w_fp8, requires_grad=False)
         self.register_buffer("weight_scale", w_scale)
 
@@ -175,10 +184,21 @@ class Fp8Linear(nn.Module):
             bound = 1 / math.sqrt(in_features)
             init.uniform_(b_f32, -bound, bound)
             self.bias: Optional[nn.Parameter] = nn.Parameter(
-                b_f32.to(activation_dtype), requires_grad=False
+                self._pad(b_f32.to(activation_dtype)), requires_grad=False
             )
         else:
             self.bias = None
+
+    def _pad(self, t: torch.Tensor) -> torch.Tensor:
+        """Zero-pad a weight ``(out, in)`` or a bias ``(out,)`` to multiples of 16.
+
+        cuBLASLt's fp8 GEMM takes nothing else. The extra products are zero
+        and ``forward`` slices the extra outputs off.
+        """
+        pad: Tuple[int, ...] = (0, -self.out_features % 16)
+        if t.dim() == 2:
+            pad = (0, -self.in_features % 16, *pad)
+        return F.pad(t, pad) if any(pad) else t
 
     @torch.no_grad()
     def forward(
@@ -204,17 +224,15 @@ class Fp8Linear(nn.Module):
         x_flat = x_fp8.reshape(-1, self.in_features)
         weight: torch.Tensor = self.weight
         bias: Optional[torch.Tensor] = self.bias
-        # cuBLASLt's fp8 GEMM needs K and N to be multiples of 16. Zero-pad
-        # them: the extra products are zero and the extra outputs are sliced
-        # off below. Padded on every call: a cached copy would outlive an
-        # edit of the weight or bias.
+        # Operands in the (out, in) layout of a state dict, as
+        # torch.func.functional_call installs them.
+        if weight.shape == (self.out_features, self.in_features):
+            weight = self._pad(weight)
+        if bias is not None and bias.shape == (self.out_features,):
+            bias = self._pad(bias)
         in_pad, out_pad = -self.in_features % 16, -self.out_features % 16
-        if in_pad or out_pad:
-            weight = F.pad(weight, (0, in_pad, 0, out_pad))
-            if bias is not None and out_pad:
-                bias = F.pad(bias, (0, out_pad))
-            if in_pad:
-                x_flat = F.pad(x_flat, (0, in_pad))
+        if in_pad:
+            x_flat = F.pad(x_flat, (0, in_pad))
         mm_out = torch._scaled_mm(
             x_flat,
             weight.t(),
@@ -228,6 +246,66 @@ class Fp8Linear(nn.Module):
         if out_pad:
             y = y[:, : self.out_features].contiguous()
         return y.reshape(*leading_shape, self.out_features)
+
+    def _unpadded_shapes(self) -> dict:
+        return {
+            "weight": (self.out_features, self.in_features),
+            "bias": (self.out_features,),
+        }
+
+    def _save_to_state_dict(self, destination, prefix, keep_vars):
+        # A state dict holds the (out, in) layout, as views of the operands:
+        # the padded shapes would not tell this layer from another of the
+        # same ceil16 sizes.
+        super()._save_to_state_dict(destination, prefix, keep_vars)
+        for name, shape in self._unpadded_shapes().items():
+            t = destination.get(prefix + name)
+            if t is not None:
+                destination[prefix + name] = t[tuple(slice(n) for n in shape)]
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        for name, shape in self._unpadded_shapes().items():
+            key = prefix + name
+            t = state_dict.get(key)
+            if self._parameters.get(name) is None or not isinstance(t, torch.Tensor):
+                continue  # torch reports these
+            if t.shape == shape:
+                state_dict[key] = self._pad(t)
+            else:
+                # The padded shape too: it is what another layer stores.
+                error_msgs.append(
+                    f"size mismatch for {key}: copying a param with shape "
+                    f"{t.shape} from checkpoint, the shape in current model is "
+                    f"{torch.Size(shape)}."
+                )
+                # Reported; given its own parameter torch adds nothing.
+                state_dict[key] = self._parameters[name]
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        # A module pickled before the operands were stored padded.
+        for name, shape in self._unpadded_shapes().items():
+            p = self._parameters.get(name)
+            if p is not None and p.shape == shape:
+                p.data = self._pad(p.data)
 
     def _apply(self, fn, recurse=True):
         # torch._scaled_mm takes an e4m3 weight with a float32 scale and
