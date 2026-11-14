@@ -28,6 +28,7 @@ import torch.nn.functional as F
 try:
     from .triton_activations import (
         SUPPORTED_KINDS,
+        _check_dtype,
         triton_activation_backward,
         triton_activation_forward,
     )
@@ -87,8 +88,9 @@ class TritonActivation(nn.Module):
         kind: one of ``"silu"``, ``"gelu_exact"``, ``"gelu_tanh"``, ``"relu"``,
             ``"tanh"``, ``"sigmoid"``.
 
-    The module falls back to the pure-PyTorch reference implementation when the
-    input is on CPU or when Triton is not installed.
+    Construction raises ``ImportError`` when Triton is not installed;
+    ``forward`` raises ``RuntimeError`` for a CPU tensor and ``ValueError``
+    for a float64 one. Use a ``torch.nn`` activation in those cases.
     """
 
     def __init__(self, kind: str = "silu") -> None:
@@ -98,14 +100,24 @@ class TritonActivation(nn.Module):
                 f"Unsupported activation kind: {kind!r}. "
                 f"Supported: {sorted(SUPPORTED_KINDS)}"
             )
+        if not _TRITON_ACT_AVAILABLE:
+            raise ImportError(
+                "Triton is required for TritonActivation. Install triton, or "
+                "pass a torch.nn activation as base_activation."
+            )
         self.kind = kind
 
     def extra_repr(self) -> str:
         return f"kind={self.kind!r}"
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if not _TRITON_ACT_AVAILABLE or not x.is_cuda:
-            return _TORCH_FUNCTIONAL[self.kind](x)
+        if not x.is_cuda:
+            raise RuntimeError(
+                "TritonActivation (the base activation of solver='flash') runs "
+                f"Triton kernels, which need CUDA tensors: got x on {x.device}. "
+                "Move the input to a CUDA device, or use a torch.nn activation."
+            )
+        _check_dtype(x)
         # Small-shape forward-only fast path: the Triton kernel carries a
         # ~6 us fixed launch overhead that loses to torch's pointwise op for
         # all bf16/f32 sizes typical in QKAN per-edge activations (up to

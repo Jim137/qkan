@@ -148,17 +148,3 @@ def test_graphed_param_swap_migrates_optimizer_names():
         p.grad = torch.full_like(p, 0.1)
     opt.step()
     assert not torch.equal(before, model.fc.weight.detach())
-
-
-@pytest.mark.parametrize("solver", ["flash", "cute", "cutile", "flydsl"])
-def test_complex_c_dtype_kept_for_exact_fallback(solver):
-    # Kernel-backed ansatzes run in real f32; the rest fall back to
-    # torch_exact_solver, whose Rz/Rx gates fail on a real dtype.
-    def c_dtype(ansatz):
-        return QKANLayer(2, 2, reps=2, solver=solver, ansatz=ansatz).c_dtype
-
-    assert c_dtype("pz") == torch.float32
-    assert c_dtype("rpz") == torch.float32
-    assert c_dtype("real") == torch.bfloat16  # its default; see test_real_c_dtype
-    assert c_dtype("mix") == torch.complex64
-    assert c_dtype("px") == torch.complex64

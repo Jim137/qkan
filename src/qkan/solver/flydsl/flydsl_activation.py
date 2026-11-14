@@ -177,6 +177,12 @@ if _FLYDSL_KERNELS_AVAILABLE:
 
 def _io_view(t: torch.Tensor) -> tuple[torch.Tensor, bool]:
     """Flat contiguous f32/bf16 view of ``t`` and whether it is bf16."""
+    if t.dtype == torch.float64:
+        raise ValueError(
+            f"FlyDSLActivation computes in float32 and does not support a "
+            f"{t.dtype} input. Cast the input to float32, or pass a torch.nn "
+            "activation as base_activation."
+        )
     bf16 = t.dtype == torch.bfloat16
     return _flat(t, bf16), bf16
 
@@ -193,8 +199,8 @@ def _launch_pointwise(launcher, kind, bf16, device, *tensors):
 def flydsl_activation_forward(x: torch.Tensor, kind: str) -> torch.Tensor:
     """FlyDSL pointwise activation; returns a tensor shaped like ``x``.
 
-    bf16 inputs keep bf16 I/O; any other dtype is computed and returned in f32
-    and cast back to ``x.dtype``.
+    bf16 inputs keep bf16 I/O; float32 and float16 inputs are computed in f32
+    and cast back to ``x.dtype``. A float64 input raises ``ValueError``.
     """
     xf, bf16 = _io_view(x)
     y = torch.empty_like(xf)
@@ -241,7 +247,8 @@ class FlyDSLActivation(nn.Module):
     """Drop-in nn.Module for QKAN base activations using FlyDSL kernels.
 
     Forward and backward run as a single kernel each (one per activation
-    kind × dtype). f32 and bf16 I/O are supported; compute is always f32.
+    kind × dtype). f32 and bf16 I/O are supported; compute is always f32, so
+    a float64 input raises ``ValueError``.
 
     Args:
         kind: One of ``"silu"``, ``"gelu_exact"``, ``"gelu_tanh"``, ``"relu"``,

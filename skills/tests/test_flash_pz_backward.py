@@ -68,16 +68,21 @@ def _assert_close(got, ref, rel):
 # ── The default launch keeps every call master accepted ─────────────────────
 
 
-@pytest.mark.parametrize(
-    "c_dtype, rel",
-    [(torch.complex128, 1e-5), (torch.float16, 2e-2)],
-    ids=["float64", "float16"],
-)
-def test_pz_backward_runs_in_float64_and_float16(c_dtype, rel):
-    # QKANLayer maps complex128 to float64 for flash; float16 is passed as is.
+def test_pz_backward_runs_in_float16():
     x = _input(16, 4)
-    got = _grads((4, 3), x, solver="flash", c_dtype=c_dtype, p_dtype=torch.float32)
-    _assert_close(got, _grads((4, 3), x, solver="exact"), rel)
+    got = _grads(
+        (4, 3), x, solver="flash", c_dtype=torch.float16, p_dtype=torch.float32
+    )
+    _assert_close(got, _grads((4, 3), x, solver="exact"), 2e-2)
+
+
+def test_double_precision_is_refused():
+    # The kernels compute in float32: the solver takes no float64 request.
+    x = _input(16, 4)
+    with pytest.raises(ValueError, match="solver='flash' computes in float32"):
+        _grads(
+            (4, 3), x, solver="flash", c_dtype=torch.complex128, p_dtype=torch.float32
+        )
 
 
 def test_pz_backward_accepts_an_empty_batch():

@@ -39,6 +39,14 @@ class QKANSolver(ABC):
 
     name: str  # registry key (e.g., "cute", "flash")
 
+    def check(self, ansatz, c_dtype: torch.dtype, reps: int) -> None:
+        """Raise ``ValueError`` if this solver has no kernel for the configuration.
+
+        Called when a layer is built; the solver function runs the same
+        validation on every call. What is refused is never handed to another
+        solver or run at another precision. The default accepts everything.
+        """
+
     @abstractmethod
     def __call__(
         self,

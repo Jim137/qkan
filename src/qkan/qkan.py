@@ -49,6 +49,47 @@ from .solver import (
 )
 
 
+def _checked_c_dtype(solver, ansatz, c_dtype, reps: int, preact_trainable: bool):
+    """``c_dtype`` with its default resolved, once the solver accepts the request.
+
+    Raises ``ValueError`` for an unknown solver name and for an ansatz,
+    precision or depth the solver has no kernel for. Run before anything is
+    built or reseeded. Callable solvers are not checked.
+    """
+    if c_dtype is None:
+        c_dtype = torch.bfloat16 if ansatz == "real" else torch.complex64
+    if not isinstance(solver, str):
+        return c_dtype
+    if solver == "qml":
+        # The qml circuit is pz_encoding on the raw input.
+        if ansatz not in ("pz_encoding", "pz"):
+            raise ValueError(
+                f"solver='qml' has no circuit for ansatz {ansatz!r}: it "
+                "implements 'pz_encoding'. Use solver='exact' for this ansatz."
+            )
+        if preact_trainable:
+            raise ValueError(
+                "solver='qml' encodes x directly and does not apply "
+                "preacts_weight / preacts_bias: preact_trainable=True is not "
+                "supported. Use solver='exact' for trainable pre-activations."
+            )
+        return c_dtype
+    if solver not in get_registry():
+        raise ValueError(
+            f"Unknown solver {solver!r}: use a callable or one of "
+            f"{sorted([*get_registry(), 'qml'])}"
+        )
+    check = getattr(get_solver(solver), "check", None)
+    if check is not None:
+        check(ansatz, c_dtype, reps)
+    if ansatz in ("px_encoding", "px") and not preact_trainable:
+        raise ValueError(
+            f"ansatz {ansatz!r} encodes acos(w x + b) and has no circuit for "
+            "frozen pre-activations: build the model with preact_trainable=True"
+        )
+    return c_dtype
+
+
 class QKANLayer(nn.Module):
     """
     QKANLayer Class
@@ -104,6 +145,12 @@ class QKANLayer(nn.Module):
             - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints
 
             Default ``None`` resolves to ``torch.bfloat16`` for ``"real"``, ``torch.complex64`` otherwise.
+            An ansatz the solver has no kernel for, or a ``c_dtype`` it has no
+            path for, raises ``ValueError`` when the layer is built. For
+            ``solver="exact"`` and ``"cutn"`` on a complex-amplitude ansatz,
+            ``torch.float32`` / ``torch.float64`` mean ``torch.complex64`` /
+            ``torch.complex128``. For double precision use ``solver="exact"``
+            with ``torch.complex128`` and ``p_dtype=torch.float64``.
         p_dtype : torch.dtype
             Parameter dtype (``torch.float32`` or ``torch.bfloat16``).
             Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.
@@ -159,6 +206,7 @@ class QKANLayer(nn.Module):
         super(QKANLayer, self).__init__()
         if p_dim not in (2, 4):
             raise ValueError(f"p_dim must be 2 or 4, got {p_dim}")
+        c_dtype = _checked_c_dtype(solver, ansatz, c_dtype, reps, preact_trainable)
         self.p_dim: Literal[2, 4] = p_dim
         self.solver_kwargs = solver_kwargs or {}
         # Activation checkpointing for the rep loop (exact solver only).
@@ -167,7 +215,8 @@ class QKANLayer(nn.Module):
         self.checkpoint_reps = checkpoint_reps
         # If base_activation is a string ("silu", "gelu", ...), pick the
         # backend implementation matching the chosen solver — cute/flash/
-        # cutile/flydsl get their fused kernel, others fall back to torch.nn.
+        # cutile/flydsl get their fused kernel (ImportError if that backend
+        # is not installed), the other solvers use torch.nn.
         # ``"gelu"`` resolves to gelu_exact (matches torch's default).
         if isinstance(base_activation, str):
             base_activation = make_base_activation(base_activation, solver)
@@ -212,24 +261,13 @@ class QKANLayer(nn.Module):
         self.is_batchnorm = is_batchnorm
         self.fast_measure = fast_measure
         self.seed = seed
-        if c_dtype is None:
-            c_dtype = torch.bfloat16 if ansatz == "real" else torch.complex64
-        # Flash / cutile / cute / flydsl solvers use real-valued GPU kernels and
-        # cannot operate on complex dtypes.  Transparently map complex → real so
-        # a complex ``c_dtype`` (the default for non-real ansatzes) works.
-        # Only for ansatzes the fused kernels implement: the rest fall back to
-        # torch_exact_solver, whose Rz/Rx gates need the complex dtype.
+        # Flash / cutile / cute / flydsl solvers use real-valued GPU kernels:
+        # complex64 (the default for non-real ansatzes) means their float32.
         if (
             solver in ("flash", "cutile", "cute", "flydsl")
-            and isinstance(ansatz, str)
-            and ansatz in ("pz_encoding", "pz", "rpz_encoding", "rpz", "real")
-            and c_dtype in (torch.complex64, torch.complex128)
+            and c_dtype == torch.complex64
         ):
-            _complex_to_real = {
-                torch.complex64: torch.float32,
-                torch.complex128: torch.float64,
-            }
-            c_dtype = _complex_to_real[c_dtype]
+            c_dtype = torch.float32
 
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
@@ -1141,7 +1179,6 @@ class QKAN(nn.Module):
         p_dim: Literal[2, 4] = 4,
         checkpoint_reps: bool = False,
         theta_init: Literal["small_gaussian", "xavier"] = "xavier",
-        **kwargs,
     ):
         """
         Initialize QKAN model
@@ -1196,10 +1233,17 @@ class QKAN(nn.Module):
                 - ``torch.float8_e4m3fn``: bf16 I/O, f32 compute, fp8 prescaled state checkpoints
 
                 Default ``None`` resolves to ``torch.bfloat16`` for ``"real"``, ``torch.complex64`` otherwise.
+                An ansatz the solver has no kernel for, or a ``c_dtype`` it has no
+                path for, raises ``ValueError`` when the model is built. For
+                ``solver="exact"`` and ``"cutn"`` on a complex-amplitude ansatz,
+                ``torch.float32`` / ``torch.float64`` mean ``torch.complex64`` /
+                ``torch.complex128``. For double precision use ``solver="exact"``
+                with ``torch.complex128`` and ``p_dtype=torch.float64``.
             seed : Any
                 Random seed, default: None
         """
         super(QKAN, self).__init__()
+        _checked_c_dtype(solver, ansatz, c_dtype, reps, preact_trainable)
 
         if seed is not None:
             torch.manual_seed(seed)
