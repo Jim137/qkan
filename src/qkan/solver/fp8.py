@@ -29,11 +29,11 @@ there and would cost precision.
 Components
 ----------
 - :class:`Fp8Linear` — drop-in for ``nn.Linear``. e4m3 weights, dynamic
-  per-tensor input scaling, bf16 output. Falls back to bf16
-  ``F.linear`` when either dimension isn't a multiple of 16 (cuBLASLt's
-  fp8 alignment requirement) — preserves fp8-stored weights / reduced
-  memory while keeping correctness on HQKAN's narrow inner projections
-  (``els = ceil(log2(d_model))``).
+  per-tensor input scaling, bf16 output. Every size runs the fp8 GEMM:
+  cuBLASLt needs both feature dimensions to be multiples of 16, so for
+  other sizes — HQKAN's narrow inner projections,
+  ``els = ceil(log2(d_model))`` — the weight and bias are stored
+  zero-padded up to the next one and the output is sliced back.
 - :class:`Fp8Activation` — optional wrapper for stand-alone fp8-in /
   bf16-out activation use cases outside the canonical HQKAN pipeline.
   Not needed for the standard HQKAN block since Fp8Linear's bf16 output
@@ -66,6 +66,7 @@ import math
 from typing import Optional, Tuple
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torch.nn import init
 
@@ -86,9 +87,13 @@ def quantize_to_fp8(
     such that the original tensor is approximately ``x_fp8 * scale``.
     Use :func:`dequantize_from_fp8` to invert.
     """
-    amax = x.detach().abs().amax().to(torch.float32).clamp_min(1e-12)
-    scale = amax / _E4M3_MAX  # multiplicative scale: x_fp8 ≈ x / scale
-    x_fp8 = (x.to(torch.float32) / scale).to(dtype)
+    if x.dtype not in (torch.float16, torch.bfloat16):  # exact in float32
+        x = x.to(torch.float32)
+    amax = torch.linalg.vector_norm(x.detach(), ord=float("inf"), dtype=torch.float32)
+    scale = amax.clamp_min(1e-12) / _E4M3_MAX  # x_fp8 ≈ x / scale
+    # The division runs in float32: a half x is promoted by the kernel
+    # itself, which a scale of x's shape makes it do.
+    x_fp8 = (x / scale.expand_as(x)).to(dtype)
     return x_fp8, scale
 
 
@@ -117,6 +122,22 @@ class Fp8Linear(nn.Module):
     Inputs may be either fp8 (with caller-supplied ``input_scale``) or
     bf16/f32 (auto-quantised per-call). Output dtype is configurable;
     bf16 is the default and matches what cuBLASLt's fp8 path produces.
+
+    ``in_features`` and ``out_features`` may be any size. cuBLASLt needs
+    multiples of 16, so for other sizes ``weight`` and ``bias`` are stored
+    zero-padded up to the next one: ``weight`` is
+    ``(ceil16(out_features), ceil16(in_features))``. Each call then pads
+    the quantised input, if ``in_features`` is not a multiple, and slices
+    the output back, if ``out_features`` is not. It is the same fp8 GEMM.
+    ``state_dict()`` keeps the ``(out_features, in_features)`` layout;
+    operands given in that layout, through ``load_state_dict`` or
+    ``torch.func.functional_call``, are padded.
+
+    A dtype cast of the layer or of a parent (``.bfloat16()``, ``.half()``,
+    ``.to(dtype)``) changes the bias and the output dtype. The e4m3 weight
+    and its float32 scale follow device moves only. An output dtype that
+    ``torch._scaled_mm`` does not support raises in ``forward`` (torch 2.11
+    supports bf16 and float16, and float32 without a bias).
 
     The class deliberately does NOT participate in autograd through the
     fp8 GEMM — fp8 training is out of scope for this drop-in. Use the
@@ -147,9 +168,6 @@ class Fp8Linear(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.activation_dtype = activation_dtype
-        # cuBLASLt's fp8 GEMM requires both inner dims to be multiples of 16.
-        # Cached once because the dims are immutable.
-        self._fp8_capable = (in_features % 16 == 0) and (out_features % 16 == 0)
 
         # Initialise in f32 with the same Kaiming uniform nn.Linear uses,
         # then quantise to e4m3 once.
@@ -157,33 +175,30 @@ class Fp8Linear(nn.Module):
             (out_features, in_features), device=device, dtype=torch.float32
         )
         init.kaiming_uniform_(w_f32, a=math.sqrt(5))
-        w_fp8, w_scale = quantize_to_fp8(w_f32)
+        w_fp8, w_scale = quantize_to_fp8(self._pad(w_f32))
         self.weight = nn.Parameter(w_fp8, requires_grad=False)
         self.register_buffer("weight_scale", w_scale)
-
-        # Fallback-path cache. When ``_fp8_capable`` is False the forward
-        # dequantises the e4m3 weight to ``activation_dtype`` and runs
-        # ``F.linear``; doing that per-call costs ~10us and dominates the
-        # tiny GEMMs HQKAN feeds this layer. We cache the dequantised
-        # weight lazily on the first fallback call. The cache is a
-        # non-persistent buffer so checkpoints stay e4m3-only;
-        # ``_load_from_state_dict`` invalidates it.
-        # Trade-off: when ``_fp8_capable=False`` this layer uses ~2x the
-        # weight memory of a pure-fp8 layer (e4m3 + bf16 copy). The bf16
-        # copy is still smaller than f32 and these fallback shapes are by
-        # construction the narrow inner projections, so the absolute cost
-        # is small.
-        self.register_buffer("_weight_dequant_cache", None, persistent=False)
 
         if bias:
             b_f32 = torch.empty(out_features, device=device, dtype=torch.float32)
             bound = 1 / math.sqrt(in_features)
             init.uniform_(b_f32, -bound, bound)
             self.bias: Optional[nn.Parameter] = nn.Parameter(
-                b_f32.to(activation_dtype), requires_grad=False
+                self._pad(b_f32.to(activation_dtype)), requires_grad=False
             )
         else:
             self.bias = None
+
+    def _pad(self, t: torch.Tensor) -> torch.Tensor:
+        """Zero-pad a weight ``(out, in)`` or a bias ``(out,)`` to multiples of 16.
+
+        cuBLASLt's fp8 GEMM takes nothing else. The extra products are zero
+        and ``forward`` slices the extra outputs off.
+        """
+        pad: Tuple[int, ...] = (0, -self.out_features % 16)
+        if t.dim() == 2:
+            pad = (0, -self.in_features % 16, *pad)
+        return F.pad(t, pad) if any(pad) else t
 
     @torch.no_grad()
     def forward(
@@ -193,27 +208,6 @@ class Fp8Linear(nn.Module):
     ) -> torch.Tensor:
         weight_scale: torch.Tensor = self.weight_scale  # type: ignore[assignment]
         leading_shape = x.shape[:-1]
-
-        if not self._fp8_capable:
-            # Dequantise weight to ``activation_dtype`` once and reuse via
-            # cache; run a normal F.linear. Inputs may be either fp8 (with
-            # scale) or bf16/f32.
-            if x.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
-                if input_scale is None:
-                    raise ValueError(
-                        "Fp8Linear: when passing fp8 input, also pass input_scale"
-                    )
-                x = dequantize_from_fp8(x, input_scale, dtype=self.activation_dtype)
-            elif x.dtype != self.activation_dtype:
-                x = x.to(self.activation_dtype)
-            w: Optional[torch.Tensor] = self._weight_dequant_cache  # type: ignore[has-type]
-            if w is None:
-                w = dequantize_from_fp8(
-                    self.weight, weight_scale, dtype=self.activation_dtype
-                )
-                self._weight_dequant_cache = w
-            y = torch.nn.functional.linear(x, w, self.bias)
-            return y.reshape(*leading_shape, self.out_features)
 
         if x.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
             if input_scale is None:
@@ -228,23 +222,109 @@ class Fp8Linear(nn.Module):
         # _scaled_mm: y = (x_fp8 * x_scale) @ (W_fp8.t() * w_scale) + bias
         # Shapes: x_fp8 (M, K), W_fp8 (N, K) -> W_fp8.t() (K, N).
         x_flat = x_fp8.reshape(-1, self.in_features)
+        weight: torch.Tensor = self.weight
+        bias: Optional[torch.Tensor] = self.bias
+        # Operands in the (out, in) layout of a state dict, as
+        # torch.func.functional_call installs them.
+        if weight.shape == (self.out_features, self.in_features):
+            weight = self._pad(weight)
+        if bias is not None and bias.shape == (self.out_features,):
+            bias = self._pad(bias)
+        in_pad, out_pad = -self.in_features % 16, -self.out_features % 16
+        if in_pad:
+            x_flat = F.pad(x_flat, (0, in_pad))
         mm_out = torch._scaled_mm(
             x_flat,
-            self.weight.t(),
+            weight.t(),
             scale_a=x_scale,
             scale_b=weight_scale.to(torch.float32),
-            bias=self.bias,
+            bias=bias,
             out_dtype=self.activation_dtype,
         )
         # torch < 2.5 returns (out, amax); newer versions return the tensor.
         y = mm_out[0] if isinstance(mm_out, tuple) else mm_out
+        if out_pad:
+            y = y[:, : self.out_features].contiguous()
         return y.reshape(*leading_shape, self.out_features)
 
-    def _load_from_state_dict(self, *args, **kwargs) -> None:  # type: ignore[override]
-        # Invalidate the lazy dequant cache when weights are reloaded so
-        # subsequent forwards see the updated e4m3 weight / scale.
-        super()._load_from_state_dict(*args, **kwargs)
-        self._weight_dequant_cache = None  # type: ignore[assignment]
+    def _unpadded_shapes(self) -> dict:
+        return {
+            "weight": (self.out_features, self.in_features),
+            "bias": (self.out_features,),
+        }
+
+    def _save_to_state_dict(self, destination, prefix, keep_vars):
+        # A state dict holds the (out, in) layout, as views of the operands:
+        # the padded shapes would not tell this layer from another of the
+        # same ceil16 sizes.
+        super()._save_to_state_dict(destination, prefix, keep_vars)
+        for name, shape in self._unpadded_shapes().items():
+            t = destination.get(prefix + name)
+            if t is not None:
+                destination[prefix + name] = t[tuple(slice(n) for n in shape)]
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        for name, shape in self._unpadded_shapes().items():
+            key = prefix + name
+            t = state_dict.get(key)
+            if self._parameters.get(name) is None or not isinstance(t, torch.Tensor):
+                continue  # torch reports these
+            if t.shape == shape:
+                state_dict[key] = self._pad(t)
+            else:
+                # The padded shape too: it is what another layer stores.
+                error_msgs.append(
+                    f"size mismatch for {key}: copying a param with shape "
+                    f"{t.shape} from checkpoint, the shape in current model is "
+                    f"{torch.Size(shape)}."
+                )
+                # Reported; given its own parameter torch adds nothing.
+                state_dict[key] = self._parameters[name]
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        # A module pickled before the operands were stored padded.
+        for name, shape in self._unpadded_shapes().items():
+            p = self._parameters.get(name)
+            if p is not None and p.shape == shape:
+                p.data = self._pad(p.data)
+
+    def _apply(self, fn, recurse=True):
+        # torch._scaled_mm takes an e4m3 weight with a float32 scale and
+        # nothing else, so a dtype cast (.bfloat16(), .to(dtype), ...) must
+        # not convert them. fn is opaque: ask it what it does to an empty
+        # probe, and when that is a cast give the two tensors its device
+        # move only. The cast lands on the bias and on the output dtype.
+        fp8_state = (self.weight, self.weight_scale)
+
+        def keep_dtype(t):
+            if all(t is not s for s in fp8_state):
+                return fn(t)
+            probe = fn(t.new_empty(0))
+            return fn(t) if probe.dtype == t.dtype else t.to(probe.device)
+
+        super()._apply(keep_dtype, recurse)
+        probe = torch.empty(0, dtype=self.activation_dtype, device=self.weight.device)
+        self.activation_dtype = fn(probe).dtype
+        return self
 
     def extra_repr(self) -> str:
         return (
