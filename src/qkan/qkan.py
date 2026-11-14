@@ -996,10 +996,16 @@ class QKANLayer(nn.Module):
             postact_bias_trainable=self.postact_bias_trainable,
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
+            is_batchnorm=self.is_batchnorm,
             c_dtype=self.c_dtype,
             seed=self.seed,
             p_dim=self.p_dim,
         )
+        if self.is_batchnorm:
+            # per-input statistics and affine terms; the batch count is a scalar
+            spb.bn.load_state_dict(
+                {k: v[in_id] if v.dim() else v for k, v in self.bn.state_dict().items()}
+            )
         # Slice through natural-rank views so the indexing semantics match
         # today's behavior regardless of storage rank. For group != -1 the
         # theta/preacts natural rank is < 4, and the (O,I)-style slice has
@@ -1032,6 +1038,8 @@ class QKANLayer(nn.Module):
             self._as_oi(self.postact_bias)[out_id][:, in_id]
         )
         spb._as_oi(spb.mask).data.copy_(self._as_oi(self.mask)[out_id][:, in_id])
+        spb._mask_is_identity = self._mask_is_identity
+        spb._pb_is_nonzero = self._pb_is_nonzero
         return spb
 
 
@@ -1401,33 +1409,62 @@ class QKAN(nn.Module):
         Initialize from another model.
         Used for layer extension to refine the model.
 
-        The reps of ``another_model`` become the first reps of this model,
-        which must have at least as many. Where the ansatz allows it, the
-        added reps start as the identity, so that every edge keeps its
-        activation:
+        This model must have at least as many reps as ``another_model`` and
+        be built with the same options otherwise: only the widths, the reps
+        and ``is_batchnorm`` are checked. It is left in its own train or eval
+        mode. The added reps start as the identity, so that every edge keeps
+        its activation:
 
-        - ``"pz_encoding"``, ``"rpz_encoding"``, ``"mix"``: kept.
+        - ``"pz_encoding"``, ``"rpz_encoding"``, ``"mix"``: kept. The reps of
+          ``another_model`` become the first reps.
+        - ``"px_encoding"``: kept. The reps of ``another_model`` become the
+          last reps.
         - ``"real"``: kept with ``preact_trainable=True``. With frozen
           preacts each added rep applies ``Ry(x)``, which raises the
-          frequency of the activation, so no initialization can keep it.
-        - ``"px_encoding"``: not kept, no identity is set up for it.
+          frequency of the activation: no initialization can keep it, and
+          adding reps raises ``ValueError``.
         - custom ansatz or solver: theta fills the leading block of the new
           theta; what the rest computes is up to the callable.
 
-        Theta, the preacts, the postact weights and bias and the base weights
-        are copied; a pruning mask and the batchnorm layer are not.
+        Theta, the preacts, the postact weights and bias, the base weights,
+        the pruning mask and the batchnorm layer are copied.
 
         Args
         ----
             another_model : QKAN
                 Another model to initialize from
         """
-        assert all(x == y for x, y in zip(self.width, another_model.width)), (
+        assert list(self.width) == list(another_model.width), (
             "Cannot initialize from another model with different width"
         )
         assert self.reps >= another_model.reps, (
             "Cannot initialize from another model with more reps"
         )
+        # What cannot be copied is refused before anything is written.
+        for l, (layer, src_layer) in enumerate(zip(self.layers, another_model.layers)):
+            if not isinstance(layer, QKANLayer):
+                continue
+            assert isinstance(src_layer, QKANLayer)
+            if layer.is_batchnorm != src_layer.is_batchnorm:
+                raise ValueError(
+                    f"Cannot initialize from another model: layer {l} has "
+                    f"is_batchnorm={layer.is_batchnorm} and the other model's "
+                    f"has is_batchnorm={src_layer.is_batchnorm}. Build both "
+                    "models with the same is_batchnorm"
+                )
+            if (
+                layer._theta_collapsible
+                and layer.reps > src_layer.reps
+                and layer.ansatz == "real"
+                and not layer.preact_trainable
+            ):
+                raise ValueError(
+                    "Cannot add reps to the real ansatz with frozen preacts and "
+                    "keep the activation: each added rep applies Ry(x), which "
+                    "raises its frequency. Build the larger model with "
+                    "preact_trainable=True and call its "
+                    "initialize_from_another_model(model)"
+                )
         count = -2
         for l, layer in enumerate(self.layers):
             if isinstance(layer, QKANLayer):
@@ -1440,8 +1477,15 @@ class QKAN(nn.Module):
                 src_t = src_layer._theta_natural().data
                 dst_t = layer._theta_natural().data
                 dst_pw = layer._preacts_w_natural().data
-                dst_pw[..., :reps].copy_(src_layer._preacts_w_natural().data)
-                layer._preacts_b_natural().data[..., :reps].copy_(
+                # The reps of the source are the first reps of the target,
+                # except for px, where they are the last.
+                first = 0
+                if layer._theta_collapsible and layer.ansatz in ("px_encoding", "px"):
+                    first = layer.reps - reps
+                dst_pw[..., first : first + reps].copy_(
+                    src_layer._preacts_w_natural().data
+                )
+                layer._preacts_b_natural().data[..., first : first + reps].copy_(
                     src_layer._preacts_b_natural().data
                 )
                 if not layer._theta_collapsible:
@@ -1454,7 +1498,7 @@ class QKAN(nn.Module):
                 else:
                     # One slice per rep, then the final layer (real has none);
                     # a theta shared by a group broadcasts over the edges.
-                    dst_t[..., : src_t.shape[-2], :].copy_(src_t)
+                    dst_t[..., first : first + src_t.shape[-2], :].copy_(src_t)
                     # The added reps keep the reset values (theta 0, preacts 1
                     # and 0): for pz/rpz they are Rz data gates only, which
                     # do not change the Z measurement.
@@ -1467,8 +1511,12 @@ class QKAN(nn.Module):
                         # Z Ry(-pi) X = I, and a zero weight makes the data
                         # gate Ry(w x + b) the identity too.
                         dst_t[..., reps:, :] = -math.pi
-                        if layer.preact_trainable:
-                            dst_pw[..., reps:] = 0
+                        dst_pw[..., reps:] = 0
+                    elif first:
+                        # px: with theta 0 the added reps are Rx gates on |+>,
+                        # an eigenstate of Rx. A zero weight keeps their
+                        # acos(w x + b) inside its domain.
+                        dst_pw[..., :first] = 0
                 # (O, I) params: copy via 2D view to bridge p_dim differences.
                 layer._as_oi(layer.postact_weights).data.copy_(
                     src_layer._as_oi(src_layer.postact_weights).data
@@ -1481,6 +1529,16 @@ class QKAN(nn.Module):
                 layer._as_oi(layer.base_weight).data.copy_(
                     src_layer._as_oi(src_layer.base_weight).data
                 )
+                layer._as_oi(layer.mask).data.copy_(
+                    src_layer._as_oi(src_layer.mask).data
+                )
+                # The flag of the source, so that a mask it does not apply is
+                # not applied here either.
+                layer._mask_is_identity = src_layer._mask_is_identity
+                if layer.is_batchnorm:
+                    layer.bn.load_state_dict(src_layer.bn.state_dict())
+                if not layer.training:
+                    layer.train(False)  # fold the copied values again
             if isinstance(layer, nn.Linear):
                 layer.weight.data.copy_(another_model.layers[count - 1].weight.data)  # type: ignore
                 layer.bias.data.copy_(another_model.layers[count - 1].bias.data)  # type: ignore
@@ -1505,11 +1563,11 @@ class QKAN(nn.Module):
         """
         Refine the model by layer extension, increasing the number of repetitions of quantum layers.
 
-        The new model starts from the parameters of this one. Every edge keeps
-        its activation for ``"pz_encoding"``, ``"rpz_encoding"``, ``"mix"`` and
-        for ``"real"`` with ``preact_trainable=True``, but not for ``"real"``
-        with frozen preacts nor for ``"px_encoding"``, see
-        :meth:`initialize_from_another_model`.
+        The new model is built with the options of this one, starts from its
+        parameters and is in the same train or eval mode. With a built-in
+        ansatz it computes the same function: every edge keeps its activation.
+        No initialization can do that for ``"real"`` with frozen preacts,
+        which raises ``ValueError``, see :meth:`initialize_from_another_model`.
 
         Args
         ----
@@ -1548,11 +1606,14 @@ class QKAN(nn.Module):
             c_dtype=self.c_dtype,
             p_dtype=self.p_dtype,
             seed=self.seed,
+            solver_kwargs=dict(self.solver_kwargs),
             p_dim=self.p_dim,
+            checkpoint_reps=self.checkpoint_reps,
             theta_init=self.theta_init,
         )
+        new_model.input_id = self.input_id
         new_model.initialize_from_another_model(self)
-        return new_model
+        return new_model.train(self.training)
 
     def layer_extension(self, new_reps: int) -> "QKAN":
         """
