@@ -12,6 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import torch
+
+
+def autocast_dtype(dtype: torch.dtype) -> torch.dtype:
+    """The dtype ``F.linear`` computes ``dtype`` operands in: the CUDA autocast
+    dtype under autocast, which leaves float64 alone, else ``dtype``."""
+    if dtype == torch.float64 or not torch.is_autocast_enabled():
+        return dtype
+    if hasattr(torch, "get_autocast_dtype"):  # torch >= 2.4
+        return torch.get_autocast_dtype("cuda")
+    return torch.get_autocast_gpu_dtype()
+
 
 def _cast_grads_to_dtype(grad_x, grad_theta, grad_pw, grad_pb, dtype):
     """Cast f32 gradients back to parameter dtype (used after bf16 backward)."""
