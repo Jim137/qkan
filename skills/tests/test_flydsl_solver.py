@@ -213,9 +213,7 @@ def test_empty_batch():
     assert out.shape == (0, 3, 5)
 
 
-# mix has no FlyDSL kernel and falls back to the exact solver, which needs
-# the layer to keep its complex c_dtype.
-@pytest.mark.parametrize("ansatz", ["pz_encoding", "rpz_encoding", "mix"])
+@pytest.mark.parametrize("ansatz", ["pz_encoding", "rpz_encoding"])
 def test_layer_matches_exact(ansatz):
     from qkan import QKAN
 

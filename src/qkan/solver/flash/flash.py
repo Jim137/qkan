@@ -16,8 +16,7 @@
 import torch
 
 from .._base import QKANSolver, register
-from .._utils import _cast_grads_to_dtype
-from ..exact import torch_exact_solver
+from .._utils import _cast_grads_to_dtype, check_ansatz, check_c_dtype
 from .launch_policy import DEFAULT_POLICY_NAME
 
 try:
@@ -37,6 +36,38 @@ except ImportError:
 
 
 _SUPPORTED_FLASH_ANSATZES = {"pz_encoding", "pz", "rpz_encoding", "rpz", "real"}
+_SUPPORTED_FLASH_DTYPES = (
+    torch.complex64,
+    torch.float32,
+    torch.bfloat16,
+    torch.float8_e4m3fn,
+)
+
+
+def _check_flash(ansatz, c_dtype: torch.dtype) -> None:
+    """Raise ``ValueError`` for an ansatz or c_dtype the Triton kernels do not cover."""
+    check_ansatz(
+        "flash",
+        ansatz,
+        _SUPPORTED_FLASH_ANSATZES,
+        "'pz_encoding', 'rpz_encoding' and 'real'",
+    )
+    # float16 buffers (float32 compute) exist in the pz and rpz kernels only.
+    if ansatz == "real":
+        check_c_dtype(
+            "flash",
+            c_dtype,
+            _SUPPORTED_FLASH_DTYPES,
+            "torch.complex64 / torch.float32, torch.bfloat16 and torch.float8_e4m3fn",
+        )
+    else:
+        check_c_dtype(
+            "flash",
+            c_dtype,
+            (*_SUPPORTED_FLASH_DTYPES, torch.float16),
+            "torch.complex64 / torch.float32, torch.bfloat16, torch.float16 and "
+            "torch.float8_e4m3fn",
+        )
 
 
 class _FlashFunction(torch.autograd.Function):
@@ -176,7 +207,7 @@ def flash_exact_solver(
     Triton-accelerated exact solver. Drop-in replacement for torch_exact_solver.
 
     Uses fused Triton kernels for pz_encoding, rpz_encoding, and real ansatzes.
-    Falls back to torch_exact_solver for unsupported ansatzes.
+    Any other ansatz, or a ``dtype`` the kernels have no path for, raises ``ValueError``.
 
     Args:
         Same as torch_exact_solver.
@@ -197,17 +228,16 @@ def flash_exact_solver(
     pz_launch_policy = kwargs.get("pz_launch_policy")
     batch, in_dim = x.shape
 
+    _check_flash(ansatz, c_dtype)
+    # The kernels are real-valued: complex64 selects their float32 path.
+    if c_dtype == torch.complex64:
+        c_dtype = torch.float32
+
     # "default" (or None) is the built-in launch, valid for every ansatz.  A
     # named policy only tunes the PZ backward launch.
     named_policy = pz_launch_policy not in (None, DEFAULT_POLICY_NAME)
     if named_policy and ansatz not in ("pz_encoding", "pz"):
         raise ValueError("pz_launch_policy is only valid for the PZ ansatz")
-
-    # Fallback for unsupported ansatzes
-    if ansatz not in _SUPPORTED_FLASH_ANSATZES:
-        return torch_exact_solver(
-            x, theta, preacts_weight, preacts_bias, reps, **kwargs
-        )
 
     # Broadcasting logic (mirrors torch_exact_solver)
     if len(theta.shape) != 4:
@@ -317,6 +347,9 @@ class FlashSolver(QKANSolver):
 
     name = "flash"
 
+    def check(self, ansatz, c_dtype: torch.dtype, reps: int) -> None:
+        _check_flash(ansatz, c_dtype)
+
     def __call__(
         self,
         x: torch.Tensor,
@@ -330,6 +363,12 @@ class FlashSolver(QKANSolver):
             raise ImportError(
                 "Triton is required for solver='flash'. "
                 "Install with: pip install triton"
+            )
+        if not x.is_cuda:
+            raise RuntimeError(
+                "solver='flash' runs Triton kernels, which need CUDA tensors: "
+                f"got x on {x.device}. Move the layer and its input to a CUDA "
+                "device, or use solver='exact'."
             )
         return flash_exact_solver(
             x, theta, preacts_weight, preacts_bias, reps, **kwargs

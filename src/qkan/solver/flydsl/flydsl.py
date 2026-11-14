@@ -16,7 +16,7 @@
 import torch
 
 from .._base import QKANSolver, register
-from ..exact import torch_exact_solver
+from .._utils import check_ansatz, check_c_dtype
 
 try:
     from .flydsl_ops import (
@@ -32,6 +32,30 @@ except ImportError:
 
 
 _SUPPORTED_FLYDSL_ANSATZES = {"pz_encoding", "pz", "rpz_encoding", "rpz", "real"}
+_SUPPORTED_FLYDSL_DTYPES = (
+    torch.complex64,
+    torch.float32,
+    torch.bfloat16,
+    torch.float16,
+    torch.float8_e4m3fn,
+)
+
+
+def _check_flydsl(ansatz, c_dtype: torch.dtype) -> None:
+    """Raise ``ValueError`` for an ansatz or c_dtype the FlyDSL kernels do not cover."""
+    check_ansatz(
+        "flydsl",
+        ansatz,
+        _SUPPORTED_FLYDSL_ANSATZES,
+        "'pz_encoding', 'rpz_encoding' and 'real'",
+    )
+    check_c_dtype(
+        "flydsl",
+        c_dtype,
+        _SUPPORTED_FLYDSL_DTYPES,
+        "torch.complex64 / torch.float32, torch.bfloat16, torch.float16 and "
+        "torch.float8_e4m3fn",
+    )
 
 
 def _grad_like(grad, ref):
@@ -127,8 +151,8 @@ def flydsl_exact_solver(
     FlyDSL-accelerated exact solver for AMD GPUs (ROCm).
 
     Drop-in replacement for flash_exact_solver / cute_exact_solver. Uses fused
-    FlyDSL kernels for pz_encoding, rpz_encoding, and real ansatzes and falls
-    back to torch_exact_solver for the rest.
+    FlyDSL kernels for pz_encoding, rpz_encoding, and real ansatzes. Any other
+    ansatz, or a ``dtype`` the kernels have no path for, raises ``ValueError``.
 
     Key properties:
       - ``reps`` is unrolled at compile time; theta trig is computed once per
@@ -155,11 +179,7 @@ def flydsl_exact_solver(
     c_dtype = kwargs.get("dtype", torch.complex64)
     batch, in_dim = x.shape
 
-    # Fallback for unsupported ansatzes
-    if ansatz not in _SUPPORTED_FLYDSL_ANSATZES:
-        return torch_exact_solver(
-            x, theta, preacts_weight, preacts_bias, reps, **kwargs
-        )
+    _check_flydsl(ansatz, c_dtype)
 
     # Broadcasting logic (mirrors torch_exact_solver)
     if len(theta.shape) != 4:
@@ -224,6 +244,9 @@ class FlyDSLSolver(QKANSolver):
     """FlyDSL ROCm solver (registered as ``"flydsl"``)."""
 
     name = "flydsl"
+
+    def check(self, ansatz, c_dtype: torch.dtype, reps: int) -> None:
+        _check_flydsl(ansatz, c_dtype)
 
     def __call__(
         self,

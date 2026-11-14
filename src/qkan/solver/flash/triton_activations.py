@@ -216,6 +216,15 @@ def _check_kind(kind: str) -> None:
         )
 
 
+def _check_dtype(x: torch.Tensor) -> None:
+    if x.dtype == torch.float64:
+        raise ValueError(
+            "Triton activations compute in float32 and do not support a float64 "
+            "input. Use a torch.nn activation (base_activation=torch.nn.SiLU() "
+            "on a layer), or float32 parameters and inputs."
+        )
+
+
 def triton_activation_forward(x: torch.Tensor, kind: str) -> torch.Tensor:
     """Element-wise activation forward via Triton.
 
@@ -227,6 +236,7 @@ def triton_activation_forward(x: torch.Tensor, kind: str) -> torch.Tensor:
         Tensor with same shape and dtype as ``x``.
     """
     _check_kind(kind)
+    _check_dtype(x)
     if not x.is_cuda:
         raise RuntimeError("triton_activation_forward requires CUDA tensors")
     x_c = x.contiguous()
@@ -254,6 +264,7 @@ def triton_activation_backward(
         Tensor with same shape/dtype as ``x`` (== forward output dtype).
     """
     _check_kind(kind)
+    _check_dtype(x)
     if not x.is_cuda:
         raise RuntimeError("triton_activation_backward requires CUDA tensors")
     x_c = x.contiguous()

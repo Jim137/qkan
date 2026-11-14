@@ -210,18 +210,16 @@ def test_second_derivatives_raise():
         grad.sum().backward()
 
 
-def test_unsupported_configurations_fall_back_to_exact():
+def test_unsupported_configurations_raise():
     x, theta, pw, pb = _inputs("rpz", "cpu")
-    x = (x.detach() * 0.1).requires_grad_()
     # px is not fused; double precision is beyond Metal.
-    for kw in (
-        dict(ansatz="px", preacts_trainable=True, dtype=torch.complex64),
-        dict(ansatz="pz", dtype=torch.complex128),
+    for kw, match in (
+        (dict(ansatz="px", preacts_trainable=True), "no kernel for ansatz 'px'"),
+        (dict(ansatz="rpz", dtype=torch.complex128), "Metal has no float64"),
+        (dict(ansatz="rpz", dtype=torch.float64), "Metal has no float64"),
     ):
-        th = theta if kw["ansatz"] == "px" else _inputs("pz", "cpu")[1]
-        expected = torch_exact_solver(x, th, pw * 0.1, pb * 0.1, 3, out_dim=3, **kw)
-        actual = mlx_exact_solver(x, th, pw * 0.1, pb * 0.1, 3, out_dim=3, **kw)
-        assert torch.equal(expected, actual)
+        with pytest.raises(ValueError, match=match):
+            mlx_exact_solver(x, theta, pw, pb, 3, out_dim=3, **kw)
 
 
 @pytest.mark.skipif("mps" not in DEVICES, reason="needs the MPS device")
@@ -349,14 +347,13 @@ def test_contracted_declines_what_it_does_not_fuse():
     x, theta, pw, pb = _inputs("pz", "cpu")
     weight = torch.randn(3, 5)
     kw = dict(out_dim=3)
-    # px is not fused, and Metal has no double precision.
+    # px is not fused: mlx_exact_solver, which the layer calls next, refuses it.
     assert mlx_contracted_solver(x, theta, pw, pb, weight, 3, ansatz="px", **kw) is None
-    assert (
+    # Metal has no double precision.
+    with pytest.raises(ValueError, match="Metal has no float64"):
         mlx_contracted_solver(
             x, theta, pw, pb, weight, 3, ansatz="pz", dtype=torch.complex128, **kw
         )
-        is None
-    )
     # One row of thetas shared by every output: the unfused route evaluates
     # those circuits once instead of once per output.
     shared = theta[:1]

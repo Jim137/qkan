@@ -12,6 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import torch
+
+
+def check_ansatz(solver: str, ansatz, supported, names: str) -> None:
+    """Raise ``ValueError`` if ``solver`` has no kernel for ``ansatz``."""
+    if not isinstance(ansatz, str) or ansatz not in supported:
+        raise ValueError(
+            f"solver={solver!r} has no kernel for ansatz {ansatz!r}: it implements "
+            f"{names}. Use solver='exact' for this ansatz."
+        )
+
+
+def check_c_dtype(solver: str, c_dtype, supported, names: str) -> None:
+    """Raise ``ValueError`` if ``solver``, which computes in float32, has no
+    path for ``c_dtype``."""
+    if c_dtype not in supported:
+        double = c_dtype in (torch.float64, torch.complex128)
+        raise ValueError(
+            f"solver={solver!r} computes in float32 and does not support "
+            f"c_dtype={c_dtype}: it accepts {names}."
+            + (" Use solver='exact' for double precision." if double else "")
+        )
+
 
 def _cast_grads_to_dtype(grad_x, grad_theta, grad_pw, grad_pb, dtype):
     """Cast f32 gradients back to parameter dtype (used after bf16 backward)."""

@@ -211,9 +211,13 @@ options go in `solver_kwargs={...}`. Details:
 
 Notes
 
-- `flash`/`cutile`/`cute` are real-valued kernels; complex `c_dtype` is
-  mapped to real automatically. Unsupported ansatzes fall back to `exact`.
-- `cutn` accepts alias `"tn"`; falls back to `exact` for `reps > 11`.
+- `flash`/`cutile`/`cute` are real-valued float32 kernels for the `pz`, `rpz` and `real` ansatzes; `c_dtype=torch.complex64` (the default for `pz` and `rpz`) selects their float32 path.
+- An ansatz without a kernel, or a double-precision `c_dtype` on these solvers, raises `ValueError` when the model is built; it is not handed to `exact` or computed in single precision.
+  Use `solver="exact"` for `px` (with `preact_trainable=True`), `mix` and custom ansatzes.
+  For double precision use `solver="exact"` with `c_dtype=torch.complex128` and `p_dtype=torch.float64`.
+- With the default string `base_activation`, a `flash`/`cute`/`cutile`/`flydsl` model whose backend is not installed raises `ImportError` when it is built.
+- `cutn` accepts alias `"tn"`; it raises `ValueError` for `reps > 11` (`> 12` for `real`) and for ansatzes other than `pz`, `rpz` and `real`.
+- `qml` implements `pz` with fixed pre-activations only; another ansatz or `preact_trainable=True` raises `ValueError`.
 - A custom callable can be passed as `solver` (requires `theta_size`).
 - Ansatz choice (`ansatz=`): `pz` (default, most reliable), `rpz` (fewer
   parameters, trainable pre-activation bias), `real` (fastest, may cost
@@ -433,8 +437,8 @@ experiments.
 
 ## Troubleshooting
 
-- `ImportError: Triton is required for solver=flash` - `pip install triton`
-  (or `qkan[gpu]`)
+- `ImportError: Triton is required for TritonActivation` (when the model is built) or `for solver='flash'` - `pip install triton` (or `qkan[gpu]`)
+- `ValueError: solver='...' has no kernel for ansatz ...` or `... does not support c_dtype=...` - the solver cannot run this configuration; the message names what it accepts and which solver to use instead
 - `CuTe DSL solver requires CUTLASS headers` - set `CUTLASS_PATH` or use the
   pre-built wheel index `https://qkan.jimq.cc/whl/cu13/` (or `/cu12/`)
 - CuTe local build skipped with CUDA-mismatch warning - system `nvcc` must

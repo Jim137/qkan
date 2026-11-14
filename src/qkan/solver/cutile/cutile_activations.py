@@ -225,10 +225,19 @@ def _kind_code(kind: str) -> int:
 
 
 def _resolve_io_dtype(c_dtype: torch.dtype) -> tuple[torch.dtype, bool]:
-    """Return (io_dtype, compute_bf16). f32 stays f32; everything else is bf16 IO."""
-    if c_dtype == torch.float32:
+    """Return (io_dtype, compute_bf16); raise for a dtype without a kernel.
+
+    float16 (the default CUDA autocast dtype) runs the float32 kernel and the
+    callers round the result back to float16.
+    """
+    if c_dtype in (torch.float32, torch.float16):
         return torch.float32, False
-    return torch.bfloat16, True
+    if c_dtype == torch.bfloat16:
+        return torch.bfloat16, True
+    raise ValueError(
+        f"CuTileActivation supports float32, bfloat16 and float16, got {c_dtype}. "
+        "Cast the input first, or use a torch.nn activation."
+    )
 
 
 def _launch_chunked(kernel, flats: tuple, code: int, compute_bf16: bool) -> None:
@@ -252,10 +261,11 @@ def cutile_activation_forward(
     Args:
         x: input tensor on CUDA, any shape; will be flattened internally.
         kind: one of ``_VALID_KINDS``.
-        c_dtype: compute / storage dtype (``torch.float32`` or ``torch.bfloat16``).
+        c_dtype: storage dtype: ``torch.float32``, ``torch.bfloat16`` or
+            ``torch.float16`` (computed in float32).
 
     Returns:
-        Tensor of the same shape as ``x`` in the chosen IO dtype.
+        Tensor of the same shape as ``x`` in ``c_dtype``.
     """
     code = _kind_code(kind)
     if not x.is_cuda:
@@ -267,11 +277,11 @@ def cutile_activation_forward(
     n_elems = x_flat.numel()
     out_flat = torch.empty(n_elems, device=x.device, dtype=io_dtype)
 
-    if n_elems == 0:
-        return out_flat.view_as(x)
-
-    _launch_chunked(_activation_forward_kernel, (x_flat, out_flat), code, compute_bf16)
-    return out_flat.view_as(x)
+    if n_elems:
+        _launch_chunked(
+            _activation_forward_kernel, (x_flat, out_flat), code, compute_bf16
+        )
+    return out_flat.view_as(x).to(c_dtype)
 
 
 def cutile_activation_backward(
@@ -283,10 +293,11 @@ def cutile_activation_backward(
         grad_y: upstream gradient with the same shape as ``x``.
         x: input tensor saved from the forward pass.
         kind: one of ``_VALID_KINDS``.
-        c_dtype: compute / storage dtype (``torch.float32`` or ``torch.bfloat16``).
+        c_dtype: storage dtype: ``torch.float32``, ``torch.bfloat16`` or
+            ``torch.float16`` (computed in float32).
 
     Returns:
-        ``grad_x`` with the same shape as ``x`` in the chosen IO dtype.
+        ``grad_x`` with the same shape as ``x`` in ``c_dtype``.
     """
     code = _kind_code(kind)
     if not x.is_cuda or not grad_y.is_cuda:
@@ -304,13 +315,11 @@ def cutile_activation_backward(
     n_elems = x_flat.numel()
     grad_x_flat = torch.empty(n_elems, device=x.device, dtype=io_dtype)
 
-    if n_elems == 0:
-        return grad_x_flat.view_as(x)
-
-    _launch_chunked(
-        _activation_backward_kernel,
-        (x_flat, grad_y_flat, grad_x_flat),
-        code,
-        compute_bf16,
-    )
-    return grad_x_flat.view_as(x)
+    if n_elems:
+        _launch_chunked(
+            _activation_backward_kernel,
+            (x_flat, grad_y_flat, grad_x_flat),
+            code,
+            compute_bf16,
+        )
+    return grad_x_flat.view_as(x).to(c_dtype)

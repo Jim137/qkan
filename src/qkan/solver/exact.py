@@ -19,6 +19,36 @@ from torch.utils.checkpoint import checkpoint
 from ..torch_qc import StateVector, TorchGates
 from ._base import QKANSolver, register
 
+_COMPLEX_OF = {
+    torch.float32: torch.complex64,
+    torch.float64: torch.complex128,
+    float: torch.complex128,
+}
+
+
+def _simulation_dtype(ansatz, dtype, solver: str = "exact"):
+    """The dtype the state of ``ansatz`` is simulated in.
+
+    The built-in ansatzes other than ``"real"`` have complex amplitudes, and a
+    real dtype would drop their imaginary parts. For them float32 / float64
+    name the complex dtype of the same precision, and any other real dtype
+    raises ``ValueError``. ``"real"`` and callable ansatzes keep ``dtype``.
+    """
+    if not isinstance(ansatz, str) or ansatz == "real":
+        return dtype
+    if dtype in _COMPLEX_OF:
+        return _COMPLEX_OF[dtype]
+    if dtype is complex or (isinstance(dtype, torch.dtype) and dtype.is_complex):
+        return dtype
+    raise ValueError(
+        f"solver={solver!r} simulates ansatz {ansatz!r} with complex "
+        f"amplitudes and does not support c_dtype={dtype}: it takes "
+        "torch.complex64 (or torch.float32) and torch.complex128 (or "
+        "torch.float64). Mixed precision (bfloat16 / fp8) is implemented "
+        "by solver='flash', 'cute' and 'cutile' for the pz, rpz and real "
+        "ansatzes."
+    )
+
 
 def torch_exact_solver(
     x: torch.Tensor,
@@ -46,6 +76,10 @@ def torch_exact_solver(
             options: ["pz_encoding", "px_encoding"], default: "pz_encoding"
         n_group : int
             number of neurons in a group, default: in_dim of x
+        dtype : torch.dtype
+            default: torch.complex64. Except for the "real" and callable
+            ansatzes, float32 / float64 mean complex64 / complex128 and any
+            other real dtype raises ValueError.
 
     Returns
     -------
@@ -59,7 +93,7 @@ def torch_exact_solver(
     preacts_trainable = kwargs.get("preacts_trainable", False)
     fast_measure = kwargs.get("fast_measure", True)
     out_dim: int = kwargs.get("out_dim", in_dim)
-    dtype = kwargs.get("dtype", torch.complex64)
+    dtype = _simulation_dtype(ansatz, kwargs.get("dtype", torch.complex64))
     # Opt-in activation checkpointing: recompute per-rep state in backward
     # instead of storing it. Trades ~1 extra forward pass for reps× less
     # rep-state memory. Only meaningful when grad is required.
@@ -71,6 +105,11 @@ def torch_exact_solver(
         repeat_out = out_dim
         repeat_in = in_dim // theta.shape[1] + 1
         theta = theta.repeat(repeat_out, repeat_in, 1, 1)[:, :in_dim, :, :]
+    if ansatz in ("px_encoding", "px") and not preacts_trainable:
+        raise ValueError(
+            f"ansatz {ansatz!r} encodes acos(w x + b) and has no circuit for "
+            "frozen pre-activations: build the layer with preact_trainable=True"
+        )
     # rpz_encoding always needs encoded_x (with bias), even when preacts_trainable=False
     _needs_encoded_x = preacts_trainable or ansatz in ("rpz_encoding", "rpz")
     if _needs_encoded_x:
@@ -323,6 +362,9 @@ class ExactTorchSolver(QKANSolver):
     """Pure-PyTorch reference solver (registered as ``"exact"``)."""
 
     name = "exact"
+
+    def check(self, ansatz, c_dtype: torch.dtype, reps: int) -> None:
+        _simulation_dtype(ansatz, c_dtype)
 
     def __call__(
         self,

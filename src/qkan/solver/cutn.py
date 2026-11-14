@@ -19,7 +19,8 @@ import torch
 
 from ..torch_qc import TorchGates
 from ._base import QKANSolver, register
-from .exact import torch_exact_solver
+from ._utils import check_ansatz
+from .exact import _simulation_dtype
 
 # cuQuantum / opt_einsum availability
 try:
@@ -95,9 +96,6 @@ def _build_real_expression(reps, preacts_trainable):
     Operands per rep: 2 (fused gate + data encoding). No final gate.
     """
     chain = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    n_needed = 2 + 2 * reps
-    if n_needed > 26:
-        return None
     ci = 0
     q = chain[ci]
     ci += 1
@@ -125,9 +123,6 @@ def _build_pz_expression(reps, preacts_trainable):
     Operands per rep: 2 (fused gate + data encoding). +1 final gate.
     """
     chain = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    n_needed = 3 + 2 * reps  # H(2) + reps*2 + final(1)
-    if n_needed > 26:
-        return None
     ci = 0
     q = chain[ci]
     ci += 1
@@ -161,9 +156,6 @@ def _build_rpz_expression(reps):
     Operands per rep: 2 (RY + RZ_data). +1 final RY.
     """
     chain = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    n_needed = 3 + 2 * reps
-    if n_needed > 26:
-        return None
     ci = 0
     q = chain[ci]
     ci += 1
@@ -259,6 +251,32 @@ def _get_plan(expression, operands):
     return _CUTN_PLAN_CACHE[key]
 
 
+_SUPPORTED_CUTN_ANSATZES = {"pz_encoding", "pz", "rpz_encoding", "rpz", "real"}
+
+
+def _check_cutn(ansatz, c_dtype: torch.dtype, reps: int) -> torch.dtype:
+    """Raise ``ValueError`` for an ansatz, depth or c_dtype the network does not cover.
+
+    Returns the dtype to simulate in (see ``exact._simulation_dtype``).
+    """
+    check_ansatz(
+        "cutn",
+        ansatz,
+        _SUPPORTED_CUTN_ANSATZES,
+        "'pz_encoding', 'rpz_encoding' and 'real'",
+    )
+    # The einsum names its chain indices with the 26 upper-case letters:
+    # 2 + 2 * reps of them, and one more for the final gate of pz / rpz.
+    max_reps = (26 - 2 - (ansatz != "real")) // 2
+    if reps > max_reps:
+        raise ValueError(
+            f"solver='cutn' supports reps <= {max_reps} for ansatz {ansatz!r} "
+            f"(its einsum has one single-letter index per gate), got "
+            f"reps={reps}. Use solver='exact' for a deeper circuit."
+        )
+    return _simulation_dtype(ansatz, c_dtype, solver="cutn")
+
+
 def cutn_solver(
     x: torch.Tensor,
     theta: torch.Tensor,
@@ -275,8 +293,8 @@ def cutn_solver(
     The contraction plan is precompiled and cached so repeated forward
     calls pay no path-finding overhead.
 
-    Supports ``pz_encoding`` (``pz``), ``rpz_encoding`` (``rpz``), and ``real`` ansatzes.
-    Falls back to torch_exact_solver for unsupported ansatzes or reps > 11.
+    Supports ``pz_encoding`` (``pz``), ``rpz_encoding`` (``rpz``), and ``real`` ansatzes
+    with ``reps`` up to 11 (12 for ``real``). Anything else raises ``ValueError``.
 
     Args
     ----
@@ -295,6 +313,8 @@ def cutn_solver(
         fast_measure : bool
         out_dim : int
         dtype : torch.dtype
+            For pz / rpz, float32 / float64 mean complex64 / complex128 and
+            any other real dtype raises ValueError.
 
     Returns
     -------
@@ -307,13 +327,7 @@ def cutn_solver(
     preacts_trainable = kwargs.get("preacts_trainable", False)
     fast_measure = kwargs.get("fast_measure", True)
     out_dim: int = kwargs.get("out_dim", in_dim)
-    dtype = kwargs.get("dtype", torch.complex64)
-
-    _SUPPORTED = {"pz_encoding", "pz", "rpz_encoding", "rpz", "real"}
-    if ansatz not in _SUPPORTED:
-        return torch_exact_solver(
-            x, theta, preacts_weight, preacts_bias, reps, **kwargs
-        )
+    dtype = _check_cutn(ansatz, kwargs.get("dtype", torch.complex64), reps)
 
     # Build whole-circuit expression based on ansatz
     if ansatz in ("pz_encoding", "pz"):
@@ -322,11 +336,6 @@ def cutn_solver(
         expression = _build_rpz_expression(reps)
     else:  # real
         expression = _build_real_expression(reps, preacts_trainable)
-
-    if expression is None:  # reps too large for single-char indices
-        return torch_exact_solver(
-            x, theta, preacts_weight, preacts_bias, reps, **kwargs
-        )
 
     # Broadcasting logic (same as torch_exact_solver)
     if len(theta.shape) != 4:
@@ -432,6 +441,9 @@ class CuTNSolver(QKANSolver):
     """cuQuantum tensor-network solver (registered as ``"cutn"`` and ``"tn"``)."""
 
     name = "cutn"
+
+    def check(self, ansatz, c_dtype: torch.dtype, reps: int) -> None:
+        _check_cutn(ansatz, c_dtype, reps)
 
     def __call__(
         self,

@@ -35,6 +35,8 @@ import pathlib
 
 import torch
 
+from .._utils import check_c_dtype
+
 # ---------------------------------------------------------------------------
 # Extension loading: pre-built → JIT fallback
 # ---------------------------------------------------------------------------
@@ -202,8 +204,27 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
+_SUPPORTED_C_DTYPES = (
+    torch.complex64,
+    torch.float32,
+    torch.bfloat16,
+    torch.float8_e4m3fn,
+)
+
+
+def _check_c_dtype(c_dtype: torch.dtype) -> None:
+    """Raise ``ValueError`` for a c_dtype the CuTe kernels have no path for."""
+    check_c_dtype(
+        "cute",
+        c_dtype,
+        _SUPPORTED_C_DTYPES,
+        "torch.complex64 / torch.float32, torch.bfloat16 and torch.float8_e4m3fn",
+    )
+
+
 def _state_bits(c_dtype: torch.dtype) -> int:
     """Map c_dtype to state checkpoint precision bits (32=f32, 16=bf16, 8=nvfp8)."""
+    _check_c_dtype(c_dtype)
     if c_dtype == torch.float8_e4m3fn:
         return 8
     if c_dtype == torch.bfloat16:
@@ -213,20 +234,20 @@ def _state_bits(c_dtype: torch.dtype) -> int:
 
 def _use_bf16(c_dtype: torch.dtype) -> bool:
     """Whether to use bf16 I/O for forward kernels (halves memory bandwidth)."""
+    _check_c_dtype(c_dtype)
     return c_dtype in (torch.bfloat16, torch.float8_e4m3fn)
 
 
 def _resolve_io_dtype(c_dtype: torch.dtype) -> torch.dtype:
     """Map QKAN compute dtype to I/O dtype for CuTe kernels.
 
-    complex64/128 → float32 (QKAN uses complex to mean 'full precision float')
+    complex64 → float32 (QKAN uses complex to mean 'full precision float')
     float8_e4m3fn → bfloat16 (bf16 I/O with fp8 checkpoints)
     """
-    if c_dtype in (torch.complex64, torch.complex128, torch.float32):
+    _check_c_dtype(c_dtype)
+    if c_dtype in (torch.complex64, torch.float32):
         return torch.float32
-    if c_dtype == torch.float8_e4m3fn:
-        return torch.bfloat16
-    return c_dtype  # bfloat16 etc.
+    return torch.bfloat16
 
 
 def cute_pz_forward(
