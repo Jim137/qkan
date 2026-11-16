@@ -57,6 +57,7 @@ __all__ = [
     "compile_inference",
     "CompiledInference",
     "graph_submodules",
+    "invalidate_captured_graphs",
 ]
 
 
@@ -114,8 +115,10 @@ def make_graphed_inference(
 
     sample_shape = sample_input.shape
     sample_dtype = sample_input.dtype
+    epoch = _kernel_epoch
 
     def replay(x: torch.Tensor) -> torch.Tensor:
+        _refuse_stale(epoch)
         if x.shape != sample_shape or x.dtype != sample_dtype:
             raise ValueError(
                 f"Graphed callable requires shape {tuple(sample_shape)} "
@@ -303,8 +306,10 @@ def make_graphed_train_step(
     sample_in_dtype = sample_input.dtype
     sample_tgt_shape = sample_target.shape
     sample_tgt_dtype = sample_target.dtype
+    epoch = _kernel_epoch
 
     def train_step(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        _refuse_stale(epoch)
         if x.shape != sample_in_shape or x.dtype != sample_in_dtype:
             raise ValueError(
                 f"Graphed train_step requires input shape {tuple(sample_in_shape)} "
@@ -335,6 +340,31 @@ def _input_key(x: torch.Tensor) -> Optional[tuple]:
     if not isinstance(x, torch.Tensor) or not x.is_cuda:
         return None
     return (tuple(x.shape), x.dtype, x.device.index)
+
+
+# Counts the changes to which kernels a wrapped module launches: a graph
+# captured before the last one replays the old kernels.
+_kernel_epoch = 0
+
+
+def _refuse_stale(epoch: int) -> None:
+    if epoch != _kernel_epoch:
+        raise RuntimeError(
+            "this graph was captured before a solver was switched "
+            "(set_solver) and would replay the old kernels: capture again"
+        )
+
+
+def invalidate_captured_graphs() -> None:
+    """Mark every graph captured so far as stale.
+
+    For a change to what a module's forward launches, as opposed to the values
+    it reads: ``QKANLayer.set_solver`` calls it. A ``CompiledInference``
+    captures again on its next call; the callables of
+    ``make_graphed_inference`` and ``make_graphed_train_step`` raise.
+    """
+    global _kernel_epoch
+    _kernel_epoch += 1
 
 
 class CompiledInference(nn.Module):
@@ -424,6 +454,10 @@ class CompiledInference(nn.Module):
         if key is None:
             return self.module(x)
 
+        # See invalidate_captured_graphs; a wrapper pickled earlier has none.
+        if getattr(self, "_epoch", None) != _kernel_epoch:
+            self._cache.clear()
+            self._epoch = _kernel_epoch
         entry = self._cache.get(key)
         if entry is None:
             if len(self._cache) >= self.max_shapes:

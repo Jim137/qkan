@@ -37,6 +37,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm  # type: ignore
 
+from .inference import invalidate_captured_graphs
 from .info import get_dist_info, print0, print_version
 from .optim.lbfgs import LBFGSFinisher
 from .qkan_epilogue import QKANEpilogue, qkan_epilogue_forward
@@ -47,18 +48,22 @@ from .solver import (
     mlx_contracted_solver,
     qml_solver,
 )
+from .solver._activation import rematch_base_activation
 
 
 def _checked_c_dtype(solver, ansatz, c_dtype, reps: int, preact_trainable: bool):
-    """``c_dtype`` with its default resolved, once the solver accepts the request.
+    """The ``c_dtype`` a layer stores, once the solver accepts the request.
 
-    Raises ``ValueError`` for an unknown solver name and for an ansatz,
-    precision or depth the solver has no kernel for. Run before anything is
-    built or reseeded. Callable solvers are not checked.
+    Raises ``ValueError`` for a solver that is neither a name nor a callable,
+    for an unknown solver name, and for an ansatz, precision or depth the
+    solver has no kernel for. Run before anything is built, reseeded or
+    switched. Callable solvers are not checked.
     """
     if c_dtype is None:
         c_dtype = torch.bfloat16 if ansatz == "real" else torch.complex64
     if not isinstance(solver, str):
+        if not callable(solver):
+            raise ValueError(f"solver must be a name or a callable, got {solver!r}")
         return c_dtype
     if solver == "qml":
         # The qml circuit is pz_encoding on the raw input.
@@ -87,7 +92,60 @@ def _checked_c_dtype(solver, ansatz, c_dtype, reps: int, preact_trainable: bool)
             f"ansatz {ansatz!r} encodes acos(w x + b) and has no circuit for "
             "frozen pre-activations: build the model with preact_trainable=True"
         )
+    # Flash / cutile / cute / flydsl solvers use real-valued GPU kernels:
+    # complex64 (the default for non-real ansatzes) means their float32.
+    if solver in ("flash", "cutile", "cute", "flydsl") and c_dtype == torch.complex64:
+        return torch.float32
     return c_dtype
+
+
+def _checked_switch_c_dtype(solver, ansatz, kept, c_dtype, reps, preact_trainable):
+    """``_checked_c_dtype`` for set_solver, where ``c_dtype=None`` keeps ``kept``."""
+    try:
+        return _checked_c_dtype(
+            solver, ansatz, kept if c_dtype is None else c_dtype, reps, preact_trainable
+        )
+    except ValueError as error:
+        if c_dtype is not None or "c_dtype" not in str(error):
+            raise
+        raise ValueError(
+            f"{error} set_solver keeps the c_dtype unless one is passed: "
+            "set_solver(solver, c_dtype=...)."
+        ) from None
+
+
+def _fused_epilogue_default(solver) -> bool:
+    """Whether a layer built with ``solver`` starts with the fused epilogue on.
+
+    Off for parity, unless QKAN_FUSED_EPILOGUE says otherwise. The mlx solver
+    is the exception and defaults to on: there the sum over inputs moves into
+    the circuit kernel itself, which never materialises postacts
+    (QKAN_FUSED_EPILOGUE=0 turns it off).
+    """
+    env = os.environ.get("QKAN_FUSED_EPILOGUE")
+    return solver == "mlx" if env is None else env == "1"
+
+
+def _refuse_solver_assignment(module: nn.Module, name: str) -> None:
+    """Raise for ``module.solver = x`` once a solver is set: assigning would
+    change the attribute and nothing that is derived from it."""
+    state = module.__dict__
+    if (
+        name == "solver"
+        and (name in state or name in state.get("_modules", ()))
+        and not state.get("_is_replica")  # nn.DataParallel assigns the copies
+    ):
+        raise AttributeError(
+            "assigning .solver does not switch the solver that runs: call "
+            "set_solver(), which also re-derives c_dtype and the base activation"
+        )
+
+
+def _assign_solver(module: nn.Module, solver) -> None:
+    """``module.solver = solver`` for set_solver, past the guard on assignment."""
+    if isinstance(module.solver, nn.Module):
+        del module.solver  # a registered child takes nothing but a module
+    nn.Module.__setattr__(module, "solver", solver)
 
 
 class QKANLayer(nn.Module):
@@ -206,6 +264,7 @@ class QKANLayer(nn.Module):
         super(QKANLayer, self).__init__()
         if p_dim not in (2, 4):
             raise ValueError(f"p_dim must be 2 or 4, got {p_dim}")
+        self._c_dtype_request = c_dtype  # as given: set_solver resolves it again
         c_dtype = _checked_c_dtype(solver, ansatz, c_dtype, reps, preact_trainable)
         self.p_dim: Literal[2, 4] = p_dim
         self.solver_kwargs = solver_kwargs or {}
@@ -261,14 +320,6 @@ class QKANLayer(nn.Module):
         self.is_batchnorm = is_batchnorm
         self.fast_measure = fast_measure
         self.seed = seed
-        # Flash / cutile / cute / flydsl solvers use real-valued GPU kernels:
-        # complex64 (the default for non-real ansatzes) means their float32.
-        if (
-            solver in ("flash", "cutile", "cute", "flydsl")
-            and c_dtype == torch.complex64
-        ):
-            c_dtype = torch.float32
-
         self.c_dtype = c_dtype
         self.p_dtype = p_dtype
 
@@ -280,15 +331,8 @@ class QKANLayer(nn.Module):
 
         # Fused-epilogue feature flag. When True the (postacts+pb)*eff_pw sum
         # and the base linear term are collapsed into a single Triton kernel.
-        # Default OFF for parity; opt-in via constructor arg, env var, or
-        # ``layer.set_fused_epilogue(True)`` post-construction.
-        # The mlx solver is the exception and defaults to ON: there the sum
-        # over inputs moves into the circuit kernel itself, which never
-        # materialises postacts (QKAN_FUSED_EPILOGUE=0 turns it off).
-        _fused_env = os.environ.get("QKAN_FUSED_EPILOGUE")
-        self._use_fused_epilogue: bool = (
-            solver == "mlx" if _fused_env is None else _fused_env == "1"
-        )
+        # Opt-in via the env var or ``layer.set_fused_epilogue(True)``.
+        self._use_fused_epilogue: bool = _fused_epilogue_default(solver)
 
         self.init_parameters()
 
@@ -714,6 +758,78 @@ class QKANLayer(nn.Module):
     # ------------------------------------------------------------------
     # Solver dispatch (shared by both routes)
     # ------------------------------------------------------------------
+    def __setattr__(self, name: str, value) -> None:
+        _refuse_solver_assignment(self, name)
+        super().__setattr__(name, value)
+
+    def set_solver(
+        self,
+        solver: Union[str, Callable],
+        c_dtype: Optional[torch.dtype] = None,
+        solver_kwargs: Optional[dict] = None,
+    ) -> None:
+        """Switch the layer to another solver, keeping its parameters.
+
+        Afterwards the layer is what a layer built with ``solver=solver`` and
+        loaded with this one's state dict is. A base activation that was
+        given by name is rebuilt for the new solver; a module or function
+        that was passed in stays.
+
+        The layers of a :class:`QKAN` are switched through
+        :meth:`QKAN.set_solver`: ``refine()`` and pruning rebuild from the
+        model's own solver, and refuse once a layer was switched on its own.
+
+        Args
+        ----
+            solver : str | Callable
+                The solver to run from now on.
+            c_dtype : torch.dtype, optional
+                Compute dtype for the new solver, default: the one the layer
+                was built with or last switched to.
+            solver_kwargs : dict, optional
+                Options for the new solver. Those of the previous solver are
+                not carried over.
+
+        Raises, leaving the layer as it was: ``ValueError`` if the solver has
+        no kernel for the layer's ansatz, depth or ``c_dtype``, or if one of
+        the old and the new solver is a callable and the other a name (a
+        callable reads theta in the layout of ``theta_size``, so this holds
+        unless the ansatz is a callable too); ``ImportError`` if the solver's
+        backend is not installed.
+        """
+        request, stored = self._checked_switch(solver, c_dtype)
+        base_activation = rematch_base_activation(self.base_activation, solver)
+        self._switch(solver, request, stored, base_activation, solver_kwargs)
+
+    def _checked_switch(self, solver, c_dtype):
+        """``(c_dtype as requested, c_dtype to store)`` of this layer under
+        ``solver``; raises what building the layer with it would raise, and
+        for a switch between a name and a callable."""
+        if not callable(self.ansatz) and callable(solver) != callable(self.solver):
+            raise ValueError(
+                "set_solver cannot switch between a named solver and a "
+                "callable: a callable reads theta in the layout of theta_size. "
+                "Build a new layer for it."
+            )
+        # A layer pickled before set_solver existed has no request.
+        kept = getattr(self, "_c_dtype_request", self.c_dtype)
+        stored = _checked_switch_c_dtype(
+            solver, self.ansatz, kept, c_dtype, self.reps, self.preact_trainable
+        )
+        return (kept if c_dtype is None else c_dtype), stored
+
+    def _switch(self, solver, request, stored, base_activation, solver_kwargs):
+        if not getattr(self, "_fused_epilogue_set", False):
+            self._use_fused_epilogue = _fused_epilogue_default(solver)
+        _assign_solver(self, solver)
+        self._c_dtype_request, self.c_dtype = request, stored
+        self.base_activation = base_activation
+        self.solver_kwargs = solver_kwargs or {}
+        if isinstance(self._solver_fn, nn.Module):
+            del self._solver_fn  # registered as a child, like .solver
+        self._resolve_solver_fn()
+        invalidate_captured_graphs()
+
     def _resolve_solver_fn(self) -> None:
         """Pre-resolve the solver callable, skipping per-forward registry
         lookups."""
@@ -912,6 +1028,7 @@ class QKANLayer(nn.Module):
         chain.
         """
         self._use_fused_epilogue = bool(enabled)
+        self._fused_epilogue_set = True  # set_solver keeps a choice made here
 
     def reset_parameters(self):
         """
@@ -1034,7 +1151,7 @@ class QKANLayer(nn.Module):
             postact_bias_trainable=self.postact_bias_trainable,
             base_activation=self.base_activation,
             ba_trainable=self.ba_trainable,
-            c_dtype=self.c_dtype,
+            c_dtype=getattr(self, "_c_dtype_request", self.c_dtype),
             seed=self.seed,
             p_dim=self.p_dim,
         )
@@ -1339,6 +1456,61 @@ class QKAN(nn.Module):
             )
         self.input_id: Optional[torch.Tensor] = None
 
+    def __setattr__(self, name: str, value) -> None:
+        _refuse_solver_assignment(self, name)
+        super().__setattr__(name, value)
+
+    def set_solver(
+        self,
+        solver: Union[str, Callable],
+        c_dtype: Optional[torch.dtype] = None,
+        solver_kwargs: Optional[dict] = None,
+    ) -> None:
+        """Switch the model and every layer to another solver, keeping the
+        parameters.
+
+        See :meth:`QKANLayer.set_solver`. Without ``c_dtype`` each layer keeps
+        its own. If the model or one layer refuses, the whole model stays as
+        it was.
+        """
+        # Everything that can refuse comes first.
+        _checked_switch_c_dtype(
+            solver, self.ansatz, self.c_dtype, c_dtype, self.reps, self.preact_trainable
+        )
+        layers = [m for m in self.layers.modules() if isinstance(m, QKANLayer)]
+        checked = [layer._checked_switch(solver, c_dtype) for layer in layers]
+        # Keyed by the module it replaces, so the layers go on sharing the
+        # model's activation, as at construction.
+        rebuilt = {
+            id(m.base_activation): rematch_base_activation(m.base_activation, solver)
+            for m in (self, *layers)
+        }
+        self.solver_kwargs = solver_kwargs or {}  # the layers get this dict
+        for layer, (request, stored) in zip(layers, checked):
+            activation = rebuilt[id(layer.base_activation)]
+            layer._switch(solver, request, stored, activation, self.solver_kwargs)
+        _assign_solver(self, solver)
+        if c_dtype is not None:
+            self.c_dtype = c_dtype
+        self.base_activation = rebuilt[id(self.base_activation)]
+
+    def _check_layers_follow(self) -> None:
+        """refine() and pruning rebuild from the model's own solver and
+        c_dtype: refuse when a layer was switched on its own."""
+        c_dtype = _checked_c_dtype(
+            self.solver, self.ansatz, self.c_dtype, self.reps, self.preact_trainable
+        )
+        for i, layer in enumerate(self.layers):
+            if isinstance(layer, QKANLayer) and (
+                layer.solver != self.solver or layer.c_dtype != c_dtype
+            ):
+                raise ValueError(
+                    f"layer {i} runs solver={layer.solver!r} with "
+                    f"c_dtype={layer.c_dtype}, and the model would be rebuilt "
+                    f"with solver={self.solver!r} and c_dtype={c_dtype}: call "
+                    "model.set_solver(solver, c_dtype=...) first"
+                )
+
     def to(self, *args, **kwargs):
         """
         Move the model to the specified device.
@@ -1524,6 +1696,7 @@ class QKAN(nn.Module):
         assert new_reps > self.reps, (
             "New repetitions must be greater than current repetitions"
         )
+        self._check_layers_follow()
         new_model = QKAN(
             width=self.width,
             reps=new_reps,
@@ -2326,6 +2499,7 @@ class QKAN(nn.Module):
             QKAN
                 pruned network
         """
+        self._check_layers_follow()
         if not hasattr(self, "acts"):
             warnings.warn("No activations, cannot prune nodes", RuntimeWarning)
             return None
@@ -2472,6 +2646,7 @@ class QKAN(nn.Module):
             QKAN
                 pruned network
         """
+        self._check_layers_follow()
         if active_inputs is None:
             self.attribute()
             input_score = self.node_scores[0]

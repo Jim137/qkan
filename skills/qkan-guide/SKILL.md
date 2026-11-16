@@ -185,6 +185,8 @@ Key concepts to explain
   `{"train_loss": [...], "test_loss": [...], "reg": [...]}`
 - `save_act=True` is required for regularization (`lamb>0`), `plot(from_acts=True)`,
   `attribute()`, and pruning (`prune`, `prune_node`, `prune_edge`, `prune_input`)
+- Switching solver: `model.set_solver("exact")` switches a built model to another solver and keeps its parameters (a standalone layer has `set_solver` too), e.g. to take a `flash` model to the CPU.
+  `c_dtype` is kept unless passed (a bf16/FP8 `pz`/`rpz` model goes to `exact` with `c_dtype=torch.complex64`) and `solver_kwargs` are replaced by the ones passed; a solver that refuses the model raises `ValueError` and changes nothing; assigning `.solver` directly raises `AttributeError`.
 - Scaling up: `refine(new_reps)` grows the circuit depth of a trained model;
   QKAN-aware optimizers (`qkan.optim.QKANAdamMini`, `QKANBeliefMini`,
   L-BFGS finisher schedules) are covered in `docs/optim_guide.rst`;

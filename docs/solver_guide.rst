@@ -55,6 +55,33 @@ Solver Overview
      - See `CUDA-Q installation <https://nvidia.github.io/cuda-quantum/>`_
 
 
+Switching Solvers
+-----------------
+
+``set_solver`` switches a built model, or a single layer, to another solver and keeps its parameters:
+
+.. code-block:: python
+
+   model = QKAN([2, 8, 1], solver="flash", device="cuda")
+   # ... train ...
+   model.set_solver("exact")   # the flash kernels need CUDA
+   model.to("cpu")
+
+The result is the model you would get by building it with the new solver and loading the same state dict:
+
+- ``c_dtype`` stays as it was requested unless you pass a new one: ``model.set_solver("flash", c_dtype=torch.bfloat16)``.
+- If the new solver has no path for the kept ``c_dtype``, the error says so: pass one it has, for example ``model.set_solver("exact", c_dtype=torch.complex64)`` for a ``bfloat16`` model with a ``pz`` ansatz.
+- ``solver_kwargs`` are not carried over: pass the new solver's options with the call.
+- A base activation given by name (the default ``"silu"``) is rebuilt for the new solver; a module or function you passed in is kept.
+- A choice made with ``set_fused_epilogue()`` is kept; otherwise the fused epilogue follows the new solver's default.
+
+A refusal leaves the model as it was: ``ValueError`` for an ansatz, depth or ``c_dtype`` the new solver cannot take, ``ImportError`` for an activation kernel that is not installed.
+Assigning ``model.solver`` or ``layer.solver`` directly raises ``AttributeError``.
+A named solver and a custom callable cannot be exchanged for one another unless the ansatz is a callable too, because a callable solver reads ``theta`` in the layout of ``theta_size``.
+Switch the layers of a ``QKAN`` through the model: ``refine()`` and pruning rebuild from the model's own solver, and refuse once a layer was switched on its own.
+CUDA graphs captured before the switch are stale: ``compile_inference`` captures again, and the callables of ``make_graphed_inference`` and ``make_graphed_train_step`` raise until you capture again.
+
+
 Ansatz Choice
 -------------
 
