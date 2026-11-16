@@ -107,8 +107,9 @@ CASTS = {
 @pytest.mark.parametrize("cast", CASTS.values(), ids=CASTS.keys())
 @pytest.mark.parametrize("p_dim", [4, 2])
 def test_cached_state_follows_a_cast(cast, p_dim, training):
-    """Only QKANLayer.to() refreshed p_dtype, the p_dim=2 views and the eval
-    folds; .bfloat16() or a parent's .to() left them stale (#42)."""
+    """Only QKANLayer.to() refreshed p_dtype and the p_dim=2 views, and
+    nothing the eval folds; .bfloat16() or a parent's .to() left all three
+    stale (#42)."""
     layer = QKANLayer(
         2, 2, reps=2, solver="exact", seed=0, p_dim=p_dim, postact_bias_trainable=True
     )
@@ -130,6 +131,71 @@ def test_device_follows_a_parent_move():
     assert layer.device.type == "cuda"
     model = QKAN([2, 3, 1], reps=2, solver="exact").cuda()
     assert next(model.refine(3).parameters()).is_cuda
+
+
+def test_to_records_the_device_as_given():
+    """QKAN.to() calls each layer's own .to(): the device attribute is theirs
+    and holds the device as it was passed."""
+    device = torch.device("cpu")
+    model = QKAN([2, 3, 1], reps=2, solver="exact").to(device)
+    assert model.device is device
+    assert all(layer.device is device for layer in model.layers)
+    model.double()  # a cast is not a move
+    assert model.device is device
+    assert all(layer.device is device for layer in model.layers)
+    # No parameter to read a device from: only .to() can record it.
+    assert QKAN([2]).to(device).device is device
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_device_attribute_changes_only_with_a_move():
+    model = QKAN([2, 3, 1], reps=2, solver="exact").to("cuda")
+    assert [model.device, *(layer.device for layer in model.layers)] == ["cuda"] * 3
+    model.bfloat16()
+    assert [model.device, *(layer.device for layer in model.layers)] == ["cuda"] * 3
+    assert model(torch.rand(3, 2, device="cuda", dtype=torch.bfloat16)).is_cuda
+    torch.nn.Sequential(model).cpu()  # not through the model's own .to()
+    for module in (model, *model.layers):
+        assert module.device == torch.device("cpu")
+
+
+@pytest.mark.parametrize(
+    "named, device, expected",
+    [
+        ("cpu", "cpu", True),
+        ("cpu:0", "cpu", True),
+        (torch.device("cpu"), "cpu", True),
+        (None, "cpu", True),  # torch's default device
+        ("cpu", "cuda:0", False),
+        ("cuda", "cpu", False),  # also where CUDA cannot be initialised
+        ("cuda:99", "cuda:0", False),  # no such GPU
+        ("gpu", "cpu", False),  # not a device name
+        pytest.param(
+            "cuda",
+            "cuda:0",
+            True,
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="needs CUDA"
+            ),
+        ),
+    ],
+)
+def test_names_device(named, device, expected):
+    from qkan.qkan import _names_device
+
+    assert _names_device(named, torch.device(device)) is expected
+
+
+def test_cast_after_a_refused_to():
+    """.to() records the device before the move: a name torch then refuses
+    stays in the attribute, and must not make the next cast raise."""
+    model = QKAN([2, 3, 1], reps=2, solver="exact")
+    with pytest.raises(RuntimeError):
+        model.to("gpu")
+    model.double()
+    assert [layer.theta.dtype for layer in model.layers] == [torch.float64] * 2
+    # The second layer was never reached and still says "cpu".
+    assert [torch.device(m.device).type for m in (model, *model.layers)] == ["cpu"] * 3
 
 
 def test_cast_of_a_qkan_without_a_qkan_layer():
@@ -166,9 +232,20 @@ CONVERSIONS = [
         lambda **kw: QKANLayer(2, 2, **kw), lambda m: m.double(), id="layer-double"
     ),
     pytest.param(
+        lambda **kw: QKAN([2, 2], **kw),
+        lambda m: m.to(torch.float64),
+        id="QKAN-to(float64)",
+    ),
+    pytest.param(
         lambda **kw: torch.nn.Sequential(QKANLayer(2, 2, **kw)),
         lambda m: m.to(torch.bfloat16),
         id="Sequential-to(bfloat16)",
+    ),
+    pytest.param(
+        lambda **kw: QKAN([2, 2], **kw),
+        lambda m: m.to("cuda"),
+        id="QKAN-to(cuda)",
+        marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA"),
     ),
     pytest.param(
         lambda **kw: QKAN([2, 2], **kw),

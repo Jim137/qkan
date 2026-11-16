@@ -50,6 +50,15 @@ from .solver import (
 )
 
 
+def _names_device(named, device: torch.device) -> bool:
+    """Whether ``named``, a device attribute as the user gave it, is where
+    torch puts a tensor created on it: ``device``."""
+    try:
+        return torch.empty(0, device=named).device == device
+    except Exception:  # a name torch refuses, e.g. left by a rejected .to()
+        return False
+
+
 class QKANLayer(nn.Module):
     """
     QKANLayer Class
@@ -579,6 +588,36 @@ class QKANLayer(nn.Module):
             self._pb_is_nonzero = bool(self.postact_bias.data.any())
         self._refresh_from_params()  # assign=True replaces the parameters
 
+    def to(self, *args, **kwargs):
+        """
+        Move the layer to the specified device.
+
+        Args
+        ----
+            device : str | torch.device
+                Device to move the layer to, default: "cpu"
+        """
+        device = None
+        for arg in args:
+            if isinstance(arg, str) or isinstance(arg, torch.device):
+                device = arg
+                break
+            elif isinstance(arg, torch.dtype):
+                self.p_dtype = arg
+        if isinstance(kwargs.get("dtype"), torch.dtype):
+            self.p_dtype = kwargs["dtype"]
+        if "device" in kwargs:
+            device = kwargs["device"]
+        if device:
+            self.device = device
+            for param in self.parameters():
+                param.data = param.to(device)
+        ret = super(QKANLayer, self).to(*args, **kwargs)
+        # Param storage may have moved — rebuild cached views over the new
+        # storage. No-op under p_dim=4.
+        self._init_view_caches()
+        return ret
+
     def _apply(self, fn, *args, **kwargs):
         # Every cast or move lands here, also through a parent module (#42).
         with self._views_released():
@@ -611,10 +650,13 @@ class QKANLayer(nn.Module):
 
     def _refresh_from_params(self) -> None:
         """Re-derive what is cached from the parameters after their storage
-        changed: p_dtype, device and, in eval mode, the folded weights (#42).
+        changed: p_dtype and, in eval mode, the folded weights (#42); device
+        only once it no longer names where the parameters are.
         ``_views_released`` has rebuilt the p_dim=2 views."""
         self.p_dtype = self.theta.dtype
-        self.device = self.theta.device
+        # Kept as the constructor or .to() recorded it while that still holds.
+        if not _names_device(self.device, self.theta.device):
+            self.device = self.theta.device
         if not self.training:
             self.train(False)
 
@@ -1306,6 +1348,32 @@ class QKAN(nn.Module):
             )
         self.input_id: Optional[torch.Tensor] = None
 
+    def to(self, *args, **kwargs):
+        """
+        Move the model to the specified device.
+
+        Args
+        ----
+            device : str | torch.device
+                Device to move the model to, default: "cpu"
+        """
+        device = None
+        for arg in args:
+            if isinstance(arg, str) or isinstance(arg, torch.device):
+                device = arg
+                break
+            elif isinstance(arg, torch.dtype):
+                self.p_dtype = arg
+        if isinstance(kwargs.get("dtype"), torch.dtype):
+            self.p_dtype = kwargs["dtype"]
+        if "device" in kwargs:
+            device = kwargs["device"]
+        if device:
+            self.device = device
+        for layer in self.layers:
+            layer.to(*args, **kwargs)
+        return super(QKAN, self).to(*args, **kwargs)
+
     def _apply(self, fn, *args, **kwargs):
         # The layers refresh themselves in their own _apply (#42).
         super()._apply(fn, *args, **kwargs)
@@ -1313,7 +1381,8 @@ class QKAN(nn.Module):
         param = next(self.parameters(), None)
         if param is not None:
             self.p_dtype = param.dtype
-            self.device = param.device
+            if not _names_device(self.device, param.device):
+                self.device = param.device
         return self
 
     @property
