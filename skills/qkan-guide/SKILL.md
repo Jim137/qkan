@@ -373,10 +373,10 @@ IBM-native knobs are passed directly in `solver_kwargs` (not under
 `mitigation`): `resilience_level=2` (Qiskit-native ZNE) and
 `twirling={"enable_gates": True, "enable_measure": True}`.
 
-Gradients on hardware use the parameter-shift rule (2 evaluations per
-scalar parameter), so training on a QPU works out of the box when the
-user explicitly asks for it - default to local training otherwise and
-budget the extra circuit evaluations before submitting.
+Gradients on hardware use the parameter-shift rule: every backward of a layer reruns the layer's circuits twice per scalar `theta`, and twice per rep for the encoding gates.
+The encoding runs give the gradients of the layer input, `preacts_weight` and `preacts_bias` together, and are skipped when none of them needs one (a `pz_encoding` or `real` layer with `preact_trainable=False` whose input needs no gradient: the first layer of a model without batch norm).
+These gradients are first order: a loss on a derivative of the model (`create_graph=True`) needs second derivatives and raises, use `solver="exact"` for that.
+Training on a QPU therefore works out of the box when the user explicitly asks for it - default to local training otherwise and budget the extra circuit evaluations before submitting.
 
 ---
 
@@ -423,10 +423,7 @@ experiments.
 
 ## Limitations
 
-- Real-hardware solvers (`qiskit`, `cudaq`) default to inference; training
-  on a QPU is supported via the parameter-shift rule when the user
-  explicitly requests it, at 2 circuit evaluations per scalar parameter
-  per step — budget accordingly
+- Real-hardware solvers (`qiskit`, `cudaq`) default to inference; training on a QPU is supported via the parameter-shift rule when the user explicitly requests it, at 2 runs of a layer's circuits per scalar `theta` plus 2 per rep, per step — budget accordingly
 - `flash`/`cutile`/`cute` require an NVIDIA GPU; `cutile` needs CUDA
   Toolkit 13.1+; `cute` needs CUTLASS headers unless the pre-built wheel
   index is used; extras come in cu12/cu13 families

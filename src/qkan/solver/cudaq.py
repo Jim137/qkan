@@ -18,7 +18,6 @@
 QKAN solver for CUDA-Q GPU-accelerated simulation or QPU execution.
 """
 
-import math
 import warnings
 from typing import Optional
 
@@ -35,6 +34,7 @@ except ImportError:
 
 
 from ._mitigation import _apply_mitigation
+from ._param_shift import ParamShift, encoding_angles
 from .layout import DeviceProfile, rank_qubits
 
 # ---------------------------------------------------------------------------
@@ -722,20 +722,8 @@ def _cudaq_evaluate(
         repeat_in = in_dim // theta.shape[1] + 1
         theta = theta.repeat(repeat_out, repeat_in, 1, 1)[:, :in_dim, :, :]
 
-    _needs_encoded_x = preacts_trainable or ansatz in ("rpz_encoding", "rpz")
-    encoded_x = None
-    if _needs_encoded_x:
-        if len(preacts_weight.shape) != 3:
-            preacts_weight = preacts_weight.unsqueeze(0)
-            preacts_bias = preacts_bias.unsqueeze(0)
-        if preacts_weight.shape[1] != in_dim:
-            repeat_out = out_dim
-            repeat_in = in_dim // preacts_weight.shape[1] + 1
-            preacts_weight = preacts_weight.repeat(repeat_out, repeat_in, 1)[
-                :, :in_dim, :
-            ]
-            preacts_bias = preacts_bias.repeat(repeat_out, repeat_in, 1)[:, :in_dim, :]
-        encoded_x = torch.einsum("oir,bi->boir", preacts_weight, x).add(preacts_bias)
+    encoded_x = encoding_angles(x, preacts_weight, preacts_bias, config)
+    _needs_encoded_x = encoded_x is not None
 
     x_np = x.detach().cpu()
     theta_np = theta.detach().cpu()
@@ -801,82 +789,6 @@ def _cudaq_evaluate(
 
     output = torch.tensor(expvals, dtype=x.dtype, device=x.device)
     return output.reshape(batch, out_dim, in_dim)
-
-
-class _CudaqParamShift(torch.autograd.Function):
-    """Autograd function using parameter-shift rule for CUDA-Q circuits."""
-
-    @staticmethod
-    def forward(ctx, x, theta, preacts_w, preacts_b, reps, config):
-        ctx.save_for_backward(x, theta, preacts_w, preacts_b)
-        ctx.reps = reps
-        ctx.config = config
-        return _cudaq_evaluate(x, theta, preacts_w, preacts_b, reps, config)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        x, theta, preacts_w, preacts_b = ctx.saved_tensors
-        reps = ctx.reps
-        config = ctx.config
-        shift = math.pi / 2
-
-        grad_theta = torch.zeros_like(theta)
-        flat_theta = theta.reshape(-1)
-        for k in range(flat_theta.numel()):
-            theta_plus = flat_theta.clone()
-            theta_plus[k] += shift
-            theta_minus = flat_theta.clone()
-            theta_minus[k] -= shift
-
-            f_plus = _cudaq_evaluate(
-                x, theta_plus.reshape(theta.shape), preacts_w, preacts_b, reps, config
-            )
-            f_minus = _cudaq_evaluate(
-                x, theta_minus.reshape(theta.shape), preacts_w, preacts_b, reps, config
-            )
-            grad_theta.reshape(-1)[k] = (
-                grad_output * (f_plus - f_minus) / (2 * math.sin(shift))
-            ).sum()
-
-        grad_pw = None
-        if preacts_w.requires_grad:
-            grad_pw = torch.zeros_like(preacts_w)
-            flat_pw = preacts_w.reshape(-1)
-            for k in range(flat_pw.numel()):
-                pw_plus = flat_pw.clone()
-                pw_plus[k] += shift
-                pw_minus = flat_pw.clone()
-                pw_minus[k] -= shift
-                f_plus = _cudaq_evaluate(
-                    x, theta, pw_plus.reshape(preacts_w.shape), preacts_b, reps, config
-                )
-                f_minus = _cudaq_evaluate(
-                    x, theta, pw_minus.reshape(preacts_w.shape), preacts_b, reps, config
-                )
-                grad_pw.reshape(-1)[k] = (
-                    grad_output * (f_plus - f_minus) / (2 * math.sin(shift))
-                ).sum()
-
-        grad_pb = None
-        if preacts_b.requires_grad:
-            grad_pb = torch.zeros_like(preacts_b)
-            flat_pb = preacts_b.reshape(-1)
-            for k in range(flat_pb.numel()):
-                pb_plus = flat_pb.clone()
-                pb_plus[k] += shift
-                pb_minus = flat_pb.clone()
-                pb_minus[k] -= shift
-                f_plus = _cudaq_evaluate(
-                    x, theta, preacts_w, pb_plus.reshape(preacts_b.shape), reps, config
-                )
-                f_minus = _cudaq_evaluate(
-                    x, theta, preacts_w, pb_minus.reshape(preacts_b.shape), reps, config
-                )
-                grad_pb.reshape(-1)[k] = (
-                    grad_output * (f_plus - f_minus) / (2 * math.sin(shift))
-                ).sum()
-
-        return None, grad_theta, grad_pw, grad_pb, None, None
 
 
 # Calibration snapshots fetched per machine ARN; cached for the process
@@ -1137,18 +1049,9 @@ def cudaq_solver(
         "mitigation": kwargs.get("mitigation", {}),
     }
 
-    needs_grad = theta.requires_grad or x.requires_grad
-    if preacts_trainable:
-        needs_grad = (
-            needs_grad or preacts_weight.requires_grad or preacts_bias.requires_grad
-        )
-
-    if needs_grad:
-        return _CudaqParamShift.apply(
-            x, theta, preacts_weight, preacts_bias, reps, config
-        )
-    else:
-        return _cudaq_evaluate(x, theta, preacts_weight, preacts_bias, reps, config)
+    return ParamShift.apply(
+        _cudaq_evaluate, x, theta, preacts_weight, preacts_bias, reps, config
+    )
 
 
 class CudaqSolver(QKANSolver):
