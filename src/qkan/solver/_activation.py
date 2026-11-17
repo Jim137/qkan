@@ -23,13 +23,14 @@ helper picks the activation kernel matching the chosen ``solver``:
   flydsl -> qkan.solver.flydsl.flydsl_activation.FlyDSLActivation
   other  -> torch.nn equivalent (SiLU, GELU, ReLU, Tanh, Sigmoid)
 
-A backend that isn't installed raises its own ImportError here, which is when
-the layer is built; the torch.nn equivalent is never substituted for it.
+A backend that isn't installed raises its own ImportError here, when the
+layer is built or switched (set_solver); the torch.nn equivalent is never
+substituted for it.
 """
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Any, Callable
 
 from torch import nn
 
@@ -64,25 +65,41 @@ def _normalize_kind(kind: str) -> str:
     return k
 
 
+# Set on a module that make_base_activation built from a name.
+_KIND_ATTR = "_qkan_kind"
+
+
 def make_base_activation(kind: str, solver: object) -> nn.Module:
     """Return an nn.Module computing the named activation, matched to the solver."""
     k = _normalize_kind(kind)
 
+    act: nn.Module
     if solver == "cute":
         from .cute.cute_activation import CuTeActivation
 
-        return CuTeActivation(k)
+        act = CuTeActivation(k)
     elif solver == "flash":
         from .flash.triton_activation import TritonActivation
 
-        return TritonActivation(k)
+        act = TritonActivation(k)
     elif solver == "cutile":
         from .cutile.cutile_activation import CuTileActivation
 
-        return CuTileActivation(k)
+        act = CuTileActivation(k)
     elif solver == "flydsl":
         from .flydsl.flydsl_activation import FlyDSLActivation
 
-        return FlyDSLActivation(k)
+        act = FlyDSLActivation(k)
+    else:
+        act = _TORCH_ACTIVATIONS[k]()
+    setattr(act, _KIND_ATTR, k)
+    return act
 
-    return _TORCH_ACTIVATIONS[k]()
+
+def rematch_base_activation(activation: Any, solver: object) -> Any:
+    """``activation`` rebuilt for ``solver`` if make_base_activation built it
+    from a name; a module or function the user passed in is returned as is."""
+    kind = getattr(activation, _KIND_ATTR, None)
+    if kind is None:
+        return activation
+    return make_base_activation(kind, solver).train(activation.training)
