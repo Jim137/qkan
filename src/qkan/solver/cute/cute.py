@@ -16,12 +16,12 @@
 import torch
 
 from .._base import QKANSolver, register
-from .._utils import _cast_grads_to_dtype
-from ..exact import torch_exact_solver
+from .._utils import _cast_grads_to_dtype, check_ansatz
 
 try:
     from .cute_ops import (
         _CUTE_KERNELS_AVAILABLE,
+        _check_c_dtype,
         cute_pz_backward,
         cute_pz_forward,
         cute_real_backward,
@@ -36,6 +36,17 @@ except ImportError:
 
 
 _SUPPORTED_CUTE_ANSATZES = {"pz_encoding", "pz", "rpz_encoding", "rpz", "real"}
+
+
+def _check_cute(ansatz, c_dtype: torch.dtype) -> None:
+    """Raise ``ValueError`` for an ansatz or c_dtype the CuTe kernels do not cover."""
+    check_ansatz(
+        "cute",
+        ansatz,
+        _SUPPORTED_CUTE_ANSATZES,
+        "'pz_encoding', 'rpz_encoding' and 'real'",
+    )
+    _check_c_dtype(c_dtype)
 
 
 class _CuTeFunction(torch.autograd.Function):
@@ -171,7 +182,7 @@ def cute_exact_solver(
     CuTe DSL-accelerated exact solver.  Drop-in replacement for flash_exact_solver.
 
     Uses fused CuTe CUDA kernels for pz_encoding, rpz_encoding, and real ansatzes.
-    Falls back to torch_exact_solver for unsupported ansatzes.
+    Any other ansatz, or a ``dtype`` the kernels have no path for, raises ``ValueError``.
 
     Key optimizations over Triton/cuTile:
       - Shared-memory theta trig caching (eliminates redundant sin/cos across batch)
@@ -197,11 +208,7 @@ def cute_exact_solver(
     c_dtype = kwargs.get("dtype", torch.complex64)
     batch, in_dim = x.shape
 
-    # Fallback for unsupported ansatzes
-    if ansatz not in _SUPPORTED_CUTE_ANSATZES:
-        return torch_exact_solver(
-            x, theta, preacts_weight, preacts_bias, reps, **kwargs
-        )
+    _check_cute(ansatz, c_dtype)
 
     # Broadcasting logic (mirrors torch_exact_solver)
     if len(theta.shape) != 4:
@@ -288,6 +295,9 @@ class CuTeSolver(QKANSolver):
     """CuTe DSL CUDA solver (registered as ``"cute"``)."""
 
     name = "cute"
+
+    def check(self, ansatz, c_dtype: torch.dtype, reps: int) -> None:
+        _check_cute(ansatz, c_dtype)
 
     def __call__(
         self,

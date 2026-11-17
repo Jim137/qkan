@@ -16,8 +16,7 @@
 import torch
 
 from .._base import QKANSolver, register
-from .._utils import _cast_grads_to_dtype
-from ..exact import torch_exact_solver
+from .._utils import _cast_grads_to_dtype, check_ansatz, check_c_dtype
 
 try:
     from .cutile_ops import (
@@ -35,6 +34,28 @@ except ImportError:
 
 
 _SUPPORTED_CUTILE_ANSATZES = {"pz_encoding", "pz", "rpz_encoding", "rpz", "real"}
+_SUPPORTED_CUTILE_DTYPES = (
+    torch.complex64,
+    torch.float32,
+    torch.bfloat16,
+    torch.float8_e4m3fn,
+)
+
+
+def _check_cutile(ansatz, c_dtype: torch.dtype) -> None:
+    """Raise ``ValueError`` for an ansatz or c_dtype the cuTile kernels do not cover."""
+    check_ansatz(
+        "cutile",
+        ansatz,
+        _SUPPORTED_CUTILE_ANSATZES,
+        "'pz_encoding', 'rpz_encoding' and 'real'",
+    )
+    check_c_dtype(
+        "cutile",
+        c_dtype,
+        _SUPPORTED_CUTILE_DTYPES,
+        "torch.complex64 / torch.float32, torch.bfloat16 and torch.float8_e4m3fn",
+    )
 
 
 class _CuTileFlashFunction(torch.autograd.Function):
@@ -170,7 +191,7 @@ def cutile_flash_exact_solver(
     cuTile-accelerated exact solver. Drop-in replacement for flash_exact_solver.
 
     Uses fused cuTile kernels for pz_encoding, rpz_encoding, and real ansatzes.
-    Falls back to torch_exact_solver for unsupported ansatzes.
+    Any other ansatz, or a ``dtype`` the kernels have no path for, raises ``ValueError``.
 
     Args:
         Same as torch_exact_solver.
@@ -190,11 +211,10 @@ def cutile_flash_exact_solver(
     c_dtype = kwargs.get("dtype", torch.complex64)
     batch, in_dim = x.shape
 
-    # Fallback for unsupported ansatzes
-    if ansatz not in _SUPPORTED_CUTILE_ANSATZES:
-        return torch_exact_solver(
-            x, theta, preacts_weight, preacts_bias, reps, **kwargs
-        )
+    _check_cutile(ansatz, c_dtype)
+    # The kernels are real-valued: complex64 selects their float32 path.
+    if c_dtype == torch.complex64:
+        c_dtype = torch.float32
 
     # Broadcasting logic (mirrors torch_exact_solver)
     if len(theta.shape) != 4:
@@ -281,6 +301,9 @@ class CuTileSolver(QKANSolver):
     """cuTile (Tile Language) solver (registered as ``"cutile"``)."""
 
     name = "cutile"
+
+    def check(self, ansatz, c_dtype: torch.dtype, reps: int) -> None:
+        _check_cutile(ansatz, c_dtype)
 
     def __call__(
         self,

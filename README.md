@@ -170,6 +170,13 @@ You can find more examples in the [examples](https://jim137.github.io/qkan/examp
 - **Default: `pz`** — most reliable quality across tasks.
 - **`real`** can be faster/smaller, but may **hurt accuracy/convergence** on some workloads—only use if you validate it on your task.
 
+**Solver support**
+- `flash`, `cute`, `cutile`, `flydsl` and `cutn` implement the `pz`, `rpz` and `real` ansatzes, `mlx` also `mix`, and `qml` only `pz`.
+  Building a model with an ansatz the solver has no kernel for raises `ValueError`: no other solver runs in its place.
+  Use `solver="exact"` for `px` (with `preact_trainable=True`), `mix` and custom ansatzes.
+- `flash`, `cute`, `cutile`, `flydsl` and `mlx` compute in float32, and a double-precision `c_dtype` raises `ValueError` when the model is built.
+  For double precision use `solver="exact"` with `c_dtype=torch.complex128` and `p_dtype=torch.float64`.
+
 See [#8](https://github.com/Jim137/qkan/issues/8) for more discussion on solver choices and tradeoffs.
 
 ## Mixed Precision

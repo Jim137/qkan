@@ -23,8 +23,8 @@ helper picks the activation kernel matching the chosen ``solver``:
   flydsl -> qkan.solver.flydsl.flydsl_activation.FlyDSLActivation
   other  -> torch.nn equivalent (SiLU, GELU, ReLU, Tanh, Sigmoid)
 
-Backend imports are guarded; if the matching backend isn't installed we
-fall back to the torch.nn equivalent so the layer still works.
+A backend that isn't installed raises its own ImportError here, which is when
+the layer is built; the torch.nn equivalent is never substituted for it.
 """
 
 from __future__ import annotations
@@ -69,32 +69,20 @@ def make_base_activation(kind: str, solver: object) -> nn.Module:
     k = _normalize_kind(kind)
 
     if solver == "cute":
-        try:
-            from .cute.cute_activation import CuTeActivation
+        from .cute.cute_activation import CuTeActivation
 
-            return CuTeActivation(k)
-        except ImportError:
-            pass
+        return CuTeActivation(k)
     elif solver == "flash":
-        try:
-            from .flash.triton_activation import TritonActivation
+        from .flash.triton_activation import TritonActivation
 
-            return TritonActivation(k)
-        except ImportError:
-            pass
+        return TritonActivation(k)
     elif solver == "cutile":
-        try:
-            from .cutile.cutile_activation import CuTileActivation
+        from .cutile.cutile_activation import CuTileActivation
 
-            return CuTileActivation(k)
-        except ImportError:
-            pass
+        return CuTileActivation(k)
     elif solver == "flydsl":
-        try:
-            from .flydsl.flydsl_activation import FlyDSLActivation
+        from .flydsl.flydsl_activation import FlyDSLActivation
 
-            return FlyDSLActivation(k)
-        except ImportError:
-            pass
+        return FlyDSLActivation(k)
 
     return _TORCH_ACTIVATIONS[k]()

@@ -64,6 +64,11 @@ Ansatz Choice
 
 **Recommendation**: Start with ``pz``. Only switch to ``real`` if you validate it on your task.
 
+``flash``, ``cute``, ``cutile``, ``flydsl`` and ``cutn`` implement ``pz``, ``rpz`` and ``real``.
+``mlx`` implements those and ``mix``, and ``qml`` implements ``pz`` with fixed pre-activations.
+Building a model with an ansatz the solver has no kernel for raises ``ValueError``: no other solver is run in its place.
+Use ``exact`` for ``px`` (which needs ``preact_trainable=True``), ``mix`` and custom ansatzes.
+
 
 Mixed Precision
 ---------------
@@ -82,6 +87,9 @@ Performance (from `#12 <https://github.com/Jim137/qkan/issues/12>`_):
 - **BF16**: 2.3--2.5x faster training, 45% less peak memory, identical convergence.
 - **FP8** (``torch.float8_e4m3fn``): Additional memory savings for state checkpoints via prescaled storage.
 - All ansatzes (``pz``, ``rpz``, ``real``) are supported.
+- ``flash``, ``cute``, ``cutile``, ``flydsl`` and ``mlx`` compute in float32: a double-precision ``c_dtype`` (``torch.complex128`` / ``torch.float64``) raises ``ValueError`` when the model is built.
+  For double precision use ``solver="exact"`` with ``c_dtype=torch.complex128`` and ``p_dtype=torch.float64``.
+- With ``exact`` and ``cutn`` on ``pz``, ``rpz``, ``px`` and ``mix``, whose amplitudes are complex, ``c_dtype=torch.float32`` / ``torch.float64`` mean ``torch.complex64`` / ``torch.complex128``.
 
 .. note::
    ``p_dtype=torch.float8_e4m3fn`` is **not supported** — PyTorch has no FP8 arithmetic kernels.
@@ -99,8 +107,7 @@ optimizer and the training loop stay in PyTorch:
 
    qkan = QKAN([784, 64, 10], solver="mlx", device="mps")   # or device="cpu"
 
-- One kernel evaluates the whole circuit for ``pz``, ``rpz``, ``real`` and
-  ``mix``; ``px`` and custom ansatzes fall back to the ``exact`` solver.
+- One kernel evaluates the whole circuit for ``pz``, ``rpz``, ``real`` and ``mix``; ``px`` and custom ansatzes raise ``ValueError`` when the model is built (use ``solver="exact"`` for them).
 - The kernel also performs the layer's sum over inputs,
   ``sum_i postacts[b, o, i] * postact_weights[o, i]``, and returns
   ``(batch, out_dim)`` directly, so the ``(batch, out_dim, in_dim)`` tensor is
@@ -119,8 +126,8 @@ optimizer and the training loop stay in PyTorch:
 - With ``device="cpu"`` the kernels still run on the GPU and the output is a
   zero-copy view of MLX's buffer. No queue has to be flushed, which makes this
   the faster choice for small models.
-- Compute is float32 (Metal has no float64): ``c_dtype=torch.complex128`` falls
-  back to ``exact``, and bf16 parameters are widened to float32 for the launch.
+- Compute is float32 (Metal has no float64): ``c_dtype=torch.complex128`` raises ``ValueError`` (use ``solver="exact"`` for double precision).
+  bf16 parameters are widened to float32 for the launch.
 
 Training step (forward, loss, backward, Adam) and inference forward for the
 default ``pz`` ansatz with ``reps=3`` on an M3 (10-core GPU, 16 GB), PyTorch

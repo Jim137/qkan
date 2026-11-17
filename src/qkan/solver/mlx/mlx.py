@@ -18,7 +18,7 @@ from typing import Optional
 import torch
 
 from .._base import QKANSolver, register
-from ..exact import torch_exact_solver
+from .._utils import check_ansatz, check_c_dtype
 from ..flydsl.flydsl_ops import _first_order_only
 from .mlx_ops import (
     _ANSATZ_CANONICAL,
@@ -34,8 +34,14 @@ from .mlx_ops import (
 # can actually launch is checked on first use, when MLX is imported.
 _MLX_AVAILABLE = _MLX_INSTALLED
 
-# Metal has no float64, so these keep the exact solver's precision instead.
-_DOUBLE_DTYPES = (torch.float64, torch.complex128)
+# Metal has no float64. The half and fp8 dtypes are computed in float32.
+_SUPPORTED_MLX_DTYPES = (
+    torch.complex64,
+    torch.float32,
+    torch.bfloat16,
+    torch.float16,
+    torch.float8_e4m3fn,
+)
 
 
 _NO_SECOND_DERIVATIVES = (
@@ -203,16 +209,25 @@ class _MLXContractFunction(torch.autograd.Function):
         )
 
 
-def _is_fused(ansatz, c_dtype) -> bool:
-    """Whether the Metal kernels implement this ansatz and precision.
+def _is_fused(ansatz) -> bool:
+    """Whether the Metal kernels implement this ansatz."""
+    return isinstance(ansatz, str) and ansatz in _ANSATZ_CANONICAL
 
-    The rest falls back to torch_exact_solver: other ansatzes, and double
-    precision, which Metal cannot compute in.
-    """
-    return (
-        isinstance(ansatz, str)
-        and ansatz in _ANSATZ_CANONICAL
-        and c_dtype not in _DOUBLE_DTYPES
+
+def _check_mlx(ansatz, c_dtype: torch.dtype) -> None:
+    """Raise ``ValueError`` for an ansatz or c_dtype the Metal kernels do not cover."""
+    check_ansatz(
+        "mlx",
+        ansatz,
+        _ANSATZ_CANONICAL,
+        "'pz_encoding', 'rpz_encoding', 'real' and 'mix'",
+    )
+    check_c_dtype(
+        "mlx",
+        c_dtype,
+        _SUPPORTED_MLX_DTYPES,
+        "torch.complex64 / torch.float32, and torch.bfloat16, torch.float16 and "
+        "torch.float8_e4m3fn as float32 (Metal has no float64)",
     )
 
 
@@ -278,7 +293,8 @@ def mlx_exact_solver(
 
     Drop-in replacement for the other fused solvers. Runs fused Metal kernels
     (through ``mlx.core.fast.metal_kernel``) for the ``pz``, ``rpz``, ``real``
-    and ``mix`` ansatzes and falls back to torch_exact_solver for the rest.
+    and ``mix`` ansatzes. Any other ansatz, or a ``dtype`` the kernels have no path for,
+    raises ``ValueError``.
 
     Key properties:
       - The whole circuit is one kernel launch; theta trig is computed once
@@ -305,11 +321,8 @@ def mlx_exact_solver(
     c_dtype = kwargs.get("dtype", torch.complex64)
     batch, in_dim = x.shape
 
-    if not _is_fused(ansatz, c_dtype):
-        return torch_exact_solver(
-            x, theta, preacts_weight, preacts_bias, reps, **kwargs
-        )
     _require_kernels()
+    _check_mlx(ansatz, c_dtype)
 
     # rpz always needs encoded_x; others only when preacts_trainable
     encoded = preacts_trainable or ansatz in ("rpz_encoding", "rpz")
@@ -366,10 +379,11 @@ def mlx_contracted_solver(
     Returns:
         torch.Tensor, float32, shape: (batch_size, out_dim), or None when this
         configuration is not fused and the caller should contract the output
-        of the solver itself: an ansatz or precision the kernels do not
-        implement, or thetas shared across outputs (a ``group`` equal to
-        ``in_dim``), which the unfused route evaluates once instead of once
-        per output.
+        of the solver itself: an ansatz the kernels do not implement (which
+        :func:`mlx_exact_solver` then refuses), or thetas shared across
+        outputs (a ``group`` equal to ``in_dim``), which the unfused route
+        evaluates once instead of once per output. An unsupported
+        ``dtype`` raises ``ValueError``.
     """
     ansatz = kwargs.get("ansatz", "pz_encoding")
     preacts_trainable = kwargs.get("preacts_trainable", False)
@@ -378,9 +392,10 @@ def mlx_contracted_solver(
     batch, in_dim = x.shape
     out_dim = weight.shape[0]
 
-    if not _is_fused(ansatz, c_dtype) or weight.shape != (out_dim, in_dim):
+    if not _is_fused(ansatz) or weight.shape != (out_dim, in_dim):
         return None
     _require_kernels()
+    _check_mlx(ansatz, c_dtype)
 
     encoded = preacts_trainable or ansatz in ("rpz_encoding", "rpz")
     theta, preacts_weight, preacts_bias = _broadcast_params(
@@ -419,6 +434,9 @@ class MLXSolver(QKANSolver):
     """MLX Apple silicon solver (registered as ``"mlx"``)."""
 
     name = "mlx"
+
+    def check(self, ansatz, c_dtype: torch.dtype, reps: int) -> None:
+        _check_mlx(ansatz, c_dtype)
 
     def __call__(
         self,

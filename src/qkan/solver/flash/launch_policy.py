@@ -688,7 +688,7 @@ def select_pz_backward_policy(
     ``None`` means the built-in launch: either no policy is named (``None`` or
     ``"default"``), or the named policy was tuned for another shape, mode or
     precision than this call (the first such call per policy warns).  Pass
-    ``precision=None`` for dtypes that no policy covers, such as float64.
+    ``precision=None`` for dtypes that no policy covers, such as float16.
 
     Raises:
         LaunchPolicyNotFoundError: no packaged document has this name.

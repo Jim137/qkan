@@ -91,6 +91,7 @@ if _TRITON_AVAILABLE:
         # Flags
         HAS_PB: tl.constexpr,
         HAS_BIAS_SUM: tl.constexpr,
+        ACC_F64: tl.constexpr,
         # Tile sizes
         BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
@@ -100,10 +101,12 @@ if _TRITON_AVAILABLE:
 
         Grid: (cdiv(B, BLOCK_M), cdiv(O, BLOCK_N))
 
-        Inside: stream over I in BLOCK_I chunks accumulating in fp32.
+        Inside: stream over I in BLOCK_I chunks accumulating in fp32, or in
+        fp64 when ACC_F64 (float64 parameters).
         """
         pid_m = tl.program_id(0)
         pid_n = tl.program_id(1)
+        dt = tl.float64 if ACC_F64 else tl.float32
 
         # Batch-scaled offsets (b * O*I into postacts) pass 2^31 elements at
         # realistic sizes (#35).  As in fused_ops, offs_m stays int32 and only
@@ -115,7 +118,7 @@ if _TRITON_AVAILABLE:
         m_mask = offs_m < B
         n_mask = offs_n < O
 
-        acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+        acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=dt)
 
         for i_start in range(0, I, BLOCK_I):
             offs_i = i_start + tl.arange(0, BLOCK_I)
@@ -131,16 +134,16 @@ if _TRITON_AVAILABLE:
             p_mask = (
                 m_mask[:, None, None] & n_mask[None, :, None] & i_mask[None, None, :]
             )
-            postacts_tile = tl.load(p_ptrs, mask=p_mask, other=0.0).to(tl.float32)
+            postacts_tile = tl.load(p_ptrs, mask=p_mask, other=0.0).to(dt)
 
             # eff_pw[o, i]: [BLOCK_N, BLOCK_I]
             pw_ptrs = eff_pw_ptr + offs_n[:, None] * spw_o + offs_i[None, :] * spw_i
             pw_mask = n_mask[:, None] & i_mask[None, :]
-            eff_pw_tile = tl.load(pw_ptrs, mask=pw_mask, other=0.0).to(tl.float32)
+            eff_pw_tile = tl.load(pw_ptrs, mask=pw_mask, other=0.0).to(dt)
 
             if HAS_PB:
                 pb_ptrs = pb_ptr + offs_n[:, None] * spb_o + offs_i[None, :] * spb_i
-                pb_tile = tl.load(pb_ptrs, mask=pw_mask, other=0.0).to(tl.float32)
+                pb_tile = tl.load(pb_ptrs, mask=pw_mask, other=0.0).to(dt)
                 # (postacts + pb) * eff_pw — broadcast over batch dim
                 term = (postacts_tile + pb_tile[None, :, :]) * eff_pw_tile[None, :, :]
             else:
@@ -153,11 +156,11 @@ if _TRITON_AVAILABLE:
                 + offs_i[None, :] * sbi_i
             )
             bi_mask = m_mask[:, None] & i_mask[None, :]
-            base_input_tile = tl.load(bi_ptrs, mask=bi_mask, other=0.0).to(tl.float32)
+            base_input_tile = tl.load(bi_ptrs, mask=bi_mask, other=0.0).to(dt)
 
             # base_w[o, i]: [BLOCK_N, BLOCK_I]
             bw_ptrs = base_w_ptr + offs_n[:, None] * sbw_o + offs_i[None, :] * sbw_i
-            bw_tile = tl.load(bw_ptrs, mask=pw_mask, other=0.0).to(tl.float32)
+            bw_tile = tl.load(bw_ptrs, mask=pw_mask, other=0.0).to(dt)
 
             # base_input * base_w broadcast: [BLOCK_M, BLOCK_N, BLOCK_I]
             base_term = base_input_tile[:, None, :] * bw_tile[None, :, :]
@@ -165,7 +168,7 @@ if _TRITON_AVAILABLE:
             acc += tl.sum(term + base_term, axis=2)
 
         if HAS_BIAS_SUM:
-            bs = tl.load(bias_sum_ptr + offs_n, mask=n_mask, other=0.0).to(tl.float32)
+            bs = tl.load(bias_sum_ptr + offs_n, mask=n_mask, other=0.0).to(dt)
             acc += bs[None, :]
 
         out_ptrs = (
@@ -231,12 +234,15 @@ if _TRITON_AVAILABLE:
         NEED_POSTACTS: tl.constexpr,
         NEED_EFF_PW: tl.constexpr,
         NEED_PB: tl.constexpr,
+        ACC_F64: tl.constexpr,
         BLOCK_N: tl.constexpr,
         BLOCK_I: tl.constexpr,
         BLOCK_B: tl.constexpr,
     ):
         pid_n = tl.program_id(0)
         pid_i = tl.program_id(1)
+        # Compute dtype, as in the forward: fp64 for float64 parameters.
+        dt = tl.float64 if ACC_F64 else tl.float32
 
         offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
         offs_i = pid_i * BLOCK_I + tl.arange(0, BLOCK_I)
@@ -246,9 +252,9 @@ if _TRITON_AVAILABLE:
 
         # eff_pw[O, I] tile — used by grad_postacts (every B chunk) and grad_pb.
         pw_ptrs = eff_pw_ptr + offs_n[:, None] * spw_o + offs_i[None, :] * spw_i
-        pw_tile = tl.load(pw_ptrs, mask=oi_mask, other=0.0).to(tl.float32)
+        pw_tile = tl.load(pw_ptrs, mask=oi_mask, other=0.0).to(dt)
 
-        acc_eff_pw = tl.zeros((BLOCK_N, BLOCK_I), dtype=tl.float32)
+        acc_eff_pw = tl.zeros((BLOCK_N, BLOCK_I), dtype=dt)
 
         for b_start in range(0, B, BLOCK_B):
             offs_b = b_start + tl.arange(0, BLOCK_B)
@@ -261,7 +267,7 @@ if _TRITON_AVAILABLE:
                 + offs_n[None, :] * sgo_o
             )
             go_mask = b_mask[:, None] & n_mask[None, :]
-            go_tile = tl.load(go_ptrs, mask=go_mask, other=0.0).to(tl.float32)
+            go_tile = tl.load(go_ptrs, mask=go_mask, other=0.0).to(dt)
 
             if NEED_EFF_PW:
                 # postacts[B, O, I] tile
@@ -276,7 +282,7 @@ if _TRITON_AVAILABLE:
                     & n_mask[None, :, None]
                     & i_mask[None, None, :]
                 )
-                p_tile = tl.load(p_ptrs, mask=p_mask, other=0.0).to(tl.float32)
+                p_tile = tl.load(p_ptrs, mask=p_mask, other=0.0).to(dt)
                 # acc[o,i] += sum_b grad_out[b,o] * postacts[b,o,i]
                 acc_eff_pw += tl.sum(go_tile[:, :, None] * p_tile, axis=0)
 
@@ -301,12 +307,12 @@ if _TRITON_AVAILABLE:
                 )
 
         if NEED_EFF_PW or NEED_PB:
-            s_o = tl.load(sum_go_ptr + offs_n, mask=n_mask, other=0.0).to(tl.float32)
+            s_o = tl.load(sum_go_ptr + offs_n, mask=n_mask, other=0.0).to(dt)
 
         if NEED_EFF_PW:
             if HAS_PB:
                 pb_ptrs = pb_ptr + offs_n[:, None] * spb_o + offs_i[None, :] * spb_i
-                pb_tile = tl.load(pb_ptrs, mask=oi_mask, other=0.0).to(tl.float32)
+                pb_tile = tl.load(pb_ptrs, mask=oi_mask, other=0.0).to(dt)
                 acc_eff_pw = acc_eff_pw + pb_tile * s_o[:, None]
             ge_ptrs = (
                 grad_eff_pw_ptr + offs_n[:, None] * sge_o + offs_i[None, :] * sge_i
@@ -430,6 +436,7 @@ def qkan_epilogue_forward(
         out.stride(1),
         HAS_PB=pb is not None,
         HAS_BIAS_SUM=bias_sum is not None,
+        ACC_F64=out_dtype == torch.float64,
         BLOCK_M=block_m,
         BLOCK_N=block_n,
         BLOCK_I=block_i,
@@ -611,6 +618,7 @@ def qkan_epilogue_backward(
             NEED_POSTACTS=need_p,
             NEED_EFF_PW=need_pw,
             NEED_PB=need_pb,
+            ACC_F64=base_w.dtype == torch.float64,
             BLOCK_N=bn,
             BLOCK_I=bi,
             BLOCK_B=bb,

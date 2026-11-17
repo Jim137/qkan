@@ -39,8 +39,8 @@ from qkan.solver.flash.launch_policy import (
     select_pz_backward_policy,
 )
 
-# Dtypes a launch policy can carry a tuned entry for.  Every other c_dtype
-# (float64, float16) keeps the built-in launch.
+# Dtypes a launch policy can carry a tuned entry for.  The other c_dtype the
+# solver accepts (float16) keeps the built-in launch.
 _PRECISION_KINDS = {
     torch.float32: PrecisionKind.FP32,
     torch.bfloat16: PrecisionKind.BF16,
