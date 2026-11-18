@@ -12,7 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
+from typing import Optional
+
 import torch
+
+
+def te_recipe():
+    """The recipe of the active ``te.autocast``, or None outside one."""
+    quantization = sys.modules.get("transformer_engine.pytorch.quantization")
+    if quantization is None:  # te.autocast lives there, so nobody entered one
+        return None
+    state = quantization.FP8GlobalStateManager
+    return state.get_fp8_recipe() if state.is_fp8_enabled() else None
+
+
+def te_recipe_key() -> Optional[str]:
+    """``repr`` of the active recipe, as Transformer Engine keys it itself.
+
+    A layer that follows ``te.autocast`` picks its GEMM from that state when it
+    is called, so a captured CUDA graph is valid for one value of this key.
+    """
+    recipe = te_recipe()
+    return None if recipe is None else repr(recipe)
 
 
 def autocast_dtype(dtype: torch.dtype) -> torch.dtype:
