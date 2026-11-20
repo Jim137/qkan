@@ -125,6 +125,24 @@ def test_compiled_inference_follows_te_autocast():
         torch.testing.assert_close(compiled(x), plain)
 
 
+def test_graphed_inference_raises_in_another_te_autocast_state():
+    """The low-level helper replays the recipe it was captured under only."""
+    from qkan import make_graphed_inference
+
+    lin, _ = pair(768, 768)
+    x = torch.randn(64, 768, device="cuda", dtype=torch.bfloat16)
+    with te.autocast(recipe=recipe.NVFP4BlockScaling()):
+        fn = make_graphed_inference(lin, x)
+    with torch.no_grad(), te.autocast(recipe=recipe.NVFP4BlockScaling()):
+        torch.testing.assert_close(fn(x), lin(x))
+    with pytest.raises(
+        RuntimeError,
+        match="captured under recipe_type=NVFP4BlockScaling and .* cannot run "
+        "outside te.autocast",
+    ):
+        fn(x)
+
+
 def test_follows_a_change_of_recipe():
     """te.Linear keeps the quantizers of the first recipe of a class (TE #3157)."""
     (lin, _), (fresh, _) = pair(768, 768), pair(768, 768)
