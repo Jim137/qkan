@@ -101,7 +101,7 @@ and replay per shape; train / grad forwards fall back to eager.
        y = model(x)                          # first call: captures
        y = model(x)                          # subsequent calls: replays
 
-The cache key is the ``(shape, dtype, device)`` of the input plus the CUDA ``torch.autocast`` state (off, or its dtype), so calls inside and outside ``torch.autocast`` each get their own graph.
+The cache key is the ``(shape, dtype, device)`` of the input plus the CUDA ``torch.autocast`` state (off, or its dtype) and the NVIDIA Transformer Engine ``te.autocast`` recipe, so calls inside and outside either context each get their own graph.
 On a miss the wrapper captures a new graph (up to ``max_shapes`` entries, default 8).
 When the cache is saturated, further unseen shapes fall through to eager rather than evict an existing graph mid-replay.
 
@@ -272,7 +272,7 @@ Caveats
    widen ``max_shapes`` or pad inputs to a fixed shape.
 
 **A graph belongs to the autocast state it was captured in.**
-   A captured graph replays the kernels of the CUDA ``torch.autocast`` state (off, or its dtype) at capture time.
+   A captured graph replays the kernels of the CUDA ``torch.autocast`` state (off, or its dtype) and the Transformer Engine ``te.autocast`` recipe at capture time.
    ``compile_inference`` keeps one graph per state; the low-level helpers raise ``RuntimeError`` when called in another state.
    Capture one ``make_graphed_inference`` graph for each state you use, and capture a train step in the state you train in: a second ``make_graphed_train_step`` re-allocates the parameters of the first.
 
