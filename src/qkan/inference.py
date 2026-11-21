@@ -46,11 +46,13 @@ don't want the shape-dispatch overhead.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any, Callable, Optional
 
 import torch
 from torch import nn
 
+from .qkan_epilogue import _output_dtype
 from .solver._utils import te_recipe_key
 
 __all__ = [
@@ -67,18 +69,51 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-def _check_recipe(captured: Optional[str]) -> None:
-    """A graph replays the GEMMs of the te.autocast state it was captured in."""
-    current = te_recipe_key()
-    if current != captured:
+def _ambient_state() -> tuple[Optional[torch.dtype], Optional[str]]:
+    """The ambient state a capture freezes, as a graph replays the kernels
+    picked under it: the CUDA ``torch.autocast`` dtype and the ``te.autocast``
+    recipe, each None outside its context.
+    """
+    dtype = _output_dtype(torch.float32) if torch.is_autocast_enabled() else None
+    return dtype, te_recipe_key()
+
+
+def _check_ambient_state(captured: tuple[Optional[torch.dtype], Optional[str]]) -> None:
+    """A graph replays the kernels of the ambient state it was captured in."""
+    (dtype, recipe), (dtype_now, recipe_now) = captured, _ambient_state()
+    if dtype != dtype_now:
+        where = [
+            "outside torch.autocast"
+            if d is None
+            else f"under torch.autocast(dtype={d})"
+            for d in (dtype, dtype_now)
+        ]
+    elif recipe != recipe_now:
         where = [
             "outside te.autocast" if key is None else f"under {key.partition(',')[0]}"
-            for key in (captured, current)
+            for key in (recipe, recipe_now)
         ]
-        raise RuntimeError(
-            f"this graph was captured {where[0]} and replays those GEMMs: it "
-            f"cannot run {where[1]}, so capture another one there"
-        )
+    else:
+        return
+    raise RuntimeError(
+        f"this graph was captured {where[0]} and replays those kernels: it "
+        f"cannot run {where[1]}"
+    )
+
+
+@contextlib.contextmanager
+def _fresh_autocast_cache():
+    """``torch.autocast`` caches its casts of the weights until the context
+    exits. A capture has to record those casts, not reuse the ones warmup
+    cached: they are freed with the context and never see an optimizer step.
+    The casts cached while capturing hold nothing until the first replay, so
+    they must not reach eager code either. The cache is shared by all threads,
+    backward's included."""
+    torch.clear_autocast_cache()
+    try:
+        yield
+    finally:
+        torch.clear_autocast_cache()
 
 
 def make_graphed_inference(
@@ -91,8 +126,10 @@ def make_graphed_inference(
     The input to the returned callable must match ``sample_input`` in shape,
     dtype, and device. The output tensor is reused across calls — clone it
     before issuing the next replay if you need to keep the value around.
-    The graph replays the GEMMs of the ``te.autocast`` state it was captured
-    in, so a call in another one raises.
+    The graph replays the kernels of the CUDA ``torch.autocast`` state (off,
+    or its dtype) and the ``te.autocast`` recipe it was captured in, so a
+    call in another state raises ``RuntimeError``: capture one graph for each
+    state you use.
 
     Args:
         model: a module in eval() mode. Parameters must not change between
@@ -125,14 +162,14 @@ def make_graphed_inference(
         torch.cuda.synchronize()
 
         graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(graph):
+        with _fresh_autocast_cache(), torch.cuda.graph(graph):
             static_output = model(static_input)
     finally:
         torch.set_grad_enabled(was_grad)
 
     sample_shape = sample_input.shape
     sample_dtype = sample_input.dtype
-    recipe = te_recipe_key()
+    ambient = _ambient_state()
 
     def replay(x: torch.Tensor) -> torch.Tensor:
         if x.shape != sample_shape or x.dtype != sample_dtype:
@@ -141,7 +178,7 @@ def make_graphed_inference(
                 f"dtype {sample_dtype}; got shape {tuple(x.shape)} "
                 f"dtype {x.dtype}"
             )
-        _check_recipe(recipe)
+        _check_ambient_state(ambient)
         static_input.copy_(x)
         graph.replay()
         return static_output
@@ -241,8 +278,7 @@ def make_graphed_train_step(
     static buffers, replays the graph, and returns the loss tensor (a view
     into a static buffer — clone before mutating). After replay, every
     parameter's ``.grad`` holds the captured-step gradient and ``optimizer
-    .step()`` can be called as usual. The graph replays the GEMMs of the
-    ``te.autocast`` state it was captured in, so a call in another one raises.
+    .step()`` can be called as usual.
 
     Side effects on ``model`` and ``optimizer``:
         - Every trainable Parameter is re-allocated on the capture stream so
@@ -258,6 +294,11 @@ def make_graphed_train_step(
     Constraints:
         - ``sample_input`` / ``sample_target`` fix the shapes and dtypes
           of subsequent calls; new shapes require a fresh capture.
+        - The graph replays the kernels of the CUDA ``torch.autocast`` state
+          (off, or its dtype) and the ``te.autocast`` recipe it was captured
+          in; a call in another state raises ``RuntimeError``. Capture it in
+          the state you train in: a second capture re-allocates the
+          parameters of the first.
         - All parameters of ``model`` must be on CUDA. ``set_to_none=False``
           inside the graph zeroes grads in-place — never swap ``.grad`` for a
           new tensor outside the graph (e.g. don't call
@@ -314,7 +355,7 @@ def make_graphed_train_step(
     # zeros them in-place, so the graph sees the same .grad pointers on
     # every replay. Capture stream MUST be the same one we warmed up on.
     graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(graph, stream=side):
+    with _fresh_autocast_cache(), torch.cuda.graph(graph, stream=side):
         optimizer.zero_grad(set_to_none=False)
         static_output = model(static_input)
         static_loss = loss_fn(static_output, static_target)
@@ -324,7 +365,7 @@ def make_graphed_train_step(
     sample_in_dtype = sample_input.dtype
     sample_tgt_shape = sample_target.shape
     sample_tgt_dtype = sample_target.dtype
-    recipe = te_recipe_key()
+    ambient = _ambient_state()
 
     def train_step(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         if x.shape != sample_in_shape or x.dtype != sample_in_dtype:
@@ -339,7 +380,7 @@ def make_graphed_train_step(
                 f"dtype {sample_tgt_dtype}; got shape {tuple(y.shape)} "
                 f"dtype {y.dtype}"
             )
-        _check_recipe(recipe)
+        _check_ambient_state(ambient)
         static_input.copy_(x)
         static_target.copy_(y)
         graph.replay()
@@ -356,11 +397,11 @@ def make_graphed_train_step(
 def _input_key(x: torch.Tensor) -> Optional[tuple]:
     """Hashable key for graph-cache lookup; None when graphs don't apply.
 
-    The te.autocast recipe is part of it: each one gets its own graph.
+    The ambient state is part of it: each one gets its own graph.
     """
     if not isinstance(x, torch.Tensor) or not x.is_cuda:
         return None
-    return (tuple(x.shape), x.dtype, x.device.index, te_recipe_key())
+    return (tuple(x.shape), x.dtype, x.device.index, _ambient_state())
 
 
 class CompiledInference(nn.Module):
@@ -376,16 +417,29 @@ class CompiledInference(nn.Module):
         with torch.no_grad():
             model(x)                               # captures + replays
 
-    On each eval/no-grad forward, the (shape, dtype, device) of the input and
-    the active ``te.autocast`` recipe are used as the cache key. A miss
-    triggers a capture (up to ``max_shapes``);
+    On each eval/no-grad forward, the (shape, dtype, device) of the input,
+    the CUDA ``torch.autocast`` state (off, or its dtype) and the active
+    ``te.autocast`` recipe are used as the cache key. A miss triggers a
+    capture (up to ``max_shapes``);
     a hit replays the captured graph. When the cache is full the fallback is
     eager execution — graphs are not evicted.
 
+    A graph holds raw pointers to the tensors it was captured with, so the
+    cache is dropped whenever their storage can change through this wrapper
+    or a parent module: ``train()`` / ``eval()``, every cast or move
+    (``.to()``, ``.float()``, ``.cuda()``, ...) and every ``load_state_dict``.
+    Changes made behind the wrapper's back (``wrapper.module.to(...)``,
+    ``wrapper.module.load_state_dict(...)``, a re-assigned parameter or
+    ``wrapper.module``) cannot be seen: call ``clear_cache()`` after them.
+    ``torch.func.functional_call`` on the wrapper is not supported in eval
+    mode: a cached graph ignores the substituted parameters, and a new one is
+    captured with them.
+
     Args:
         module: the module to wrap. ``forward`` must take one tensor arg.
-        max_shapes: maximum number of graphs to cache, one per input shape
-            and ``te.autocast`` recipe.
+        max_shapes: maximum number of graphs to cache, one per input
+            (shape, dtype, device), ``torch.autocast`` state and
+            ``te.autocast`` recipe.
         warmup: warmup forward passes before each capture.
     """
 
@@ -411,8 +465,22 @@ class CompiledInference(nn.Module):
         self._cache.clear()
         return super().train(mode)
 
+    # A graph holds raw pointers into parameter storage, which casts, moves
+    # and loads replace. All of them pass through these two hooks, also when
+    # they come from a parent module (#47).
+    def _apply(self, fn, *args, **kwargs):
+        self._cache.clear()
+        return super()._apply(fn, *args, **kwargs)
+
+    def _load_from_state_dict(self, *args, **kwargs):
+        # Every load, not only assign=True: the wrapped module may rebuild
+        # the tensors it derives from its parameters.
+        self._cache.clear()
+        super()._load_from_state_dict(*args, **kwargs)
+
     def clear_cache(self) -> None:
-        """Drop all captured graphs. Call after editing parameters in-place."""
+        """Drop all captured graphs. Call after editing parameters in-place,
+        or after casting, moving or loading the wrapped module directly."""
         self._cache.clear()
 
     @torch.no_grad()
@@ -431,7 +499,7 @@ class CompiledInference(nn.Module):
         torch.cuda.synchronize()
 
         graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(graph):
+        with _fresh_autocast_cache(), torch.cuda.graph(graph):
             static_output = self.module(static_input)
         return graph, static_input, static_output
 
