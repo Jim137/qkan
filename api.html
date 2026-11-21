@@ -56,6 +56,7 @@
 <li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#module-qkan">Core Module</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#qkan.DARUAN"><code class="docutils literal notranslate"><span class="pre">DARUAN</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#qkan.DARUAN.device"><code class="docutils literal notranslate"><span class="pre">DARUAN.device</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#qkan.DARUAN.forward"><code class="docutils literal notranslate"><span class="pre">DARUAN.forward()</span></code></a></li>
 </ul>
 </li>
@@ -400,6 +401,12 @@
 <dt class="sig sig-object py" id="qkan.DARUAN">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">qkan.</span></span><span class="sig-name descname"><span class="pre">DARUAN</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dim</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reps</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cpu'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'exact'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ansatz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'pz_encoding'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preact_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_weight_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">postact_bias_trainable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p_dim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/daruan/daruan.html#DARUAN"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.DARUAN" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
+<dl class="py property">
+<dt class="sig sig-object py" id="qkan.DARUAN.device">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">device</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">device</span></span><a class="headerlink" href="#qkan.DARUAN.device" title="Link to this definition"></a></dt>
+<dd><p>Device of the parameters; read-only so it cannot go stale.</p>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.DARUAN.forward">
 <span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/daruan/daruan.html#DARUAN.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.DARUAN.forward" title="Link to this definition"></a></dt>
@@ -1581,8 +1588,7 @@ When False, the exact solver simulates the exact measurement process of quantum 
 Use <code class="docutils literal notranslate"><span class="pre">torch.bfloat16</span></code> with bf16/fp8 <code class="docutils literal notranslate"><span class="pre">c_dtype</span></code> for full mixed-precision pipeline.
 The output dtype follows the layer’s base <code class="docutils literal notranslate"><span class="pre">F.linear</span></code> term, as for
 <code class="docutils literal notranslate"><span class="pre">nn.Linear</span></code>: <code class="docutils literal notranslate"><span class="pre">p_dtype</span></code> normally, the autocast dtype under
-<code class="docutils literal notranslate"><span class="pre">torch.autocast</span></code>. The opt-in fused epilogue does not follow
-autocast yet and returns the solver output’s dtype (#33).</p>
+<code class="docutils literal notranslate"><span class="pre">torch.autocast</span></code>.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>torch.dtype</p>
@@ -2078,15 +2084,29 @@ so you can wrap a model once and keep using it normally:</p>
     <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                               <span class="c1"># captures + replays</span>
 </pre></div>
 </div>
-<p>On each eval/no-grad forward, the (shape, dtype, device) of the input is
-used as the cache key. A miss triggers a capture (up to <code class="docutils literal notranslate"><span class="pre">max_shapes</span></code>);
+<p>On each eval/no-grad forward, the (shape, dtype, device) of the input,
+the CUDA <code class="docutils literal notranslate"><span class="pre">torch.autocast</span></code> state (off, or its dtype) and the active
+<code class="docutils literal notranslate"><span class="pre">te.autocast</span></code> recipe are used as the cache key. A miss triggers a
+capture (up to <code class="docutils literal notranslate"><span class="pre">max_shapes</span></code>);
 a hit replays the captured graph. When the cache is full the fallback is
 eager execution — graphs are not evicted.</p>
+<p>A graph holds raw pointers to the tensors it was captured with, so the
+cache is dropped whenever their storage can change through this wrapper
+or a parent module: <code class="docutils literal notranslate"><span class="pre">train()</span></code> / <code class="docutils literal notranslate"><span class="pre">eval()</span></code>, every cast or move
+(<code class="docutils literal notranslate"><span class="pre">.to()</span></code>, <code class="docutils literal notranslate"><span class="pre">.float()</span></code>, <code class="docutils literal notranslate"><span class="pre">.cuda()</span></code>, …) and every <code class="docutils literal notranslate"><span class="pre">load_state_dict</span></code>.
+Changes made behind the wrapper’s back (<code class="docutils literal notranslate"><span class="pre">wrapper.module.to(...)</span></code>,
+<code class="docutils literal notranslate"><span class="pre">wrapper.module.load_state_dict(...)</span></code>, a re-assigned parameter or
+<code class="docutils literal notranslate"><span class="pre">wrapper.module</span></code>) cannot be seen: call <code class="docutils literal notranslate"><span class="pre">clear_cache()</span></code> after them.
+<code class="docutils literal notranslate"><span class="pre">torch.func.functional_call</span></code> on the wrapper is not supported in eval
+mode: a cached graph ignores the substituted parameters, and a new one is
+captured with them.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>module</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></span>) – the module to wrap. <code class="docutils literal notranslate"><span class="pre">forward</span></code> must take one tensor arg.</p></li>
-<li><p><strong>max_shapes</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></a></span>) – maximum number of distinct input shapes to cache.</p></li>
+<li><p><strong>max_shapes</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></a></span>) – maximum number of graphs to cache, one per input
+(shape, dtype, device), <code class="docutils literal notranslate"><span class="pre">torch.autocast</span></code> state and
+<code class="docutils literal notranslate"><span class="pre">te.autocast</span></code> recipe.</p></li>
 <li><p><strong>warmup</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></a></span>) – warmup forward passes before each capture.</p></li>
 </ul>
 </dd>
@@ -2116,7 +2136,8 @@ mode (<code class="docutils literal notranslate"><span class="pre">False</span><
 <dl class="py method">
 <dt class="sig sig-object py" id="qkan.CompiledInference.clear_cache">
 <span class="sig-name descname"><span class="pre">clear_cache</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/qkan/inference.html#CompiledInference.clear_cache"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#qkan.CompiledInference.clear_cache" title="Link to this definition"></a></dt>
-<dd><p>Drop all captured graphs. Call after editing parameters in-place.</p>
+<dd><p>Drop all captured graphs. Call after editing parameters in-place,
+or after casting, moving or loading the wrapped module directly.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
@@ -2760,7 +2781,11 @@ the calibration-driven selection on either stack.</p>
 <dd><p>Capture a CUDA graph for <code class="docutils literal notranslate"><span class="pre">model(sample_input)</span></code> and return a replay fn.</p>
 <p>The input to the returned callable must match <code class="docutils literal notranslate"><span class="pre">sample_input</span></code> in shape,
 dtype, and device. The output tensor is reused across calls — clone it
-before issuing the next replay if you need to keep the value around.</p>
+before issuing the next replay if you need to keep the value around.
+The graph replays the kernels of the CUDA <code class="docutils literal notranslate"><span class="pre">torch.autocast</span></code> state (off,
+or its dtype) and the <code class="docutils literal notranslate"><span class="pre">te.autocast</span></code> recipe it was captured in, so a
+call in another state raises <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code>: capture one graph for each
+state you use.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -2810,6 +2835,11 @@ a freshly-built optimizer (no momentum yet) are unaffected.</p></li>
 <dt>Constraints:</dt><dd><ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">sample_input</span></code> / <code class="docutils literal notranslate"><span class="pre">sample_target</span></code> fix the shapes and dtypes
 of subsequent calls; new shapes require a fresh capture.</p></li>
+<li><p>The graph replays the kernels of the CUDA <code class="docutils literal notranslate"><span class="pre">torch.autocast</span></code> state
+(off, or its dtype) and the <code class="docutils literal notranslate"><span class="pre">te.autocast</span></code> recipe it was captured
+in; a call in another state raises <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code>. Capture it in
+the state you train in: a second capture re-allocates the
+parameters of the first.</p></li>
 <li><p>All parameters of <code class="docutils literal notranslate"><span class="pre">model</span></code> must be on CUDA. <code class="docutils literal notranslate"><span class="pre">set_to_none=False</span></code>
 inside the graph zeroes grads in-place — never swap <code class="docutils literal notranslate"><span class="pre">.grad</span></code> for a
 new tensor outside the graph (e.g. don’t call

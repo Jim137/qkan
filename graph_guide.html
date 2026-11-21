@@ -195,19 +195,17 @@ and replay per shape; train / grad forwards fall back to eager.</p>
     <span class="n">y</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                          <span class="c1"># subsequent calls: replays</span>
 </pre></div>
 </div>
-<p>The cache key is <code class="docutils literal notranslate"><span class="pre">(shape,</span> <span class="pre">dtype,</span> <span class="pre">device)</span></code>. On a miss the wrapper
-captures a new graph (up to <code class="docutils literal notranslate"><span class="pre">max_shapes</span></code> entries, default 8). When
-the cache is saturated, further unseen shapes fall through to eager
-rather than evict an existing graph mid-replay.</p>
+<p>The cache key is the <code class="docutils literal notranslate"><span class="pre">(shape,</span> <span class="pre">dtype,</span> <span class="pre">device)</span></code> of the input plus the CUDA <code class="docutils literal notranslate"><span class="pre">torch.autocast</span></code> state (off, or its dtype) and the NVIDIA Transformer Engine <code class="docutils literal notranslate"><span class="pre">te.autocast</span></code> recipe, so calls inside and outside either context each get their own graph.
+On a miss the wrapper captures a new graph (up to <code class="docutils literal notranslate"><span class="pre">max_shapes</span></code> entries, default 8).
+When the cache is saturated, further unseen shapes fall through to eager rather than evict an existing graph mid-replay.</p>
 <p><code class="docutils literal notranslate"><span class="pre">compile_inference</span></code> is a thin shortcut for
 <code class="docutils literal notranslate"><span class="pre">CompiledInference(module,</span> <span class="pre">...)</span></code>. The class form is equivalent:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">qkan</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompiledInference</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">CompiledInference</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">max_shapes</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">warmup</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>After modifying parameters in place (e.g. loading a new checkpoint),
-call <code class="docutils literal notranslate"><span class="pre">model.clear_cache()</span></code> to drop stale graphs.
-<code class="docutils literal notranslate"><span class="pre">model.train()</span></code> clears the cache automatically.</p>
+<p>The wrapper drops its graphs whenever parameter storage can change through it or through a parent module: <code class="docutils literal notranslate"><span class="pre">train()</span></code> / <code class="docutils literal notranslate"><span class="pre">eval()</span></code>, every cast or move (<code class="docutils literal notranslate"><span class="pre">.to()</span></code>, <code class="docutils literal notranslate"><span class="pre">.float()</span></code>, <code class="docutils literal notranslate"><span class="pre">.cuda()</span></code>, …), also one that changes nothing, and every <code class="docutils literal notranslate"><span class="pre">load_state_dict</span></code>.
+Changes made behind the wrapper’s back (<code class="docutils literal notranslate"><span class="pre">model.module.to(...)</span></code>, <code class="docutils literal notranslate"><span class="pre">model.module.load_state_dict(...)</span></code>, a replaced <code class="docutils literal notranslate"><span class="pre">model.module</span></code>) cannot be seen: call <code class="docutils literal notranslate"><span class="pre">model.clear_cache()</span></code> after them.</p>
 </section>
 <section id="make-graphed-inference-low-level-single-shape">
 <h3><code class="docutils literal notranslate"><span class="pre">make_graphed_inference</span></code> (low-level, single shape)<a class="headerlink" href="#make-graphed-inference-low-level-single-shape" title="Link to this heading"></a></h3>
@@ -341,16 +339,20 @@ graph (up to <code class="docutils literal notranslate"><span class="pre">max_sh
 cache is saturated. If your eval batch size varies a lot, either
 widen <code class="docutils literal notranslate"><span class="pre">max_shapes</span></code> or pad inputs to a fixed shape.</p>
 </dd>
+<dt><strong>A graph belongs to the autocast state it was captured in.</strong></dt><dd><p>A captured graph replays the kernels of the CUDA <code class="docutils literal notranslate"><span class="pre">torch.autocast</span></code> state (off, or its dtype) and the Transformer Engine <code class="docutils literal notranslate"><span class="pre">te.autocast</span></code> recipe at capture time.
+<code class="docutils literal notranslate"><span class="pre">compile_inference</span></code> keeps one graph per state; the low-level helpers raise <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code> when called in another state.
+Capture one <code class="docutils literal notranslate"><span class="pre">make_graphed_inference</span></code> graph for each state you use, and capture a train step in the state you train in: a second <code class="docutils literal notranslate"><span class="pre">make_graphed_train_step</span></code> re-allocates the parameters of the first.</p>
+</dd>
 <dt><strong>Output tensors are reused buffers.</strong></dt><dd><p><code class="docutils literal notranslate"><span class="pre">make_graphed_inference</span></code> returns a callable whose output is a
 view into a static buffer overwritten on every replay. Clone the
 result if you need to keep it past the next call.
 The same applies to the loss returned by <code class="docutils literal notranslate"><span class="pre">make_graphed_train_step</span></code>.
 <code class="docutils literal notranslate"><span class="pre">CompiledInference</span></code> inherits this behavior for cache hits.</p>
 </dd>
-<dt><strong>Parameter mutation invalidates graphs.</strong></dt><dd><p>The captured graph references specific parameter storage. Editing
-parameters in place (e.g. loading a checkpoint) requires
-<code class="docutils literal notranslate"><span class="pre">CompiledInference.clear_cache()</span></code>.
-<code class="docutils literal notranslate"><span class="pre">train()</span></code> / <code class="docutils literal notranslate"><span class="pre">eval()</span></code> transitions clear the cache automatically.</p>
+<dt><strong>Parameter mutation invalidates graphs.</strong></dt><dd><p>The captured graph references specific parameter storage.
+<code class="docutils literal notranslate"><span class="pre">CompiledInference</span></code> drops its graphs on <code class="docutils literal notranslate"><span class="pre">train()</span></code> / <code class="docutils literal notranslate"><span class="pre">eval()</span></code>, on every cast or move and on every <code class="docutils literal notranslate"><span class="pre">load_state_dict</span></code>, also when these come through a parent module.
+Changing the wrapped module directly (<code class="docutils literal notranslate"><span class="pre">wrapper.module</span></code>) requires <code class="docutils literal notranslate"><span class="pre">CompiledInference.clear_cache()</span></code>.
+The low-level helpers cannot notice any of this: capture again after casting, moving or reloading the model.</p>
 </dd>
 <dt><strong>Non-graph-safe ops break full-model capture.</strong></dt><dd><p>Python control flow on tensor values, <code class="docutils literal notranslate"><span class="pre">.item()</span></code>, <code class="docutils literal notranslate"><span class="pre">.cpu()</span></code>, CPU
 syncs, and SDPA backends that touch RNG state all break capture.

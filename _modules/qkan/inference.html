@@ -126,10 +126,14 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">nn</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.qkan_epilogue</span><span class="w"> </span><span class="kn">import</span> <span class="n">_output_dtype</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.solver._utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">te_recipe_key</span>
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">"make_graphed_inference"</span><span class="p">,</span>
@@ -145,6 +149,53 @@
 <span class="c1"># ---------------------------------------------------------------------------</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_ambient_state</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""The ambient state a capture freezes, as a graph replays the kernels</span>
+<span class="sd">    picked under it: the CUDA ``torch.autocast`` dtype and the ``te.autocast``</span>
+<span class="sd">    recipe, each None outside its context.</span>
+<span class="sd">    """</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">_output_dtype</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_autocast_enabled</span><span class="p">()</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">te_recipe_key</span><span class="p">()</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_check_ambient_state</span><span class="p">(</span><span class="n">captured</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""A graph replays the kernels of the ambient state it was captured in."""</span>
+    <span class="p">(</span><span class="n">dtype</span><span class="p">,</span> <span class="n">recipe</span><span class="p">),</span> <span class="p">(</span><span class="n">dtype_now</span><span class="p">,</span> <span class="n">recipe_now</span><span class="p">)</span> <span class="o">=</span> <span class="n">captured</span><span class="p">,</span> <span class="n">_ambient_state</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">dtype</span> <span class="o">!=</span> <span class="n">dtype_now</span><span class="p">:</span>
+        <span class="n">where</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="s2">"outside torch.autocast"</span>
+            <span class="k">if</span> <span class="n">d</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="sa">f</span><span class="s2">"under torch.autocast(dtype=</span><span class="si">{</span><span class="n">d</span><span class="si">}</span><span class="s2">)"</span>
+            <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="p">(</span><span class="n">dtype</span><span class="p">,</span> <span class="n">dtype_now</span><span class="p">)</span>
+        <span class="p">]</span>
+    <span class="k">elif</span> <span class="n">recipe</span> <span class="o">!=</span> <span class="n">recipe_now</span><span class="p">:</span>
+        <span class="n">where</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="s2">"outside te.autocast"</span> <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">"under </span><span class="si">{</span><span class="n">key</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s1">','</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+            <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="n">recipe</span><span class="p">,</span> <span class="n">recipe_now</span><span class="p">)</span>
+        <span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"this graph was captured </span><span class="si">{</span><span class="n">where</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> and replays those kernels: it "</span>
+        <span class="sa">f</span><span class="s2">"cannot run </span><span class="si">{</span><span class="n">where</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+    <span class="p">)</span>
+
+
+<span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_fresh_autocast_cache</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""``torch.autocast`` caches its casts of the weights until the context</span>
+<span class="sd">    exits. A capture has to record those casts, not reuse the ones warmup</span>
+<span class="sd">    cached: they are freed with the context and never see an optimizer step.</span>
+<span class="sd">    The casts cached while capturing hold nothing until the first replay, so</span>
+<span class="sd">    they must not reach eager code either. The cache is shared by all threads,</span>
+<span class="sd">    backward's included."""</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">clear_autocast_cache</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">yield</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">clear_autocast_cache</span><span class="p">()</span>
+
+
 <div class="viewcode-block" id="make_graphed_inference">
 <a class="viewcode-back" href="../../api.html#qkan.make_graphed_inference">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">make_graphed_inference</span><span class="p">(</span>
@@ -157,6 +208,10 @@
 <span class="sd">    The input to the returned callable must match ``sample_input`` in shape,</span>
 <span class="sd">    dtype, and device. The output tensor is reused across calls — clone it</span>
 <span class="sd">    before issuing the next replay if you need to keep the value around.</span>
+<span class="sd">    The graph replays the kernels of the CUDA ``torch.autocast`` state (off,</span>
+<span class="sd">    or its dtype) and the ``te.autocast`` recipe it was captured in, so a</span>
+<span class="sd">    call in another state raises ``RuntimeError``: capture one graph for each</span>
+<span class="sd">    state you use.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        model: a module in eval() mode. Parameters must not change between</span>
@@ -189,13 +244,14 @@
         <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
 
         <span class="n">graph</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">CUDAGraph</span><span class="p">()</span>
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">graph</span><span class="p">(</span><span class="n">graph</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">_fresh_autocast_cache</span><span class="p">(),</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">graph</span><span class="p">(</span><span class="n">graph</span><span class="p">):</span>
             <span class="n">static_output</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">static_input</span><span class="p">)</span>
     <span class="k">finally</span><span class="p">:</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">set_grad_enabled</span><span class="p">(</span><span class="n">was_grad</span><span class="p">)</span>
 
     <span class="n">sample_shape</span> <span class="o">=</span> <span class="n">sample_input</span><span class="o">.</span><span class="n">shape</span>
     <span class="n">sample_dtype</span> <span class="o">=</span> <span class="n">sample_input</span><span class="o">.</span><span class="n">dtype</span>
+    <span class="n">ambient</span> <span class="o">=</span> <span class="n">_ambient_state</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">replay</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">sample_shape</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">sample_dtype</span><span class="p">:</span>
@@ -204,6 +260,7 @@
                 <span class="sa">f</span><span class="s2">"dtype </span><span class="si">{</span><span class="n">sample_dtype</span><span class="si">}</span><span class="s2">; got shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> "</span>
                 <span class="sa">f</span><span class="s2">"dtype </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2">"</span>
             <span class="p">)</span>
+        <span class="n">_check_ambient_state</span><span class="p">(</span><span class="n">ambient</span><span class="p">)</span>
         <span class="n">static_input</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
         <span class="n">graph</span><span class="o">.</span><span class="n">replay</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">static_output</span>
@@ -322,6 +379,11 @@
 <span class="sd">    Constraints:</span>
 <span class="sd">        - ``sample_input`` / ``sample_target`` fix the shapes and dtypes</span>
 <span class="sd">          of subsequent calls; new shapes require a fresh capture.</span>
+<span class="sd">        - The graph replays the kernels of the CUDA ``torch.autocast`` state</span>
+<span class="sd">          (off, or its dtype) and the ``te.autocast`` recipe it was captured</span>
+<span class="sd">          in; a call in another state raises ``RuntimeError``. Capture it in</span>
+<span class="sd">          the state you train in: a second capture re-allocates the</span>
+<span class="sd">          parameters of the first.</span>
 <span class="sd">        - All parameters of ``model`` must be on CUDA. ``set_to_none=False``</span>
 <span class="sd">          inside the graph zeroes grads in-place — never swap ``.grad`` for a</span>
 <span class="sd">          new tensor outside the graph (e.g. don't call</span>
@@ -378,7 +440,7 @@
     <span class="c1"># zeros them in-place, so the graph sees the same .grad pointers on</span>
     <span class="c1"># every replay. Capture stream MUST be the same one we warmed up on.</span>
     <span class="n">graph</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">CUDAGraph</span><span class="p">()</span>
-    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">graph</span><span class="p">(</span><span class="n">graph</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">side</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">_fresh_autocast_cache</span><span class="p">(),</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">graph</span><span class="p">(</span><span class="n">graph</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="n">side</span><span class="p">):</span>
         <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="n">static_output</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">static_input</span><span class="p">)</span>
         <span class="n">static_loss</span> <span class="o">=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">static_output</span><span class="p">,</span> <span class="n">static_target</span><span class="p">)</span>
@@ -388,6 +450,7 @@
     <span class="n">sample_in_dtype</span> <span class="o">=</span> <span class="n">sample_input</span><span class="o">.</span><span class="n">dtype</span>
     <span class="n">sample_tgt_shape</span> <span class="o">=</span> <span class="n">sample_target</span><span class="o">.</span><span class="n">shape</span>
     <span class="n">sample_tgt_dtype</span> <span class="o">=</span> <span class="n">sample_target</span><span class="o">.</span><span class="n">dtype</span>
+    <span class="n">ambient</span> <span class="o">=</span> <span class="n">_ambient_state</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">train_step</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">sample_in_shape</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">sample_in_dtype</span><span class="p">:</span>
@@ -402,6 +465,7 @@
                 <span class="sa">f</span><span class="s2">"dtype </span><span class="si">{</span><span class="n">sample_tgt_dtype</span><span class="si">}</span><span class="s2">; got shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">y</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> "</span>
                 <span class="sa">f</span><span class="s2">"dtype </span><span class="si">{</span><span class="n">y</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2">"</span>
             <span class="p">)</span>
+        <span class="n">_check_ambient_state</span><span class="p">(</span><span class="n">ambient</span><span class="p">)</span>
         <span class="n">static_input</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
         <span class="n">static_target</span><span class="o">.</span><span class="n">copy_</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
         <span class="n">graph</span><span class="o">.</span><span class="n">replay</span><span class="p">()</span>
@@ -417,10 +481,13 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_input_key</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""Hashable key for graph-cache lookup; None when graphs don't apply."""</span>
+<span class="w">    </span><span class="sd">"""Hashable key for graph-cache lookup; None when graphs don't apply.</span>
+
+<span class="sd">    The ambient state is part of it: each one gets its own graph.</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">x</span><span class="o">.</span><span class="n">is_cuda</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">None</span>
-    <span class="k">return</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">_ambient_state</span><span class="p">())</span>
 
 
 <div class="viewcode-block" id="CompiledInference">
@@ -438,14 +505,29 @@
 <span class="sd">        with torch.no_grad():</span>
 <span class="sd">            model(x)                               # captures + replays</span>
 
-<span class="sd">    On each eval/no-grad forward, the (shape, dtype, device) of the input is</span>
-<span class="sd">    used as the cache key. A miss triggers a capture (up to ``max_shapes``);</span>
+<span class="sd">    On each eval/no-grad forward, the (shape, dtype, device) of the input,</span>
+<span class="sd">    the CUDA ``torch.autocast`` state (off, or its dtype) and the active</span>
+<span class="sd">    ``te.autocast`` recipe are used as the cache key. A miss triggers a</span>
+<span class="sd">    capture (up to ``max_shapes``);</span>
 <span class="sd">    a hit replays the captured graph. When the cache is full the fallback is</span>
 <span class="sd">    eager execution — graphs are not evicted.</span>
 
+<span class="sd">    A graph holds raw pointers to the tensors it was captured with, so the</span>
+<span class="sd">    cache is dropped whenever their storage can change through this wrapper</span>
+<span class="sd">    or a parent module: ``train()`` / ``eval()``, every cast or move</span>
+<span class="sd">    (``.to()``, ``.float()``, ``.cuda()``, ...) and every ``load_state_dict``.</span>
+<span class="sd">    Changes made behind the wrapper's back (``wrapper.module.to(...)``,</span>
+<span class="sd">    ``wrapper.module.load_state_dict(...)``, a re-assigned parameter or</span>
+<span class="sd">    ``wrapper.module``) cannot be seen: call ``clear_cache()`` after them.</span>
+<span class="sd">    ``torch.func.functional_call`` on the wrapper is not supported in eval</span>
+<span class="sd">    mode: a cached graph ignores the substituted parameters, and a new one is</span>
+<span class="sd">    captured with them.</span>
+
 <span class="sd">    Args:</span>
 <span class="sd">        module: the module to wrap. ``forward`` must take one tensor arg.</span>
-<span class="sd">        max_shapes: maximum number of distinct input shapes to cache.</span>
+<span class="sd">        max_shapes: maximum number of graphs to cache, one per input</span>
+<span class="sd">            (shape, dtype, device), ``torch.autocast`` state and</span>
+<span class="sd">            ``te.autocast`` recipe.</span>
 <span class="sd">        warmup: warmup forward passes before each capture.</span>
 <span class="sd">    """</span>
 
@@ -474,10 +556,24 @@
         <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">train</span><span class="p">(</span><span class="n">mode</span><span class="p">)</span></div>
 
 
+    <span class="c1"># A graph holds raw pointers into parameter storage, which casts, moves</span>
+    <span class="c1"># and loads replace. All of them pass through these two hooks, also when</span>
+    <span class="c1"># they come from a parent module (#47).</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_apply</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_from_state_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="c1"># Every load, not only assign=True: the wrapped module may rebuild</span>
+        <span class="c1"># the tensors it derives from its parameters.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_load_from_state_dict</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
 <div class="viewcode-block" id="CompiledInference.clear_cache">
 <a class="viewcode-back" href="../../api.html#qkan.CompiledInference.clear_cache">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">clear_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Drop all captured graphs. Call after editing parameters in-place."""</span>
+<span class="w">        </span><span class="sd">"""Drop all captured graphs. Call after editing parameters in-place,</span>
+<span class="sd">        or after casting, moving or loading the wrapped module directly."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
 
 
@@ -497,7 +593,7 @@
         <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
 
         <span class="n">graph</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">CUDAGraph</span><span class="p">()</span>
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">graph</span><span class="p">(</span><span class="n">graph</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">_fresh_autocast_cache</span><span class="p">(),</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">graph</span><span class="p">(</span><span class="n">graph</span><span class="p">):</span>
             <span class="n">static_output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">static_input</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">graph</span><span class="p">,</span> <span class="n">static_input</span><span class="p">,</span> <span class="n">static_output</span>
 

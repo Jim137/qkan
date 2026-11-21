@@ -102,6 +102,7 @@
 <span class="sd">    - Custom solvers api</span>
 <span class="sd">"""</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
@@ -127,6 +128,15 @@
     <span class="n">mlx_contracted_solver</span><span class="p">,</span>
     <span class="n">qml_solver</span><span class="p">,</span>
 <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_names_device</span><span class="p">(</span><span class="n">named</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Whether ``named``, a device attribute as the user gave it, is where</span>
+<span class="sd">    torch puts a tensor created on it: ``device``."""</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">named</span><span class="p">)</span><span class="o">.</span><span class="n">device</span> <span class="o">==</span> <span class="n">device</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># a name torch refuses, e.g. left by a rejected .to()</span>
+        <span class="k">return</span> <span class="kc">False</span>
 
 
 <div class="viewcode-block" id="QKANLayer">
@@ -191,8 +201,7 @@
 <span class="sd">            Use ``torch.bfloat16`` with bf16/fp8 ``c_dtype`` for full mixed-precision pipeline.</span>
 <span class="sd">            The output dtype follows the layer's base ``F.linear`` term, as for</span>
 <span class="sd">            ``nn.Linear``: ``p_dtype`` normally, the autocast dtype under</span>
-<span class="sd">            ``torch.autocast``. The opt-in fused epilogue does not follow</span>
-<span class="sd">            autocast yet and returns the solver output's dtype (#33).</span>
+<span class="sd">            ``torch.autocast``.</span>
 <span class="sd">        _x0 : Optional[torch.Tensor]</span>
 <span class="sd">            Leave for ResQKANLayer</span>
 <span class="sd">    """</span>
@@ -475,8 +484,8 @@
         <span class="c1"># into state_dict); under p_dim=4 they alias the Parameters</span>
         <span class="c1"># themselves via object.__setattr__ (also kept out of state_dict).</span>
         <span class="c1"># ``_init_view_caches`` populates all seven attributes before any</span>
-        <span class="c1"># forward — they are non-None on every code path. ``.to()`` rebuilds</span>
-        <span class="c1"># them if param storage moved.</span>
+        <span class="c1"># forward — they are non-None on every code path.</span>
+        <span class="c1"># ``_views_released`` rebuilds them when param storage changes.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_theta_natural_v</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># type: ignore[assignment]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_preacts_w_natural_v</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># type: ignore[assignment]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_preacts_b_natural_v</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># type: ignore[assignment]</span>
@@ -518,18 +527,21 @@
 <span class="sd">        ``p_dim`` with no Python-side dispatch.</span>
 <span class="sd">        """</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">p_dim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
-            <span class="n">theta_v</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_theta_natural_shape</span><span class="p">)</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_theta_collapsible</span>
-                <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta</span>
-            <span class="p">)</span>
-            <span class="n">pw_v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_preacts_natural_shape</span><span class="p">)</span>
-            <span class="n">pb_v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">preacts_bias</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_preacts_natural_shape</span><span class="p">)</span>
-            <span class="n">oi</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_dim</span><span class="p">)</span>
-            <span class="n">pw_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">postact_weights</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">oi</span><span class="p">)</span>
-            <span class="n">pb_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">postact_bias</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">oi</span><span class="p">)</span>
-            <span class="n">bw_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_weight</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">oi</span><span class="p">)</span>
-            <span class="n">mask_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">oi</span><span class="p">)</span>
+            <span class="c1"># A view made under no_grad is cut off from its parameter, which</span>
+            <span class="c1"># then gets no gradient: a cast or a load can run under no_grad.</span>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">inference_mode</span><span class="p">(</span><span class="kc">False</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">enable_grad</span><span class="p">():</span>
+                <span class="n">theta_v</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_theta_natural_shape</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_theta_collapsible</span>
+                    <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta</span>
+                <span class="p">)</span>
+                <span class="n">pw_v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_preacts_natural_shape</span><span class="p">)</span>
+                <span class="n">pb_v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">preacts_bias</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_preacts_natural_shape</span><span class="p">)</span>
+                <span class="n">oi</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_dim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_dim</span><span class="p">)</span>
+                <span class="n">pw_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">postact_weights</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">oi</span><span class="p">)</span>
+                <span class="n">pb_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">postact_bias</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">oi</span><span class="p">)</span>
+                <span class="n">bw_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_weight</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">oi</span><span class="p">)</span>
+                <span class="n">mask_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">oi</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">theta_v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta</span>
             <span class="n">pw_v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">preacts_weight</span>
@@ -540,13 +552,9 @@
             <span class="n">mask_oi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span>
         <span class="c1"># Bypass Module's Parameter detection so aliases don't show up</span>
         <span class="c1"># in state_dict / named_parameters.</span>
-        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_theta_natural_v"</span><span class="p">,</span> <span class="n">theta_v</span><span class="p">)</span>
-        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_preacts_w_natural_v"</span><span class="p">,</span> <span class="n">pw_v</span><span class="p">)</span>
-        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_preacts_b_natural_v"</span><span class="p">,</span> <span class="n">pb_v</span><span class="p">)</span>
-        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_pw_oi"</span><span class="p">,</span> <span class="n">pw_oi</span><span class="p">)</span>
-        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_pb_oi"</span><span class="p">,</span> <span class="n">pb_oi</span><span class="p">)</span>
-        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_bw_oi"</span><span class="p">,</span> <span class="n">bw_oi</span><span class="p">)</span>
-        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_mask_oi"</span><span class="p">,</span> <span class="n">mask_oi</span><span class="p">)</span>
+        <span class="n">views</span> <span class="o">=</span> <span class="p">(</span><span class="n">theta_v</span><span class="p">,</span> <span class="n">pw_v</span><span class="p">,</span> <span class="n">pb_v</span><span class="p">,</span> <span class="n">pw_oi</span><span class="p">,</span> <span class="n">pb_oi</span><span class="p">,</span> <span class="n">bw_oi</span><span class="p">,</span> <span class="n">mask_oi</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">view</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_VIEW_CACHES</span><span class="p">,</span> <span class="n">views</span><span class="p">):</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">view</span><span class="p">)</span>
         <span class="c1"># Stash natural-rank shape on each Parameter so optimisers (e.g.</span>
         <span class="c1"># QKANAdamMini) can partition by the natural shape even when</span>
         <span class="c1"># storage is p_dim=2-collapsed.</span>
@@ -650,21 +658,23 @@
             <span class="n">source</span> <span class="o">=</span> <span class="n">state_dict</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
             <span class="k">if</span> <span class="n">source</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">target</span><span class="o">.</span><span class="n">shape</span> <span class="ow">and</span> <span class="n">source</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">==</span> <span class="n">target</span><span class="o">.</span><span class="n">numel</span><span class="p">():</span>
                 <span class="n">state_dict</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">source</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">target</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_load_from_state_dict</span><span class="p">(</span>
-            <span class="n">state_dict</span><span class="p">,</span>
-            <span class="n">prefix</span><span class="p">,</span>
-            <span class="n">local_metadata</span><span class="p">,</span>
-            <span class="n">strict</span><span class="p">,</span>
-            <span class="n">missing_keys</span><span class="p">,</span>
-            <span class="n">unexpected_keys</span><span class="p">,</span>
-            <span class="n">error_msgs</span><span class="p">,</span>
-        <span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_views_released</span><span class="p">():</span>  <span class="c1"># with the swap flag a load swaps too</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_load_from_state_dict</span><span class="p">(</span>
+                <span class="n">state_dict</span><span class="p">,</span>
+                <span class="n">prefix</span><span class="p">,</span>
+                <span class="n">local_metadata</span><span class="p">,</span>
+                <span class="n">strict</span><span class="p">,</span>
+                <span class="n">missing_keys</span><span class="p">,</span>
+                <span class="n">unexpected_keys</span><span class="p">,</span>
+                <span class="n">error_msgs</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="c1"># The checkpoint may carry a pruned (non-identity) mask or a nonzero</span>
         <span class="c1"># frozen bias — recompute the fast-path flags so the forward routes</span>
         <span class="c1"># don't silently skip the `* mask` / `+ postact_bias` terms.</span>
         <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_mask_is_identity</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_pb_is_nonzero</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">postact_bias</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">any</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_from_params</span><span class="p">()</span>  <span class="c1"># assign=True replaces the parameters</span>
 
 <div class="viewcode-block" id="QKANLayer.to">
 <a class="viewcode-back" href="../../api.html#qkan.QKANLayer.to">[docs]</a>
@@ -698,6 +708,48 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_init_view_caches</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">ret</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="c1"># Every cast or move lands here, also through a parent module (#42).</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_views_released</span><span class="p">():</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_apply</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_refresh_from_params</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="c1"># The aliases that _init_view_caches builds, in its order.</span>
+    <span class="n">_VIEW_CACHES</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">"_theta_natural_v"</span><span class="p">,</span>
+        <span class="s2">"_preacts_w_natural_v"</span><span class="p">,</span>
+        <span class="s2">"_preacts_b_natural_v"</span><span class="p">,</span>
+        <span class="s2">"_pw_oi"</span><span class="p">,</span>
+        <span class="s2">"_pb_oi"</span><span class="p">,</span>
+        <span class="s2">"_bw_oi"</span><span class="p">,</span>
+        <span class="s2">"_mask_oi"</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_views_released</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Release the cached views while the parameters are replaced, then</span>
+<span class="sd">        rebuild them: ``torch.utils.swap_tensors`` refuses a tensor that a</span>
+<span class="sd">        view still references (#49)."""</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_VIEW_CACHES</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">yield</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_init_view_caches</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_refresh_from_params</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Re-derive what is cached from the parameters after their storage</span>
+<span class="sd">        changed: p_dtype and, in eval mode, the folded weights (#42); device</span>
+<span class="sd">        only once it no longer names where the parameters are.</span>
+<span class="sd">        ``_views_released`` has rebuilt the p_dim=2 views."""</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="c1"># Kept as the constructor or .to() recorded it while that still holds.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">_names_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">device</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta</span><span class="o">.</span><span class="n">device</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">training</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">train</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
 
 <div class="viewcode-block" id="QKANLayer.train">
 <a class="viewcode-back" href="../../api.html#qkan.QKANLayer.train">[docs]</a>
@@ -1436,6 +1488,17 @@
             <span class="n">layer</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">QKAN</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="c1"># The layers refresh themselves in their own _apply (#42).</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_apply</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="c1"># Not layers[0]: it is an nn.Linear with is_map, and QKAN([n]) has none.</span>
+        <span class="n">param</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">param</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">p_dtype</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">dtype</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">_names_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">param</span><span class="o">.</span><span class="n">device</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">device</span>
+        <span class="k">return</span> <span class="bp">self</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">param_size</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
